@@ -1,0 +1,24 @@
+{
+  "name": "bperp-lib",
+  "version": "1.0.0",
+  "description": "BPERP Shared Types and Validation Schemas",
+  "main": "types/index.ts",
+  "types": "types/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "types",
+    "validation",
+    "zod"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

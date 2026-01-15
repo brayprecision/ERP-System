@@ -1,0 +1,251 @@
+// backend/server.js
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { Pool } = require('pg');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors()); // Allows your frontend to talk to this backend
+app.use(express.json());
+
+// Database Connection Configuration
+const pool = new Pool({
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_NAME || 'airshop',
+    password: process.env.DB_PASSWORD || 'password',
+    port: process.env.DB_PORT || 5432,
+});
+
+// Test database connection
+pool.connect((err, client, release) => {
+    if (err) {
+        console.error('Error connecting to database:', err.stack);
+    } else {
+        console.log('Connected to PostgreSQL database');
+        release();
+    }
+});
+
+// Import routes
+const inventoryRoutes = require('./routes/inventory')(pool);
+const customerRoutes = require('./routes/customers')(pool);
+const quoteRoutes = require('./routes/quotes')(pool);
+const workOrderRoutes = require('./routes/workorders')(pool);
+
+// Tasks module routes (in-memory for demo, can be converted to use pool)
+const tasksRoutes = require('./routes/tasks');
+const workcentersRoutes = require('./routes/workcenters');
+const machinesRoutes = require('./routes/machines');
+const maintenanceRoutes = require('./routes/maintenance');
+const ordersRoutes = require('./routes/orders');
+
+// --- API ROUTES ---
+
+// Mount routes
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/quotes', quoteRoutes);
+app.use('/api/work-orders', workOrderRoutes);
+
+// Tasks module routes
+app.use('/api/tasks', tasksRoutes);
+app.use('/api/workcenters', workcentersRoutes);
+app.use('/api/machines', machinesRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
+app.use('/api/orders', ordersRoutes);
+
+// 1. Get Quote Stats (For the "Quotes in March" card)
+app.get('/api/quotes/stats', async (req, res) => {
+    try {
+        // Run three queries in parallel to count statuses
+        const won = await pool.query("SELECT COUNT(*) FROM quotes WHERE status = 'Won'");
+        const lost = await pool.query("SELECT COUNT(*) FROM quotes WHERE status = 'Lost'");
+        const sent = await pool.query("SELECT COUNT(*) FROM quotes WHERE status = 'Sent'");
+        const revenue = await pool.query("SELECT SUM(total_amount) FROM quotes WHERE status = 'Won'");
+
+        res.json({
+            won: parseInt(won.rows[0].count),
+            lost: parseInt(lost.rows[0].count),
+            sent: parseInt(sent.rows[0].count),
+            revenue: parseFloat(revenue.rows[0].sum || 0)
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, error: "Server Error" });
+    }
+});
+
+// 2. Get Win Rate (For the "Win Rate" card)
+app.get('/api/quotes/win-rate', async (req, res) => {
+    try {
+        const total = await pool.query("SELECT COUNT(*) FROM quotes");
+        const won = await pool.query("SELECT COUNT(*) FROM quotes WHERE status = 'Won'");
+        
+        const totalCount = parseInt(total.rows[0].count);
+        const wonCount = parseInt(won.rows[0].count);
+        
+        // Avoid division by zero
+        const rate = totalCount === 0 ? 0 : Math.round((wonCount / totalCount) * 100);
+
+        res.json({ winRate: rate });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, error: "Server Error" });
+    }
+});
+
+// 3. Get Inventory Alerts (For the "Inventory Alerts" card)
+app.get('/api/inventory/alerts', async (req, res) => {
+    try {
+        // Fetch items where stock is below minimum from all inventory tables
+        const alerts = [];
+        
+        // Check materials
+        const materials = await pool.query(
+            "SELECT id, name, qty_on_hand, minimum_qty, 'material' as category FROM materials WHERE qty_on_hand <= minimum_qty ORDER BY (qty_on_hand::float / NULLIF(minimum_qty, 0)) ASC LIMIT 5"
+        );
+        alerts.push(...materials.rows);
+        
+        // Check tooling
+        const tools = await pool.query(
+            "SELECT id, name, qty_on_hand, minimum_qty, 'tool' as category FROM tooling WHERE qty_on_hand <= minimum_qty ORDER BY (qty_on_hand::float / NULLIF(minimum_qty, 0)) ASC LIMIT 5"
+        );
+        alerts.push(...tools.rows);
+        
+        // Check misc items
+        const misc = await pool.query(
+            "SELECT id, name, qty_on_hand, minimum_qty, 'misc' as category FROM misc_items WHERE qty_on_hand <= minimum_qty ORDER BY (qty_on_hand::float / NULLIF(minimum_qty, 0)) ASC LIMIT 5"
+        );
+        alerts.push(...misc.rows);
+        
+        // Sort all alerts by urgency and limit to 5
+        alerts.sort((a, b) => {
+            const ratioA = a.minimum_qty > 0 ? a.qty_on_hand / a.minimum_qty : 999;
+            const ratioB = b.minimum_qty > 0 ? b.qty_on_hand / b.minimum_qty : 999;
+            return ratioA - ratioB;
+        });
+        
+        // Transform for frontend compatibility
+        const formattedAlerts = alerts.slice(0, 5).map(alert => ({
+            id: alert.id,
+            name: alert.name,
+            stock_level: alert.qty_on_hand,
+            minimum_qty: alert.minimum_qty,
+            category: alert.category
+        }));
+        
+        res.json(formattedAlerts);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, error: "Server Error" });
+    }
+});
+
+// 4. Get Tasks (For the "Tasks Due" card)
+app.get('/api/tasks', async (req, res) => {
+    try {
+        const tasks = await pool.query("SELECT * FROM tasks WHERE is_completed = FALSE ORDER BY due_date ASC LIMIT 5");
+        res.json(tasks.rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).json({ success: false, error: "Server Error" });
+    }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ 
+        success: false, 
+        error: 'Internal server error',
+        message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+});
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ 
+        success: false, 
+        error: 'Endpoint not found' 
+    });
+});
+
+// Start the Server
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log('\n=== BPERP API Endpoints ===\n');
+    
+    console.log('INVENTORY:');
+    console.log('  /api/inventory/materials     - CRUD for materials');
+    console.log('  /api/inventory/tooling       - CRUD for tooling');
+    console.log('  /api/inventory/misc          - CRUD for misc items');
+    console.log('  /api/inventory/all           - All inventory combined');
+    console.log('  /api/inventory/stats         - Inventory statistics');
+    
+    console.log('\nCUSTOMERS:');
+    console.log('  /api/customers               - CRUD for customers');
+    console.log('  /api/customers/:id/contacts  - Manage customer contacts');
+    console.log('  /api/customers/:id/archived-work-orders - View archived WOs');
+    
+    console.log('\nQUOTES:');
+    console.log('  /api/quotes                  - CRUD for quotes');
+    console.log('  /api/quotes/rfqs             - Open RFQs (New, In Progress)');
+    console.log('  /api/quotes/sent             - Sent quotes (Sent, Won, Lost)');
+    console.log('  /api/quotes/:id/items        - Quote line items');
+    console.log('  /api/quotes/:id/documents    - Quote documents');
+    console.log('  /api/quotes/:id/send         - Mark quote as sent');
+    console.log('  /api/quotes/:id/duplicate    - Duplicate a quote');
+    console.log('  /api/quotes/:id/convert-to-wo - Convert to work order');
+    
+    console.log('\nWORK ORDERS:');
+    console.log('  /api/work-orders             - CRUD for work orders');
+    console.log('  /api/work-orders/wip         - Work in progress');
+    console.log('  /api/work-orders/:id/checklist - WO checklist items');
+    console.log('  /api/work-orders/:id/checklist/audit - Checklist audit log');
+    console.log('  /api/work-orders/stats/summary - WO statistics');
+    
+    console.log('\nTASKS:');
+    console.log('  /api/tasks                   - CRUD for all tasks');
+    console.log('  /api/tasks/stats             - Task statistics');
+    console.log('  /api/tasks/my-tasks          - Get user\'s tasks');
+    console.log('  /api/tasks/:id/status        - Update task status');
+    console.log('  /api/tasks/:id/assign        - Assign/reassign task');
+    console.log('  /api/tasks/:id/issue         - Report issue on task');
+    
+    console.log('\nWORKCENTERS:');
+    console.log('  /api/workcenters             - CRUD for workcenters');
+    console.log('  /api/workcenters/:id/queue   - Workcenter job queue');
+    console.log('  /api/workcenters/:id/queue/reorder - Reorder queue');
+    
+    console.log('\nMACHINES:');
+    console.log('  /api/machines                - CRUD for machines');
+    console.log('  /api/machines/:id/status     - Update machine status');
+    console.log('  /api/machines/:id/log-runtime - Log runtime hours');
+    console.log('  /api/machines/:id/reset-maintenance - Reset counters');
+    
+    console.log('\nMAINTENANCE:');
+    console.log('  /api/maintenance/tasks       - CRUD for maintenance tasks');
+    console.log('  /api/maintenance/tasks/:id/start - Start maintenance');
+    console.log('  /api/maintenance/tasks/:id/complete - Complete maintenance');
+    console.log('  /api/maintenance/tasks/:id/defer - Defer maintenance');
+    console.log('  /api/maintenance/definitions - Task definitions/templates');
+    console.log('  /api/maintenance/history     - Maintenance history log');
+    console.log('  /api/maintenance/stats       - Maintenance statistics');
+    
+    console.log('\nORDERS (Purchase, Shipping, Receiving, Inspection):');
+    console.log('  /api/orders/purchase-orders  - CRUD for purchase orders');
+    console.log('  /api/orders/purchase-orders/:id/mark-ordered - Mark PO as ordered');
+    console.log('  /api/orders/purchase-orders/:id/items/:itemId/receive - Receive item');
+    console.log('  /api/orders/inspections      - Inspection tasks');
+    console.log('  /api/orders/shipping         - Shipping tasks');
+    console.log('  /api/orders/receiving        - Receiving tasks');
+});
