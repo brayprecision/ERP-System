@@ -363,7 +363,7 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
             ${renderSection('Due Soon', dueSoon, 'text-yellow-400')}
             ${renderSection('On Schedule', onSchedule, 'text-green-400')}
             
-            ${relevantWOs.length === 0 ? `
+            ${relevantItems.length === 0 ? `
                 <div class="card p-8 text-center">
                     <i class="fa-solid fa-check-circle text-4xl text-green-500 mb-4"></i>
                     <p class="text-gray-400">No work orders at this workflow stage</p>
