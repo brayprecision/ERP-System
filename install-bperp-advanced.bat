@@ -48,54 +48,14 @@ if not exist "frontend" (
 echo [SUCCESS] All required files found
 echo.
 
-:: Launcher selection menu
-echo  ╔══════════════════════════════════════════════════════════════════════════╗
-echo  ║                          LAUNCHER SELECTION                              ║
-echo  ║                                                                          ║
-echo  ║  Choose your preferred launcher experience:                              ║
-echo  ║                                                                          ║
-echo  ║  [1] Silent Launcher (RECOMMENDED)                                      ║
-echo  ║      • No command prompt visible                                         ║
-echo  ║      • Beautiful loading screen with shop logo                          ║
-echo  ║      • Professional user experience                                      ║
-echo  ║                                                                          ║
-echo  ║  [2] GUI Launcher (Windows Forms)                                       ║
-echo  ║      • Native Windows loading dialog                                    ║
-echo  ║      • Progress bar with status updates                                 ║
-echo  ║      • Requires PowerShell execution policy                             ║
-echo  ║                                                                          ║
-echo  ║  [3] Classic Launcher (Command Prompt)                                  ║
-echo  ║      • Shows detailed startup information                               ║
-echo  ║      • Traditional command-line interface                               ║
-echo  ║      • Best for troubleshooting                                         ║
-echo  ║                                                                          ║
-echo  ╚══════════════════════════════════════════════════════════════════════════╝
-echo.
-
-:launcher_choice
-set /p launcher_choice="Select launcher type (1-3): "
-
-if "%launcher_choice%"=="1" (
-    set LAUNCHER_FILE=launch-bperp-silent.bat
-    set LAUNCHER_NAME=Silent Launcher
-    echo [INFO] Selected: Silent Launcher with loading screen
-) else if "%launcher_choice%"=="2" (
-    set LAUNCHER_FILE=launch-bperp-gui.bat
-    set LAUNCHER_NAME=GUI Launcher
-    echo [INFO] Selected: GUI Launcher with Windows Forms
-) else if "%launcher_choice%"=="3" (
-    set LAUNCHER_FILE=launch-bperp.bat
-    set LAUNCHER_NAME=Classic Launcher
-    echo [INFO] Selected: Classic command-line launcher
-) else (
-    echo [ERROR] Invalid selection. Please choose 1, 2, or 3.
-    goto launcher_choice
-)
+:: Using GUI Launcher (Windows Forms)
+set LAUNCHER_FILE=launch-bperp-gui.bat
+set LAUNCHER_NAME=GUI Launcher
+echo [INFO] Using GUI Launcher with Windows Forms and loading screen
 
 echo.
 
-:: Update the shortcut creation script
-powershell -Command "(Get-Content 'create-shortcut.vbs') -replace 'launch-bperp-silent\.bat', '%LAUNCHER_FILE%' | Set-Content 'create-shortcut.vbs'"
+:: Note: Using GUI launcher by default
 
 :: Create shortcuts
 echo [INFO] Creating desktop and start menu shortcuts with %LAUNCHER_NAME%...

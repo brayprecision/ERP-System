@@ -10,8 +10,12 @@ $scriptDir = $PSScriptRoot
 if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $scriptDir) { $scriptDir = Get-Location }
 
-# Try app version logo first, then fall back to other logos
-$logoPath = "$scriptDir\context files\shop_logo_app_version.jpg"
+# Use modern logo with solid background and rounded corners
+$logoPath = "$scriptDir\frontend\assets\modern-logo.png"
+if (-not (Test-Path $logoPath)) {
+    # Fallback to original logos if modern logo not found
+    $logoPath = "$scriptDir\context files\shop_logo_app_version.jpg"
+}
 if (-not (Test-Path $logoPath)) {
     $logoPath = "$scriptDir\context files\Shop Logo.png"
 }
@@ -134,7 +138,7 @@ $timer.Add_Tick({
         }
         8 {
             $timer.Stop()
-            Start-Process "http://localhost:8080"
+            Start-Process "http://localhost:8080/loading.html"
             Start-Sleep -Milliseconds 800
             $form.Close()
         }

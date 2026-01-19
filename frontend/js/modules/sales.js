@@ -128,7 +128,8 @@ function getDefaultChecklist() {
         { id: 7, stepOrder: 7, stepName: 'Machining Complete', stepKey: 'machining_complete', isCompleted: false },
         { id: 8, stepOrder: 8, stepName: 'Post Processing Complete', stepKey: 'post_processing', isCompleted: false },
         { id: 9, stepOrder: 9, stepName: 'Inspection Complete', stepKey: 'inspection_complete', isCompleted: false },
-        { id: 10, stepOrder: 10, stepName: 'Ready For Shipment', stepKey: 'ready_for_shipment', isCompleted: false }
+        { id: 10, stepOrder: 10, stepName: 'Ready For Shipment', stepKey: 'ready_for_shipment', isCompleted: false },
+        { id: 11, stepOrder: 11, stepName: 'Invoicing Complete', stepKey: 'invoicing_complete', isCompleted: false }
     ];
 }
 
@@ -1644,38 +1645,36 @@ function deleteCustomer(customerId, customerName) {
 }
 
 // ==================== EXPORT FUNCTIONS ====================
-function exportCustomers() {
-    const customers = getCustomers();
-    exportToCSV(customers, 'customers');
-    showToast('Customers exported to CSV', 'success');
+async function exportCustomers() {
+    await exportToCSV(null, 'customers', null, '/export/customers');
 }
 
-function exportQuotes() {
-    const quotes = getQuotes();
-    exportToCSV(quotes, 'quotes');
-    showToast('Quotes exported to CSV', 'success');
+async function exportQuotes() {
+    await exportToCSV(null, 'quotes', null, '/export/quotes');
 }
 
-function exportWorkOrders() {
-    const workOrders = getWorkOrders();
-    exportToCSV(workOrders, 'work-orders');
-    showToast('Work orders exported to CSV', 'success');
+async function exportWorkOrders() {
+    await exportToCSV(null, 'work-orders', null, '/export/work-orders');
 }
 
-function exportArchivedWork() {
+async function exportArchivedWork() {
     const allWorkOrders = getWorkOrders();
     const archivedWOs = allWorkOrders.filter(wo => wo.completionPercentage === 100 || wo.status === 'Completed');
     const archivedStorage = storage.get(STORAGE_KEYS.ARCHIVED_WORK_ORDERS) || [];
     const allArchived = [...archivedWOs, ...archivedStorage];
-    exportToCSV(allArchived, 'archived-work-orders');
-    showToast('Archived work orders exported to CSV', 'success');
+    const headers = ['id', 'woNumber', 'customerId', 'customerName', 'dueDate', 'status', 'notes', 'completionPercentage', 'lineItems', 'completedAt'];
+
+    // For archived work orders, we still use client-side export since it's a mix of DB and localStorage data
+    await exportToCSV(allArchived, 'archived-work-orders', headers);
 }
 
-function exportArchivedQuotes() {
+async function exportArchivedQuotes() {
     const allQuotes = getQuotes();
     const archivedQuotes = allQuotes.filter(q => q.status === 'Lost');
-    exportToCSV(archivedQuotes, 'archived-quotes');
-    showToast('Archived quotes exported to CSV', 'success');
+    const headers = ['id', 'quoteNumber', 'customerId', 'customerName', 'partNumber', 'description', 'quantity', 'status', 'requestedDate', 'dueDate', 'totalPrice', 'sentAt'];
+
+    // For archived quotes, we still use client-side export since it's filtered from localStorage
+    await exportToCSV(archivedQuotes, 'archived-quotes', headers);
 }
 
 function reopenQuote(quoteId) {

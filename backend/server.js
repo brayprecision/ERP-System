@@ -3,6 +3,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -161,6 +163,252 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ==================== EXPORT ROUTES ====================
+
+// Ensure export directories exist
+const exportsDir = path.join(__dirname, '..', 'exports');
+const csvDir = path.join(exportsDir, 'csv');
+const backupsDir = path.join(exportsDir, 'backups');
+
+if (!fs.existsSync(csvDir)) {
+    fs.mkdirSync(csvDir, { recursive: true });
+}
+if (!fs.existsSync(backupsDir)) {
+    fs.mkdirSync(backupsDir, { recursive: true });
+}
+
+// Export customers to CSV
+app.get('/api/export/customers', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM customers ORDER BY name');
+        const headers = ['id', 'name', 'address', 'phone', 'terms', 'openWOCount'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `customers_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Customers exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export customers error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
+// Export quotes to CSV
+app.get('/api/export/quotes', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM quotes ORDER BY quote_number');
+        const headers = ['id', 'quote_number', 'customer_id', 'customer_name', 'part_number', 'description', 'quantity', 'status', 'requested_date', 'due_date', 'total_amount', 'sent_at'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `quotes_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Quotes exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export quotes error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
+// Export work orders to CSV
+app.get('/api/export/work-orders', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM work_orders ORDER BY wo_number');
+        const headers = ['id', 'wo_number', 'customer_id', 'customer_name', 'due_date', 'status', 'notes', 'completion_percentage'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `work-orders_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Work orders exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export work orders error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
+// Export inventory (materials) to CSV
+app.get('/api/export/inventory/materials', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM materials ORDER BY name');
+        const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `materials_inventory_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Materials inventory exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export materials error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
+// Export inventory (tooling) to CSV
+app.get('/api/export/inventory/tooling', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM tooling ORDER BY name');
+        const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `tooling_inventory_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Tooling inventory exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export tooling error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
+// Export inventory (misc items) to CSV
+app.get('/api/export/inventory/misc', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM misc_items ORDER BY name');
+        const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `misc_inventory_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Miscellaneous inventory exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export misc items error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
+// Create backup
+app.post('/api/backup/create', async (req, res) => {
+    try {
+        // Collect all database data
+        const backupData = {
+            timestamp: new Date().toISOString(),
+            version: 'BPERP-v1.0',
+            database: {
+                customers: (await pool.query('SELECT * FROM customers')).rows,
+                quotes: (await pool.query('SELECT * FROM quotes')).rows,
+                work_orders: (await pool.query('SELECT * FROM work_orders')).rows,
+                materials: (await pool.query('SELECT * FROM materials')).rows,
+                tooling: (await pool.query('SELECT * FROM tooling')).rows,
+                misc_items: (await pool.query('SELECT * FROM misc_items')).rows,
+                tasks: (await pool.query('SELECT * FROM tasks')).rows
+            }
+        };
+
+        const filename = `bperp_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        const filepath = path.join(backupsDir, filename);
+
+        fs.writeFileSync(filepath, JSON.stringify(backupData, null, 2), 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Backup created successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/backups/${filename}`
+        });
+    } catch (err) {
+        console.error('Backup creation error:', err);
+        res.status(500).json({ success: false, error: 'Backup failed' });
+    }
+});
+
+// Restore from backup
+app.post('/api/backup/restore', async (req, res) => {
+    try {
+        // This would require file upload handling - for now return not implemented
+        res.status(501).json({
+            success: false,
+            error: 'Restore functionality requires file upload implementation'
+        });
+    } catch (err) {
+        console.error('Backup restore error:', err);
+        res.status(500).json({ success: false, error: 'Restore failed' });
+    }
+});
+
+// Serve export files
+app.use('/exports', express.static(path.join(__dirname, '..', 'exports')));
+
+// Helper function to convert data to CSV
+function convertToCSV(data, headers) {
+    if (!data || data.length === 0) return '';
+
+    const csvRows = data.map(row =>
+        headers.map(header => {
+            let value = row[header] ?? '';
+
+            // Handle nested objects and arrays
+            if (typeof value === 'object' && value !== null) {
+                value = JSON.stringify(value);
+            }
+
+            // Convert to string and handle null/undefined
+            const stringValue = String(value || '');
+
+            // Escape quotes and wrap in quotes if contains comma, newline, or quote
+            if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
+                return `"${stringValue.replace(/"/g, '""')}"`;
+            }
+            return stringValue;
+        }).join(',')
+    );
+
+    // Add UTF-8 BOM for Excel/Google Sheets compatibility
+    const BOM = '\uFEFF';
+    return BOM + [headers.join(','), ...csvRows].join('\n');
+}
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
@@ -182,6 +430,9 @@ app.use((req, res) => {
 // Start the Server
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Export directories:`);
+    console.log(`  CSV exports: ${csvDir}`);
+    console.log(`  Backups: ${backupsDir}`);
     console.log('\n=== BPERP API Endpoints ===\n');
     
     console.log('INVENTORY:');

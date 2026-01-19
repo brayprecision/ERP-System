@@ -5,7 +5,7 @@ title BPERP Shortcut Updater
 echo.
 echo ╔════════════════════════════════════════╗
 echo ║       BPERP Shortcut Updater           ║
-echo ║   Updating to Loading Screen Launcher  ║
+echo ║   Updating to GUI Loading Launcher     ║
 echo ╚════════════════════════════════════════╝
 echo.
 
@@ -31,7 +31,7 @@ echo [INFO] Creating new shortcuts with loading screen launcher...
 cscript //nologo create-shortcut.vbs
 
 echo [INFO] Testing the launcher...
-start "" "launch-bperp-silent.bat"
+start "" "launch-bperp-gui.bat"
 
 echo.
 echo ╔════════════════════════════════════════╗

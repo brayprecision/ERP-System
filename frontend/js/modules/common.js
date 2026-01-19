@@ -382,27 +382,170 @@ export function setFormData(formElement, data) {
 }
 
 // ==================== EXPORT UTILITIES ====================
-export function exportToCSV(data, filename, headers) {
-    const csvHeaders = headers.join(',');
-    const csvRows = data.map(row => 
-        headers.map(h => {
-            const value = row[h] ?? '';
-            // Escape quotes and wrap in quotes if contains comma
-            const escaped = String(value).replace(/"/g, '""');
-            return escaped.includes(',') ? `"${escaped}"` : escaped;
-        }).join(',')
-    );
-    
-    const csv = [csvHeaders, ...csvRows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    
-    URL.revokeObjectURL(url);
+export async function exportToCSV(data, filename, headers, endpoint) {
+    try {
+        let response;
+        let blob;
+        let downloadUrl;
+
+        if (endpoint) {
+            // Use server-side export
+            response = await fetch(`${window.API_BASE}${endpoint}`);
+            if (!response.ok) {
+                throw new Error(`Export failed: ${response.statusText}`);
+            }
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Export failed');
+            }
+
+            // Download the file from the server
+            downloadUrl = result.downloadUrl;
+            showToast(result.message, 'success');
+
+            // Create download link
+            const a = document.createElement('a');
+            a.href = `${window.location.origin}${downloadUrl}`;
+            a.download = result.filename;
+            a.click();
+        } else {
+            // Fallback to client-side export (for demo data)
+            if (!data || data.length === 0) {
+                showToast('No data to export', 'error');
+                return;
+            }
+
+            // Auto-generate headers if not provided
+            let csvHeaders;
+            if (!headers || headers.length === 0) {
+                // Get all unique keys from the data
+                const allKeys = new Set();
+                data.forEach(row => {
+                    if (typeof row === 'object' && row !== null) {
+                        Object.keys(row).forEach(key => allKeys.add(key));
+                    }
+                });
+                csvHeaders = Array.from(allKeys);
+            } else {
+                csvHeaders = headers;
+            }
+
+            const csvRows = data.map(row =>
+                csvHeaders.map(h => {
+                    let value = '';
+                    if (row && typeof row === 'object') {
+                        value = row[h] ?? '';
+                    }
+
+                    // Handle nested objects and arrays
+                    if (typeof value === 'object' && value !== null) {
+                        value = JSON.stringify(value);
+                    }
+
+                    // Convert to string and handle null/undefined
+                    const stringValue = String(value || '');
+
+                    // Escape quotes and wrap in quotes if contains comma, newline, or quote
+                    const escaped = stringValue.replace(/"/g, '""');
+                    if (escaped.includes(',') || escaped.includes('\n') || escaped.includes('"')) {
+                        return `"${escaped}"`;
+                    }
+                    return escaped;
+                }).join(',')
+            );
+
+            const csv = [csvHeaders.join(','), ...csvRows].join('\n');
+
+            // Add UTF-8 BOM for Excel/Google Sheets compatibility
+            const BOM = '\uFEFF';
+            const csvWithBOM = BOM + csv;
+
+            blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+
+            URL.revokeObjectURL(url);
+        }
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed: ' + error.message, 'error');
+    }
+}
+
+// ==================== BACKUP/RESTORE UTILITIES ====================
+export async function createBackup() {
+    try {
+        const response = await fetch(`${window.API_BASE}/backup/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Backup failed: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || 'Backup failed');
+        }
+
+        // Download the backup file from the server
+        const a = document.createElement('a');
+        a.href = `${window.location.origin}${result.downloadUrl}`;
+        a.download = result.filename;
+        a.click();
+
+        showToast(result.message, 'success');
+    } catch (error) {
+        console.error('Failed to create backup:', error);
+        showToast('Failed to create backup: ' + error.message, 'error');
+    }
+}
+
+export async function restoreFromBackup(fileInput) {
+    const file = fileInput.files[0];
+    if (!file) {
+        showToast('Please select a backup file', 'error');
+        throw new Error('No file selected');
+    }
+
+    try {
+        // For now, show a message that restore is not yet implemented server-side
+        showToast('Restore functionality is coming soon. Please contact support for manual restoration.', 'info');
+        throw new Error('Restore not yet implemented server-side');
+
+        // Future implementation would upload the file and call the restore endpoint
+        // const formData = new FormData();
+        // formData.append('backup', file);
+        //
+        // const response = await fetch(`${window.API_BASE}/backup/restore`, {
+        //     method: 'POST',
+        //     body: formData
+        // });
+        //
+        // if (!response.ok) {
+        //     throw new Error(`Restore failed: ${response.statusText}`);
+        // }
+        //
+        // const result = await response.json();
+        // if (!result.success) {
+        //     throw new Error(result.error || 'Restore failed');
+        // }
+        //
+        // showToast(result.message, 'success');
+        // return result;
+
+    } catch (error) {
+        console.error('Failed to restore backup:', error);
+        showToast('Failed to restore backup: ' + error.message, 'error');
+        throw error;
+    }
 }
 
 // ==================== EVENT DELEGATION SETUP ====================

@@ -33,10 +33,9 @@ INSTALLATION
 
 FILES INCLUDED
 --------------
-• launch-bperp-silent.bat   - Silent launcher with loading screen (RECOMMENDED)
-• launch-bperp-gui.bat      - GUI launcher with Windows Forms
+• launch-bperp-gui.bat      - GUI launcher with Windows Forms (RECOMMENDED)
+• launch-bperp-gui.vbs      - VBS wrapper for GUI launcher
 • launch-bperp-gui.ps1      - PowerShell GUI script
-• launch-bperp.bat          - Classic command-line launcher
 • install-bperp-advanced.bat- Advanced installation with launcher options
 • install-bperp.bat         - Standard installation script  
 • create-shortcut.vbs       - Shortcut creation utility
@@ -57,9 +56,7 @@ USAGE OPTIONS
    • Start Menu → BPERP Dashboard
 
 💻 Manual Launch Options:
-   • launch-bperp-silent.bat    - Silent with loading screen (RECOMMENDED)
-   • launch-bperp-gui.bat       - Windows Forms GUI launcher
-   • launch-bperp.bat           - Classic command-line launcher
+   • launch-bperp-gui.bat       - Windows Forms GUI launcher (RECOMMENDED)
 
 🌐 Browser Direct (if server running)
    • Open browser to: http://localhost:8080
@@ -98,36 +95,23 @@ TROUBLESHOOTING
    → Check Windows shortcut permissions
    → Manually run launcher from BPERP folder
 
-LAUNCHER EXPERIENCES
--------------------
+LAUNCHER EXPERIENCE
+------------------
 
-🎯 SILENT LAUNCHER (RECOMMENDED)
-   • No command prompts visible during startup
-   • Beautiful HTML loading screen with shop logo
-   • Professional animated progress indicators
-   • Automatic redirect to dashboard when ready
-   • Best for daily production use
-
-🖼️ GUI LAUNCHER (Windows Forms)
-   • Native Windows loading dialog
+🖼️ GUI LAUNCHER (Windows Forms) - RECOMMENDED
+   • Native Windows loading dialog with shop logo
    • Real-time status updates and progress bar
-   • Clean, professional interface
+   • Professional animated loading screen
    • Requires PowerShell execution permissions
-   • Good for users who prefer native Windows apps
-
-📟 CLASSIC LAUNCHER (Command Line)
-   • Detailed startup information in console
-   • ASCII art branding and status messages
-   • Best for troubleshooting and debugging
-   • Shows server logs and connection details
-   • Preferred by technical users
+   • Best for daily production use
+   • No command prompts visible during startup
 
 ADVANCED CONFIGURATION
 ----------------------
 
 Port Configuration:
-   • Edit launch-bperp.bat
-   • Change "8080" to desired port number (lines with npx serve command)
+   • Edit launch-bperp-gui.ps1
+   • Change "8080" to desired port number (line with npx serve command)
    • Update browser URL accordingly
 
 Server Options:

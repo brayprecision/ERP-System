@@ -23,7 +23,10 @@ If Not objFSO.FileExists(strLauncherPath) Then
     WScript.Quit 1
 End If
 
-' Fallback icon paths if ICO doesn't exist
+' Fallback icon paths if bperp-icon.ico doesn't exist
+If Not objFSO.FileExists(strIconPath) Then
+    strIconPath = strCurrentDir & "\frontend\assets\modern-logo.png"
+End If
 If Not objFSO.FileExists(strIconPath) Then
     strIconPath = strCurrentDir & "\context files\shop_logo_app_version.jpg"
 End If

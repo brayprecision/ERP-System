@@ -181,25 +181,30 @@ function renderInventoryTable(items, type) {
                 </div>
             </div>
             
-            <!-- Filters -->
-            <div class="flex flex-wrap gap-3 mb-4 p-3 rounded-lg" style="background: var(--color-dark-bg); border: 1px solid var(--color-border);">
-                <input type="text" id="inventorySearch" placeholder="Search..." 
-                    value="${inventoryState.filters.search}"
-                    class="form-input text-sm flex-1 min-w-[200px]">
-                <select id="inventoryStatusFilter" class="form-input text-sm">
+            <!-- Filters - Single Line -->
+            <div class="flex items-center gap-2 mb-4 p-2 rounded-lg" style="background: var(--color-dark-bg); border: 1px solid var(--color-border);">
+                <div class="flex items-center gap-1 flex-1 min-w-0">
+                    <i class="fa-solid fa-search text-gray-400 text-sm"></i>
+                    <input type="text" id="inventorySearch" placeholder="Search items..."
+                        value="${inventoryState.filters.search}"
+                        class="bg-transparent border-0 outline-none text-sm text-white placeholder-gray-400 flex-1 min-w-0">
+                </div>
+                <select id="inventoryStatusFilter" class="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 min-w-[100px]">
                     <option value="">All Status</option>
                     <option value="Critical" ${inventoryState.filters.status === 'Critical' ? 'selected' : ''}>Critical</option>
                     <option value="Low Stock" ${inventoryState.filters.status === 'Low Stock' ? 'selected' : ''}>Low Stock</option>
                     <option value="Monitor" ${inventoryState.filters.status === 'Monitor' ? 'selected' : ''}>Monitor</option>
                     <option value="Good" ${inventoryState.filters.status === 'Good' ? 'selected' : ''}>Good</option>
                 </select>
-                <select id="inventorySortBy" class="form-input text-sm">
-                    <option value="name" ${inventoryState.filters.sortBy === 'name' ? 'selected' : ''}>Sort by Name</option>
-                    <option value="quantityOnHand" ${inventoryState.filters.sortBy === 'quantityOnHand' ? 'selected' : ''}>Sort by Quantity</option>
-                    <option value="unitPrice" ${inventoryState.filters.sortBy === 'unitPrice' ? 'selected' : ''}>Sort by Price</option>
-                    <option value="supplier" ${inventoryState.filters.sortBy === 'supplier' ? 'selected' : ''}>Sort by Supplier</option>
+                <select id="inventorySortBy" class="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 min-w-[120px]">
+                    <option value="name" ${inventoryState.filters.sortBy === 'name' ? 'selected' : ''}>Sort: Name</option>
+                    <option value="quantityOnHand" ${inventoryState.filters.sortBy === 'quantityOnHand' ? 'selected' : ''}>Sort: Quantity</option>
+                    <option value="unitPrice" ${inventoryState.filters.sortBy === 'unitPrice' ? 'selected' : ''}>Sort: Price</option>
+                    <option value="supplier" ${inventoryState.filters.sortBy === 'supplier' ? 'selected' : ''}>Sort: Supplier</option>
                 </select>
-                <button data-action="clear-inventory-filters" class="text-sm hover:underline" style="color: var(--color-accent-primary);">Clear</button>
+                <button data-action="clear-inventory-filters" class="text-xs px-2 py-1 rounded hover:bg-gray-600 transition-colors" style="color: var(--color-accent-primary);">
+                    <i class="fa-solid fa-times mr-1"></i>Clear
+                </button>
             </div>
             
             <!-- Table -->
@@ -536,21 +541,18 @@ export function deleteInventoryItem(type, id, name) {
     });
 }
 
-export function exportInventory(type) {
-    const keyMap = {
-        'materials': { key: STORAGE_KEYS.MATERIALS, fn: getMaterials },
-        'tooling': { key: STORAGE_KEYS.TOOLING, fn: getTooling },
-        'miscellaneous': { key: STORAGE_KEYS.MISC_ITEMS, fn: getMiscItems },
-        'misc': { key: STORAGE_KEYS.MISC_ITEMS, fn: getMiscItems }
+export async function exportInventory(type) {
+    const endpointMap = {
+        'materials': '/export/inventory/materials',
+        'tooling': '/export/inventory/tooling',
+        'miscellaneous': '/export/inventory/misc',
+        'misc': '/export/inventory/misc'
     };
-    
-    const config = keyMap[type];
-    if (!config) return;
-    
-    const items = config.fn();
-    const headers = ['name', 'partNumber', 'category', 'quantityOnHand', 'reorderPoint', 'supplier', 'unitPrice'];
-    exportToCSV(items, `${type}_inventory`, headers);
-    showToast('Export complete', 'success');
+
+    const endpoint = endpointMap[type];
+    if (!endpoint) return;
+
+    await exportToCSV(null, `${type}_inventory`, null, endpoint);
 }
 
 export function clearFilters() {
@@ -561,6 +563,16 @@ export function clearFilters() {
         sortDir: 'asc'
     };
     searchCache.clear();
+
+    // Reset form fields
+    const searchInput = document.getElementById('inventorySearch');
+    const statusFilter = document.getElementById('inventoryStatusFilter');
+    const sortFilter = document.getElementById('inventorySortBy');
+
+    if (searchInput) searchInput.value = '';
+    if (statusFilter) statusFilter.value = '';
+    if (sortFilter) sortFilter.value = 'name';
+
     refreshCurrentView();
 }
 

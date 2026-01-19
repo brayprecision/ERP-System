@@ -11,6 +11,9 @@ const CONFIG = {
     AUTO_REFRESH_INTERVAL: 30000 // 30 seconds
 };
 
+// Import backup/restore functions from common
+import { createBackup, restoreFromBackup } from './modules/common.js';
+
 // Expose API_BASE globally for modules
 window.API_BASE = CONFIG.API_BASE;
 
@@ -124,13 +127,174 @@ const routes = {
     'tasks-postprocessing': () => modules.tasks?.loadPostProcessingTasks(),
     'tasks-inspection': () => modules.tasks?.loadInspectionTasks(),
     'tasks-shipping': () => modules.tasks?.loadShippingReceivingTasks(),
+    'tasks-completed': () => modules.tasks?.loadCompletedWorkTasks(),
     'tasks-maintenance': () => modules.maintenance?.loadMaintenanceTasks(),
     
     // Settings
     'settings-preferences': () => ThemeManager.showModal(),
     'settings-users': () => showSettingsPlaceholder('Users & Permissions'),
-    'settings-backup': () => showSettingsPlaceholder('Backup & Restore')
+    'settings-backup': () => loadBackupRestoreView()
 };
+
+function loadBackupRestoreView() {
+    const container = document.getElementById('dashboardContent');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="col-span-3 space-y-6">
+            <div class="card p-6">
+                <div class="flex items-center mb-6">
+                    <i class="fa-solid fa-database text-3xl mr-4" style="color: var(--color-accent-primary);"></i>
+                    <div>
+                        <h2 class="text-xl font-semibold text-white">Backup & Restore</h2>
+                        <p class="text-gray-400 text-sm">Manage your ERP data backups</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Backup Section -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-medium text-white flex items-center">
+                            <i class="fa-solid fa-download mr-2" style="color: var(--color-accent-primary);"></i>
+                            Create Backup
+                        </h3>
+                        <p class="text-gray-400 text-sm">
+                            Download a complete backup of all your ERP data including customers, quotes, work orders, inventory, and tasks.
+                        </p>
+                        <button data-action="create-backup" class="btn btn-primary w-full">
+                            <i class="fa-solid fa-download mr-2"></i>Create Backup
+                        </button>
+                        <div class="text-xs text-gray-500">
+                            <i class="fa-solid fa-info-circle mr-1"></i>
+                            Backups are saved as JSON files and include a timestamp.
+                        </div>
+                    </div>
+
+                    <!-- Restore Section -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-medium text-white flex items-center">
+                            <i class="fa-solid fa-upload mr-2" style="color: var(--color-accent-primary);"></i>
+                            Restore from Backup
+                        </h3>
+                        <p class="text-gray-400 text-sm">
+                            Restore your ERP data from a previously created backup file. This will replace all current data.
+                        </p>
+                        <div class="space-y-3">
+                            <input type="file" id="backupFileInput" accept=".json" class="hidden">
+                            <button data-action="select-backup-file" class="btn btn-secondary w-full">
+                                <i class="fa-solid fa-file-import mr-2"></i>Select Backup File
+                            </button>
+                            <button data-action="restore-backup" class="btn btn-primary w-full" disabled id="restoreBtn">
+                                <i class="fa-solid fa-upload mr-2"></i>Restore Data
+                            </button>
+                        </div>
+                        <div class="text-xs text-red-400">
+                            <i class="fa-solid fa-exclamation-triangle mr-1"></i>
+                            Warning: This action cannot be undone. Make sure to backup current data first.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Backup History/Info -->
+                <div class="mt-8 pt-6 border-t border-gray-700">
+                    <h4 class="text-sm font-medium text-gray-400 mb-3">Backup Information</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div class="bg-gray-800/50 p-3 rounded">
+                            <div class="text-gray-400">Data Types Backed Up</div>
+                            <div class="text-white font-medium">Customers, Quotes, Work Orders, Inventory, Tasks</div>
+                        </div>
+                        <div class="bg-gray-800/50 p-3 rounded">
+                            <div class="text-gray-400">File Format</div>
+                            <div class="text-white font-medium">JSON</div>
+                        </div>
+                        <div class="bg-gray-800/50 p-3 rounded">
+                            <div class="text-gray-400">Last Backup</div>
+                            <div class="text-white font-medium" id="lastBackupDate">Never</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    setupBackupRestoreHandlers();
+}
+
+function setupBackupRestoreHandlers() {
+    // Create backup
+    document.addEventListener('click', function backupHandler(e) {
+        if (e.target.closest('[data-action="create-backup"]')) {
+            if (window.BPERP?.common?.createBackup) {
+                window.BPERP.common.createBackup();
+                updateLastBackupDate();
+            } else {
+                console.error('Backup function not available');
+                modules.common?.showToast('Backup function not available', 'error');
+            }
+            backupHandler = null; // Remove listener
+        }
+    });
+
+    // Select backup file
+    document.addEventListener('click', function selectFileHandler(e) {
+        if (e.target.closest('[data-action="select-backup-file"]')) {
+            const fileInput = document.getElementById('backupFileInput');
+            if (fileInput) {
+                fileInput.click();
+            }
+            selectFileHandler = null; // Remove listener
+        }
+    });
+
+    // Handle file selection
+    const fileInput = document.getElementById('backupFileInput');
+    const restoreBtn = document.getElementById('restoreBtn');
+
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                restoreBtn.disabled = false;
+                restoreBtn.innerHTML = `<i class="fa-solid fa-upload mr-2"></i>Restore from "${file.name}"`;
+            } else {
+                restoreBtn.disabled = true;
+                restoreBtn.innerHTML = `<i class="fa-solid fa-upload mr-2"></i>Restore Data`;
+            }
+        });
+    }
+
+    // Restore backup
+    document.addEventListener('click', function restoreHandler(e) {
+        if (e.target.closest('[data-action="restore-backup"]')) {
+            const fileInput = document.getElementById('backupFileInput');
+            if (fileInput && fileInput.files[0]) {
+                if (window.BPERP?.common?.restoreFromBackup) {
+                    window.BPERP.common.restoreFromBackup(fileInput)
+                        .then(() => {
+                            // Reset file input and button
+                            fileInput.value = '';
+                            restoreBtn.disabled = true;
+                            restoreBtn.innerHTML = `<i class="fa-solid fa-upload mr-2"></i>Restore Data`;
+                        })
+                        .catch(() => {
+                            // Error already handled in restoreFromBackup
+                        });
+                } else {
+                    console.error('Restore function not available');
+                    modules.common?.showToast('Restore function not available', 'error');
+                }
+            }
+            restoreHandler = null; // Remove listener
+        }
+    });
+}
+
+function updateLastBackupDate() {
+    const lastBackupEl = document.getElementById('lastBackupDate');
+    if (lastBackupEl) {
+        lastBackupEl.textContent = new Date().toLocaleString();
+    }
+}
 
 function showSettingsPlaceholder(title) {
     const container = document.getElementById('dashboardContent');
@@ -230,6 +394,7 @@ function updatePageTitle(route) {
         'tasks-postprocessing': 'Post Processing Tasks',
         'tasks-inspection': 'Inspection Tasks',
         'tasks-shipping': 'Shipping & Receiving',
+        'tasks-completed': 'Completed Work',
         'tasks-maintenance': 'Machine Maintenance',
         'settings-users': 'Users & Permissions',
         'settings-backup': 'Backup & Restore',
@@ -625,7 +790,11 @@ async function initializeApp() {
     try {
         // Expose modules globally
         window.BPERP = {
-            common: modules.common,
+            common: {
+                ...modules.common,
+                createBackup: createBackup,
+                restoreFromBackup: restoreFromBackup
+            },
             storage: modules.storage,
             inventory: modules.inventory,
             sales: modules.sales,

@@ -43,8 +43,8 @@ for /f "tokens=*" %%i in ('node --version 2^>nul') do set NODE_VERSION=%%i
 echo [SUCCESS] Node.js %NODE_VERSION% detected
 
 :: Check if required files exist
-if not exist "launch-bperp.bat" (
-    echo [ERROR] launch-bperp.bat not found.
+if not exist "launch-bperp-gui.bat" (
+    echo [ERROR] launch-bperp-gui.bat not found.
     echo [INFO] Please ensure all installation files are present.
     pause
     exit /b 1
@@ -148,7 +148,7 @@ echo  ║                                                                       
 echo  ║    You can now launch BPERP using:                                      ║
 echo  ║    • Desktop shortcut: "BPERP Dashboard"                                ║
 echo  ║    • Start Menu: BPERP Dashboard                                        ║
-echo  ║    • Direct launch: double-click launch-bperp.bat                       ║
+echo  ║    • Direct launch: double-click launch-bperp-gui.bat                       ║
 echo  ║                                                                          ║
 echo  ║    System Requirements Met:                                              ║
 echo  ║    ✓ Node.js %NODE_VERSION% installed                                              ║
@@ -168,7 +168,7 @@ echo.
 set /p launch_now="Would you like to launch BPERP Dashboard now? (y/n): "
 if /i "!launch_now!"=="y" (
     echo [INFO] Launching BPERP Dashboard...
-    start "" "launch-bperp.bat"
+    start "" "launch-bperp-gui.bat"
 ) else (
     echo [INFO] You can launch BPERP Dashboard anytime from your desktop or start menu.
 )
