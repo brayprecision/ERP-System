@@ -1028,6 +1028,41 @@ table.table {
     margin: 0.5rem 0;
 }
 
+/* ==================== SEARCH HIGHLIGHT ==================== */
+.search-highlight {
+    animation: search-highlight-pulse 1.5s ease-in-out 2;
+    box-shadow: 0 0 20px var(--color-accent-primary), inset 0 0 30px var(--color-glow) !important;
+    border-color: var(--color-accent-primary) !important;
+    position: relative;
+    z-index: 10;
+}
+
+@keyframes search-highlight-pulse {
+    0%, 100% {
+        box-shadow: 0 0 10px var(--color-accent-primary), inset 0 0 15px var(--color-glow);
+    }
+    50% {
+        box-shadow: 0 0 30px var(--color-accent-primary), inset 0 0 40px var(--color-glow);
+    }
+}
+
+/* Highlight for table rows */
+tr.search-highlight {
+    background: var(--color-card-bg-lighter) !important;
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: -2px;
+}
+
+tr.search-highlight td {
+    color: var(--color-text-primary) !important;
+}
+
+/* Highlight for cards */
+.card.search-highlight,
+div.search-highlight {
+    border: 2px solid var(--color-accent-primary) !important;
+}
+
 /* ==================== UTILITIES ==================== */
 .text-accent {
     color: var(--color-accent-green);

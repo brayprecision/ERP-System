@@ -392,7 +392,7 @@ function renderCustomersView(customers) {
         const isExpanded = salesState.expandedCustomers.has(customer.id);
         
         return `
-            <tr class="border-b border-gray-700 hover:bg-gray-800 cursor-pointer" data-action="toggle-customer" data-id="${customer.id}">
+            <tr class="border-b border-gray-700 hover:bg-gray-800 cursor-pointer" data-action="toggle-customer" data-id="${customer.id}" data-item-id="${customer.id}">
                 <td class="px-4 py-3">
                     <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} mr-2 text-gray-500"></i>
                     <span class="font-medium text-white">${customer.name}</span>
@@ -525,7 +525,7 @@ function renderQuotesView(quotes) {
     const sentQuotes = quotes.filter(q => q.sentAt || q.status === 'Won' || q.status === 'Lost');
     
     const renderQuoteRow = (quote) => `
-        <tr class="border-b border-gray-700 hover:bg-gray-800">
+        <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${quote.id}">
             <td class="px-4 py-3 font-medium text-white">${quote.quoteNumber}</td>
             <td class="px-4 py-3 text-gray-300">${quote.customerName}</td>
             <td class="px-4 py-3 text-gray-300">${quote.partNumber}</td>
@@ -651,7 +651,7 @@ function renderWIPView(workOrders) {
         }
         
         return `
-            <div class="card mb-4 border-l-4 border-l-${urgencyColor}-500" style="background: var(--color-card-bg);">
+            <div class="card mb-4 border-l-4 border-l-${urgencyColor}-500" style="background: var(--color-card-bg);" data-item-id="${wo.id}">
                 <!-- Work Order Header -->
                 <div class="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-800/30 transition-colors" 
                      data-action="toggle-wo" data-id="${wo.id}">

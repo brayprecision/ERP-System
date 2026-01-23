@@ -3,7 +3,7 @@
  * Global search functionality across all tables
  */
 
-import { showToast, DOMCache, formatDate, createModal } from './common.js';
+import { showToast, DOMCache, formatDate, createModal, highlightItem } from './common.js';
 import { storage, STORAGE_KEYS } from './storage.js';
 
 // We'll get data from modules dynamically to ensure demo data is initialized
@@ -417,7 +417,7 @@ export function goToMaterial(materialId) {
     console.log('BPERP: Navigating to material:', materialId);
     window.BPERP?.common?.closeModal('searchResultsModal');
     window.BPERP?.navigate?.('inventory-materials');
-    // TODO: Scroll to and highlight the material in the table
+    highlightItem(materialId);
     showToast('Material located in Materials Inventory', 'success');
 }
 
@@ -425,6 +425,7 @@ export function goToTool(toolId) {
     console.log('BPERP: Navigating to tool:', toolId);
     window.BPERP?.common?.closeModal('searchResultsModal');
     window.BPERP?.navigate?.('inventory-tooling');
+    highlightItem(toolId);
     showToast('Tool located in Tooling Inventory', 'success');
 }
 
@@ -432,6 +433,7 @@ export function goToMisc(miscId) {
     console.log('BPERP: Navigating to misc item:', miscId);
     window.BPERP?.common?.closeModal('searchResultsModal');
     window.BPERP?.navigate?.('inventory-misc');
+    highlightItem(miscId);
     showToast('Item located in Miscellaneous Inventory', 'success');
 }
 
@@ -439,6 +441,7 @@ export function goToCustomer(customerId) {
     console.log('BPERP: Navigating to customer:', customerId);
     window.BPERP?.common?.closeModal('searchResultsModal');
     window.BPERP?.navigate?.('sales-customers');
+    highlightItem(customerId);
     showToast('Customer located in Customers view', 'success');
 }
 
@@ -446,6 +449,7 @@ export function goToQuote(quoteId) {
     console.log('BPERP: Navigating to quote:', quoteId);
     window.BPERP?.common?.closeModal('searchResultsModal');
     window.BPERP?.navigate?.('sales-quotes');
+    highlightItem(quoteId);
     showToast('Quote located in Quotes view', 'success');
 }
 
@@ -453,6 +457,7 @@ export function goToWorkOrder(woId) {
     console.log('BPERP: Navigating to work order:', woId);
     window.BPERP?.common?.closeModal('searchResultsModal');
     window.BPERP?.navigate?.('sales-wip');
+    highlightItem(woId);
     showToast('Work Order located in Work In Progress view', 'success');
 }
 

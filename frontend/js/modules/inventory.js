@@ -226,7 +226,7 @@ function renderInventoryTable(items, type) {
                         ${filtered.length > 0 ? filtered.map(item => {
                             const urgency = getUrgencyStatus(item);
                             return `
-                                <tr>
+                                <tr data-item-id="${item.id}">
                                     <td class="px-4 py-3">
                                         <div class="font-medium text-white">${item.name}</div>
                                         <div class="text-xs" style="color: var(--color-text-muted);">${item.partNumber || '-'}</div>

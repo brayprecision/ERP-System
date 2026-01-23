@@ -417,6 +417,24 @@ function loadDashboard() {
         console.warn('Could not get work orders:', e);
     }
     
+    // Get inventory data to count low stock items
+    let lowStockCount = 0;
+    try {
+        const materials = modules.inventory?.getMaterials() || [];
+        const tools = modules.inventory?.getTooling() || [];
+        const misc = modules.inventory?.getMiscItems() || [];
+        
+        const countLowStock = (items) => items.filter(item => {
+            const qty = item.quantityOnHand ?? item.qtyOnHand ?? 0;
+            const reorderPoint = item.reorderPoint ?? item.minimumQty ?? 0;
+            return qty <= reorderPoint && reorderPoint > 0;
+        }).length;
+        
+        lowStockCount = countLowStock(materials) + countLowStock(tools) + countLowStock(misc);
+    } catch (e) {
+        console.warn('Could not get inventory data:', e);
+    }
+    
     const activeWOs = workOrders.filter(wo => wo.completionPercentage < 100);
     const overdueCount = activeWOs.filter(wo => {
         try {
@@ -438,7 +456,7 @@ function loadDashboard() {
             <h2 class="text-2xl font-bold text-white mb-6">Dashboard</h2>
             
             <!-- Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <div class="card p-6 cursor-pointer" data-route="workcenter-wip">
                     <div class="flex items-center justify-between">
                         <div>
@@ -473,6 +491,15 @@ function loadDashboard() {
                             <p class="text-3xl font-bold" style="color: var(--color-success);">${workOrders.filter(wo => wo.completionPercentage === 100).length}</p>
                         </div>
                         <i class="fa-solid fa-check-circle text-4xl opacity-50" style="color: var(--color-success);"></i>
+                    </div>
+                </div>
+                <div class="card p-6 cursor-pointer" data-route="inventory-materials">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Low Stock</p>
+                            <p class="text-3xl font-bold" style="color: ${lowStockCount > 0 ? 'var(--color-warning)' : 'var(--color-success)'};">${lowStockCount}</p>
+                        </div>
+                        <i class="fa-solid fa-box-open text-4xl opacity-50" style="color: ${lowStockCount > 0 ? 'var(--color-warning)' : 'var(--color-success)'};"></i>
                     </div>
                 </div>
             </div>

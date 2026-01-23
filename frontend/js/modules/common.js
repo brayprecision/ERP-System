@@ -358,6 +358,30 @@ export function isEmpty(value) {
            (typeof value === 'object' && Object.keys(value).length === 0);
 }
 
+// ==================== HIGHLIGHT UTILITIES ====================
+export function highlightItem(itemId, type = 'row') {
+    // Small delay to ensure DOM is rendered after navigation
+    setTimeout(() => {
+        // Find the element with matching data-item-id
+        const element = document.querySelector(`[data-item-id="${itemId}"]`);
+        
+        if (element) {
+            // Scroll the element into view
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Add highlight class
+            element.classList.add('search-highlight');
+            
+            // Remove highlight after animation completes
+            setTimeout(() => {
+                element.classList.remove('search-highlight');
+            }, 3000);
+        } else {
+            console.warn('BPERP: Could not find element to highlight:', itemId);
+        }
+    }, 150);
+}
+
 // ==================== FORM UTILITIES ====================
 export function getFormData(formElement) {
     const formData = new FormData(formElement);
