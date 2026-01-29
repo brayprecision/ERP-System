@@ -4,6 +4,19 @@
 const rateLimit = require('express-rate-limit');
 
 /**
+ * Helper to normalize IP addresses (handles IPv6 mapped IPv4)
+ * @param {string} ip - IP address from request
+ * @returns {string} Normalized IP
+ */
+function normalizeIp(ip) {
+    // Handle IPv6-mapped IPv4 addresses (::ffff:192.168.1.1)
+    if (ip && ip.startsWith('::ffff:')) {
+        return ip.substring(7);
+    }
+    return ip || 'unknown';
+}
+
+/**
  * Rate limiter for login attempts
  * Stricter limits to prevent brute force attacks
  */
@@ -21,8 +34,11 @@ const loginLimiter = rateLimit({
     // Use IP + username as key to prevent distributed attacks on single account
     keyGenerator: (req) => {
         const username = req.body?.username || 'unknown';
-        return `${req.ip}-${username}`;
-    }
+        const ip = normalizeIp(req.ip);
+        return `${ip}-${username}`;
+    },
+    // Disable all validation to avoid IPv6 warnings
+    validate: false
 });
 
 /**

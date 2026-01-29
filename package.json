@@ -1,0 +1,171 @@
+{
+  "name": "bperp",
+  "productName": "BPERP - Manufacturing ERP",
+  "version": "1.0.0-beta.1",
+  "description": "Manufacturing ERP for small machine shops - Inventory, Quotes, Work Orders, Tasks, and Maintenance",
+  "main": "electron/main.js",
+  "author": {
+    "name": "Bray Precision LLC",
+    "email": "support@brayprecision.com"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "homepage": "https://brayprecision.com/bperp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brayprecision/bperp.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder -mwl",
+    "pack": "electron-builder --dir",
+    "postinstall": "electron-builder install-app-deps",
+    "clean": "rm -rf dist dist-installers",
+    "backend:install": "cd backend && npm install",
+    "backend:migrate": "cd backend && npm run migrate",
+    "backend:test": "cd backend && npm test",
+    "setup": "npm install && npm run backend:install"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.brayprecision.bperp",
+    "productName": "BPERP",
+    "copyright": "Copyright © 2026 Bray Precision LLC",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist-installers",
+      "buildResources": "electron/assets"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/**/*",
+      "!backend/node_modules",
+      "!backend/tests/**/*",
+      "!backend/dist/**/*",
+      "!backend/.env*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/.bin",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "database/",
+        "to": "database/",
+        "filter": ["**/*.sql"]
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "backend/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "electron/assets/icon.ico",
+      "publisherName": "Bray Precision LLC"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "electron/assets/icon.ico",
+      "uninstallerIcon": "electron/assets/icon.ico",
+      "installerHeaderIcon": "electron/assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BPERP",
+      "menuCategory": "Business",
+      "perMachine": false,
+      "allowElevation": true,
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "electron/assets/icon.icns",
+      "category": "public.app-category.business",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "darkModeSupport": true
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "iconSize": 100,
+      "title": "${productName} ${version}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        },
+        {
+          "target": "rpm",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "electron/assets",
+      "category": "Office",
+      "maintainer": "Bray Precision LLC <support@brayprecision.com>",
+      "vendor": "Bray Precision LLC",
+      "synopsis": "Manufacturing ERP for small machine shops",
+      "description": "BPERP is a complete ERP solution for machine shops, featuring inventory management, quote/work order tracking, task management, and maintenance scheduling.",
+      "desktop": {
+        "StartupNotify": "true",
+        "Terminal": "false",
+        "Type": "Application",
+        "Categories": "Office;Database;ProjectManagement;"
+      }
+    },
+    "deb": {
+      "depends": ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0"],
+      "recommends": ["postgresql", "postgresql-contrib"],
+      "priority": "optional",
+      "compression": "xz"
+    },
+    "rpm": {
+      "depends": ["gtk3", "libnotify", "nss", "libXScrnSaver", "libXtst", "xdg-utils", "at-spi2-core", "libuuid", "libsecret"],
+      "compression": "xz"
+    },
+    "appImage": {
+      "license": "LICENSE.txt"
+    }
+  }
+}

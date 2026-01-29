@@ -4,6 +4,8 @@ package-lock.json
 
 # Build output
 backend/dist/
+dist/
+dist-installers/
 
 # Environment files (contain secrets)
 .env

@@ -431,6 +431,15 @@ app.post('/api/backup/restore', async (req, res) => {
 // Serve export files
 app.use('/exports', express.static(path.join(__dirname, '..', 'exports')));
 
+// Serve frontend static files
+const frontendPath = path.join(__dirname, '..', 'frontend');
+app.use(express.static(frontendPath));
+
+// Serve index.html for the root path and any non-API routes (SPA support)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+});
+
 // Helper function to convert data to CSV
 function convertToCSV(data, headers) {
     if (!data || data.length === 0) return '';

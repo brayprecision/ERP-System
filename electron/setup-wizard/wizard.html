@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BPERP Setup</title>
+    <link rel="stylesheet" href="wizard.css">
+</head>
+<body>
+    <div class="wizard-container">
+        <!-- Header -->
+        <div class="wizard-header">
+            <div class="logo">⚙</div>
+            <h1>BPERP Setup</h1>
+            <p>Let's get your manufacturing ERP ready</p>
+        </div>
+        
+        <!-- Progress Indicator -->
+        <div class="progress-bar">
+            <div class="progress-steps">
+                <div class="step active" data-step="1">
+                    <div class="step-circle">1</div>
+                    <span>Welcome</span>
+                </div>
+                <div class="step" data-step="2">
+                    <div class="step-circle">2</div>
+                    <span>Database</span>
+                </div>
+                <div class="step" data-step="3">
+                    <div class="step-circle">3</div>
+                    <span>Admin</span>
+                </div>
+                <div class="step" data-step="4">
+                    <div class="step-circle">4</div>
+                    <span>Finish</span>
+                </div>
+            </div>
+            <div class="progress-line">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+        </div>
+        
+        <!-- Step Content -->
+        <div class="wizard-content">
+            <!-- Step 1: Welcome -->
+            <div class="step-content active" id="step-1">
+                <h2>Welcome to BPERP</h2>
+                <p class="description">
+                    BPERP is a complete manufacturing ERP solution designed for small machine shops.
+                    This wizard will help you set up your database and create your admin account.
+                </p>
+                
+                <div class="features-grid">
+                    <div class="feature">
+                        <span class="feature-icon">📦</span>
+                        <h3>Inventory Management</h3>
+                        <p>Track materials, tooling, and supplies</p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">📋</span>
+                        <h3>Quotes & Work Orders</h3>
+                        <p>Manage the full sales workflow</p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">✅</span>
+                        <h3>Task Management</h3>
+                        <p>Track jobs through every stage</p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">🔧</span>
+                        <h3>Maintenance</h3>
+                        <p>Schedule and track machine maintenance</p>
+                    </div>
+                </div>
+                
+                <div class="info-box">
+                    <strong>What you'll need:</strong>
+                    <ul>
+                        <li>A PostgreSQL database (we can set one up for you)</li>
+                        <li>An admin username and password</li>
+                        <li>About 2 minutes of your time</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Step 2: Database -->
+            <div class="step-content" id="step-2">
+                <h2>Database Configuration</h2>
+                <p class="description">Choose how you want to store your data.</p>
+                
+                <div class="db-options">
+                    <label class="db-option selected">
+                        <input type="radio" name="dbType" value="embedded" checked>
+                        <div class="option-content">
+                            <div class="option-header">
+                                <span class="option-icon">🗄️</span>
+                                <div>
+                                    <strong>Use Built-in Database</strong>
+                                    <span class="badge recommended">Recommended</span>
+                                </div>
+                            </div>
+                            <p>We'll set up a local PostgreSQL database automatically. Best for single-computer use.</p>
+                        </div>
+                    </label>
+                    
+                    <label class="db-option">
+                        <input type="radio" name="dbType" value="external">
+                        <div class="option-content">
+                            <div class="option-header">
+                                <span class="option-icon">🌐</span>
+                                <strong>Connect to Existing Database</strong>
+                            </div>
+                            <p>Use your own PostgreSQL server. Best for network installations or existing infrastructure.</p>
+                        </div>
+                    </label>
+                    
+                    <label class="db-option">
+                        <input type="radio" name="dbType" value="sqlite">
+                        <div class="option-content">
+                            <div class="option-header">
+                                <span class="option-icon">📁</span>
+                                <strong>Evaluation Mode (SQLite)</strong>
+                            </div>
+                            <p>Simple file-based storage. For testing only - limited to single user.</p>
+                        </div>
+                    </label>
+                </div>
+                
+                <!-- External DB Config (hidden by default) -->
+                <div class="db-config hidden" id="external-config">
+                    <h3>Database Connection</h3>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="dbHost">Host</label>
+                            <input type="text" id="dbHost" value="localhost" placeholder="localhost">
+                        </div>
+                        <div class="form-group">
+                            <label for="dbPort">Port</label>
+                            <input type="number" id="dbPort" value="5432" placeholder="5432">
+                        </div>
+                        <div class="form-group">
+                            <label for="dbName">Database Name</label>
+                            <input type="text" id="dbName" value="bperp" placeholder="bperp">
+                        </div>
+                        <div class="form-group">
+                            <label for="dbUser">Username</label>
+                            <input type="text" id="dbUser" value="postgres" placeholder="postgres">
+                        </div>
+                        <div class="form-group full-width">
+                            <label for="dbPassword">Password</label>
+                            <input type="password" id="dbPassword" placeholder="Enter password">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="testConnection">
+                        <span class="btn-icon">🔌</span> Test Connection
+                    </button>
+                    <div class="connection-status" id="connectionStatus"></div>
+                </div>
+            </div>
+            
+            <!-- Step 3: Admin User -->
+            <div class="step-content" id="step-3">
+                <h2>Create Admin Account</h2>
+                <p class="description">Set up your administrator account to manage BPERP.</p>
+                
+                <div class="form-section">
+                    <div class="form-group">
+                        <label for="adminUsername">Username *</label>
+                        <input type="text" id="adminUsername" placeholder="admin" required pattern="[a-zA-Z0-9_]+">
+                        <span class="hint">Letters, numbers, and underscores only</span>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="adminName">Display Name *</label>
+                        <input type="text" id="adminName" placeholder="John Smith" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="adminEmail">Email (optional)</label>
+                        <input type="email" id="adminEmail" placeholder="admin@yourshop.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="adminPassword">Password *</label>
+                        <input type="password" id="adminPassword" placeholder="Enter password" required minlength="8">
+                        <div class="password-strength" id="passwordStrength">
+                            <div class="strength-bar"></div>
+                            <span class="strength-text">Enter a password</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="adminPasswordConfirm">Confirm Password *</label>
+                        <input type="password" id="adminPasswordConfirm" placeholder="Confirm password" required>
+                        <span class="hint" id="passwordMatch"></span>
+                    </div>
+                </div>
+                
+                <div class="info-box warning">
+                    <strong>Important:</strong> Save your password somewhere safe. You'll need it to log in.
+                </div>
+            </div>
+            
+            <!-- Step 4: Finish -->
+            <div class="step-content" id="step-4">
+                <h2>Setup Complete!</h2>
+                <p class="description">Your BPERP installation is ready to go.</p>
+                
+                <div class="summary-card">
+                    <h3>Configuration Summary</h3>
+                    <div class="summary-item">
+                        <span class="label">Database:</span>
+                        <span class="value" id="summaryDb">Built-in PostgreSQL</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">Admin User:</span>
+                        <span class="value" id="summaryAdmin">admin</span>
+                    </div>
+                </div>
+                
+                <div class="next-steps">
+                    <h3>What's Next?</h3>
+                    <ul>
+                        <li>Log in with your admin account</li>
+                        <li>Set up your shop branding (name & logo)</li>
+                        <li>Import existing data from spreadsheets</li>
+                        <li>Create additional users</li>
+                    </ul>
+                </div>
+                
+                <div class="launch-section">
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="createShortcut" checked>
+                            Create desktop shortcut
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <div class="wizard-footer">
+            <button class="btn btn-secondary" id="btnBack" disabled>
+                ← Back
+            </button>
+            <div class="footer-spacer"></div>
+            <button class="btn btn-primary" id="btnNext">
+                Next →
+            </button>
+        </div>
+    </div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p id="loadingText">Setting up your database...</p>
+    </div>
+    
+    <script src="wizard.js"></script>
+</body>
+</html>
