@@ -50,19 +50,23 @@
             <nav class="sidebar-nav flex-1 px-4 py-4 space-y-2 overflow-y-auto">
                 
                 <!-- Dashboard -->
-                <button class="sidebar-item w-full flex items-center gap-3 py-3 px-4 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors" data-route="dashboard">
-                    <i class="fa-solid fa-gauge-high w-6 text-accentGreen"></i>
-                    <span class="text-sm font-medium">Dashboard</span>
-                </button>
+                <div data-permission-category="dashboard">
+                    <button class="sidebar-item w-full flex items-center gap-3 py-3 px-4 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors" data-route="dashboard">
+                        <i class="fa-solid fa-gauge-high w-6 text-accentGreen"></i>
+                        <span class="text-sm font-medium">Dashboard</span>
+                    </button>
+                </div>
                 
                 <!-- Work In Progress (Standalone Button) -->
-                <button class="sidebar-item w-full flex items-center gap-3 py-3 px-4 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors" data-route="workcenter-wip">
-                    <i class="fa-solid fa-clipboard-list w-6 text-yellow-400"></i>
-                    <span class="text-sm font-medium">Work In Progress</span>
-                </button>
+                <div data-permission-category="workcenter">
+                    <button class="sidebar-item w-full flex items-center gap-3 py-3 px-4 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors" data-route="workcenter-wip">
+                        <i class="fa-solid fa-clipboard-list w-6 text-yellow-400"></i>
+                        <span class="text-sm font-medium">Work In Progress</span>
+                    </button>
+                </div>
                 
                 <!-- Workcenter Dropdown (Workflow Steps) -->
-                <div class="sidebar-dropdown">
+                <div class="sidebar-dropdown" data-permission-category="workcenter">
                     <button class="sidebar-dropdown-trigger w-full flex items-center justify-between py-3 px-4 text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" data-dropdown="workcenter">
                         <div class="flex items-center gap-3">
                             <i class="fa-solid fa-industry w-6 text-orange-400"></i>
@@ -107,7 +111,7 @@
                 </div>
                 
                 <!-- Inventory Dropdown -->
-                <div class="sidebar-dropdown">
+                <div class="sidebar-dropdown" data-permission-category="inventory">
                     <button class="sidebar-dropdown-trigger w-full flex items-center justify-between py-3 px-4 text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" data-dropdown="inventory">
                         <div class="flex items-center gap-3">
                             <i class="fa-solid fa-box w-6 text-blue-400"></i>
@@ -132,7 +136,7 @@
                 </div>
                 
                 <!-- Sales Dropdown -->
-                <div class="sidebar-dropdown">
+                <div class="sidebar-dropdown" data-permission-category="sales">
                     <button class="sidebar-dropdown-trigger w-full flex items-center justify-between py-3 px-4 text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" data-dropdown="sales">
                         <div class="flex items-center gap-3">
                             <i class="fa-solid fa-file-invoice-dollar w-6 text-green-400"></i>
@@ -161,7 +165,7 @@
                 </div>
                 
                 <!-- Tasks Dropdown -->
-                <div class="sidebar-dropdown">
+                <div class="sidebar-dropdown" data-permission-category="tasks">
                     <button class="sidebar-dropdown-trigger w-full flex items-center justify-between py-3 px-4 text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" data-dropdown="tasks">
                         <div class="flex items-center gap-3">
                             <i class="fa-solid fa-clipboard-check w-6 text-purple-400"></i>
@@ -182,7 +186,7 @@
                 </div>
                 
                 <!-- Settings Dropdown -->
-                <div class="sidebar-dropdown">
+                <div class="sidebar-dropdown" data-permission-category="settings">
                     <button class="sidebar-dropdown-trigger w-full flex items-center justify-between py-3 px-4 text-gray-300 hover:bg-gray-700 rounded-lg transition-colors" data-dropdown="settings">
                         <div class="flex items-center gap-3">
                             <i class="fa-solid fa-sliders w-6 text-gray-400"></i>
@@ -211,15 +215,15 @@
             <!-- User Info -->
             <div class="p-4 border-t border-gray-800">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center">
-                        <i class="fa-solid fa-user text-sm text-gray-400"></i>
+                    <div class="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center" style="background: var(--color-accent-primary);">
+                        <i class="fa-solid fa-user text-sm text-white"></i>
                     </div>
                     <div class="flex-1">
-                        <p class="text-sm font-medium text-white">Leland Bray</p>
-                        <p class="text-xs text-gray-500">Administrator</p>
+                        <p id="currentUserName" class="text-sm font-medium text-white">Guest</p>
+                        <p id="currentUserRole" class="text-xs text-gray-500">Not logged in</p>
                     </div>
-                    <button class="text-gray-400 hover:text-white">
-                        <i class="fa-solid fa-cog"></i>
+                    <button id="logoutBtn" class="text-gray-400 hover:text-red-400 transition-colors" title="Logout">
+                        <i class="fa-solid fa-sign-out-alt"></i>
                     </button>
                 </div>
             </div>

@@ -25,6 +25,7 @@ window.BPERP = {
     sales: null,
     tasks: null,
     maintenance: null,
+    users: null,
     config: CONFIG,
     navigate: null,
     isInitialized: false
@@ -37,7 +38,8 @@ const modules = {
     inventory: null,
     sales: null,
     tasks: null,
-    maintenance: null
+    maintenance: null,
+    users: null
 };
 
 // ==================== MODULE LOADER ====================
@@ -61,12 +63,13 @@ async function loadModules() {
         console.log('BPERP: Core modules loaded');
         
         // Load feature modules
-        const [inventory, sales, tasks, maintenance, search] = await Promise.all([
+        const [inventory, sales, tasks, maintenance, search, users] = await Promise.all([
             import('./modules/inventory.js'),
             import('./modules/sales.js'),
             import('./modules/tasks.js'),
             import('./modules/maintenance.js'),
-            import('./modules/search.js')
+            import('./modules/search.js'),
+            import('./modules/users.js')
         ]);
         
         modules.inventory = inventory;
@@ -74,6 +77,7 @@ async function loadModules() {
         modules.tasks = tasks;
         modules.maintenance = maintenance;
         modules.search = search;
+        modules.users = users;
         
         console.log('BPERP: Feature modules loaded');
         return true;
@@ -132,7 +136,7 @@ const routes = {
     
     // Settings
     'settings-preferences': () => ThemeManager.showModal(),
-    'settings-users': () => showSettingsPlaceholder('Users & Permissions'),
+    'settings-users': () => modules.users?.loadUsersView(),
     'settings-backup': () => loadBackupRestoreView()
 };
 
@@ -201,7 +205,7 @@ function loadBackupRestoreView() {
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                         <div class="bg-gray-800/50 p-3 rounded">
                             <div class="text-gray-400">Data Types Backed Up</div>
-                            <div class="text-white font-medium">Customers, Quotes, Work Orders, Inventory, Tasks</div>
+                            <div class="text-white font-medium">Customers, Quotes, Work Orders, Archived Work, Inventory, Tasks</div>
                         </div>
                         <div class="bg-gray-800/50 p-3 rounded">
                             <div class="text-gray-400">File Format</div>
@@ -212,6 +216,29 @@ function loadBackupRestoreView() {
                             <div class="text-white font-medium" id="lastBackupDate">Never</div>
                         </div>
                     </div>
+                </div>
+            </div>
+            
+            <!-- Reset Demo Data Section -->
+            <div class="card p-6">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-flask text-2xl mr-3 text-yellow-500"></i>
+                    <div>
+                        <h3 class="text-lg font-medium text-white">Demo Data</h3>
+                        <p class="text-gray-400 text-sm">Reset to fresh demo data for testing workflows</p>
+                    </div>
+                </div>
+                <p class="text-gray-400 text-sm mb-4">
+                    This will reset all quotes, work orders, and documents to the initial demo state. 
+                    Includes sample quotes at various stages (New, Sent, Won, Lost) and work orders 
+                    at different workflow stages. Useful for testing the complete quote-to-invoice workflow.
+                </p>
+                <button data-action="reset-demo-data" class="btn bg-yellow-600 hover:bg-yellow-700 text-white">
+                    <i class="fa-solid fa-rotate-right mr-2"></i>Reset All Sales Data to Demo
+                </button>
+                <div class="text-xs text-yellow-400 mt-2">
+                    <i class="fa-solid fa-info-circle mr-1"></i>
+                    Includes 11 demo quotes (3 New, 3 Sent, 2 Won, 3 Lost), work orders, and sample documents.
                 </div>
             </div>
         </div>
@@ -287,6 +314,29 @@ function setupBackupRestoreHandlers() {
             restoreHandler = null; // Remove listener
         }
     });
+    
+    // Reset demo data
+    document.addEventListener('click', function resetDemoHandler(e) {
+        if (e.target.closest('[data-action="reset-demo-data"]')) {
+            if (confirm('This will reset all quotes, work orders, and documents to demo data. Your current data will be lost. Continue?')) {
+                if (window.BPERP?.sales?.resetAllSalesToDemo) {
+                    window.BPERP.sales.resetAllSalesToDemo();
+                    modules.common?.showToast('All sales data reset to demo', 'success');
+                    // Navigate to quotes to see the demo data
+                    navigate('sales-quotes');
+                } else if (window.BPERP?.sales?.resetWorkOrdersToDemo) {
+                    // Fallback to old function if new one not available
+                    window.BPERP.sales.resetWorkOrdersToDemo();
+                    modules.common?.showToast('Work orders reset to demo data', 'success');
+                    navigate('tasks-completed');
+                } else {
+                    console.error('Reset function not available');
+                    modules.common?.showToast('Reset function not available', 'error');
+                }
+            }
+            resetDemoHandler = null; // Remove listener
+        }
+    });
 }
 
 function updateLastBackupDate() {
@@ -296,27 +346,56 @@ function updateLastBackupDate() {
     }
 }
 
-function showSettingsPlaceholder(title) {
-    const container = document.getElementById('dashboardContent');
-    if (container) {
-        container.innerHTML = `
-            <div class="col-span-3">
-                <div class="card">
-                    <div class="text-center py-12">
-                        <i class="fa-solid fa-wrench text-5xl mb-4" style="color: var(--color-accent-primary);"></i>
-                        <h2 class="text-xl font-semibold text-white mb-2">${title}</h2>
-                        <p class="text-gray-400">This feature is coming soon.</p>
-                        <p class="text-gray-500 text-sm mt-2">Check the Preferences section for theme customization.</p>
-                    </div>
-                </div>
-            </div>
-        `;
+// showSettingsPlaceholder removed - replaced by users.loadUsersView()
+
+// Map routes to tab categories for permission checking
+const routeToCategory = {
+    'dashboard': 'dashboard',
+    'inventory-materials': 'inventory',
+    'inventory-tooling': 'inventory',
+    'inventory-misc': 'inventory',
+    'workcenter-wip': 'workcenter',
+    'sales-customers': 'sales',
+    'sales-quotes': 'sales',
+    'sales-archived-quotes': 'sales',
+    'sales-archived-work': 'sales',
+    'tasks-all': 'tasks',
+    'tasks-ordering': 'tasks',
+    'tasks-programming': 'tasks',
+    'tasks-processing': 'tasks',
+    'tasks-machining': 'tasks',
+    'tasks-postprocessing': 'tasks',
+    'tasks-inspection': 'tasks',
+    'tasks-shipping': 'tasks',
+    'tasks-completed': 'tasks',
+    'tasks-maintenance': 'tasks',
+    'settings-preferences': 'settings',
+    'settings-users': 'settings',
+    'settings-backup': 'settings'
+};
+
+function checkRoutePermission(route) {
+    // If user module is not loaded or user is not logged in, allow all routes
+    if (!modules.users?.isLoggedIn?.()) {
+        return true;
     }
+    
+    const category = routeToCategory[route];
+    if (!category) return true;
+    
+    // Check permission
+    return modules.users.hasPermission(category);
 }
 
 function navigate(route) {
     if (!window.BPERP.isInitialized) {
         console.warn('BPERP: App not initialized yet');
+        return;
+    }
+    
+    // Check permission before navigating
+    if (!checkRoutePermission(route)) {
+        modules.common?.showToast('You do not have permission to access this section', 'error');
         return;
     }
     
@@ -341,6 +420,40 @@ function navigate(route) {
         }
     } else {
         console.warn('BPERP: Unknown route:', route);
+    }
+}
+
+/**
+ * Update sidebar visibility based on user permissions
+ */
+function updateSidebarPermissions() {
+    if (!modules.users?.isLoggedIn?.()) {
+        // Show all if not logged in
+        document.querySelectorAll('[data-permission-category]').forEach(el => {
+            el.style.display = '';
+        });
+        return;
+    }
+    
+    const permissions = modules.users.getPermissions();
+    
+    // Update each section based on permission category
+    document.querySelectorAll('[data-permission-category]').forEach(el => {
+        const category = el.dataset.permissionCategory;
+        if (permissions[category] === false) {
+            el.style.display = 'none';
+        } else {
+            el.style.display = '';
+        }
+    });
+    
+    // Update user display in sidebar footer
+    const user = modules.users.getCurrentUser();
+    if (user) {
+        const userNameEl = document.getElementById('currentUserName');
+        const userRoleEl = document.getElementById('currentUserRole');
+        if (userNameEl) userNameEl.textContent = user.name;
+        if (userRoleEl) userRoleEl.textContent = user.role;
     }
 }
 
@@ -828,10 +941,14 @@ async function initializeApp() {
             tasks: modules.tasks,
             maintenance: modules.maintenance,
             search: modules.search,
+            users: modules.users,
             config: CONFIG,
             navigate,
             isInitialized: false
         };
+        
+        // Initialize users module
+        if (modules.users?.init) modules.users.init();
         
         // Initialize DOM cache
         if (modules.common?.DOMCache?.init) {
@@ -872,6 +989,7 @@ async function initializeApp() {
         if (modules.sales?.init) modules.sales.init();
         if (modules.tasks?.init) modules.tasks.init();
         if (modules.maintenance?.init) modules.maintenance.init();
+        // Note: users module init is called earlier
         
         // Preload demo data so search works immediately
         console.log('BPERP: Preloading demo data...');
@@ -901,6 +1019,9 @@ async function initializeApp() {
         // Setup Alerts bell
         setupAlertsBell();
         
+        // Setup logout button
+        setupLogoutButton();
+        
         // Setup global search
         if (modules.search?.setupGlobalSearch) {
             modules.search.setupGlobalSearch();
@@ -911,6 +1032,33 @@ async function initializeApp() {
         
         // Initialize theme manager
         ThemeManager.init();
+        
+        // Check if user is logged in, if not show login modal
+        if (modules.users?.isLoggedIn?.()) {
+            // User is already logged in, apply their settings
+            const userSettings = modules.users.getAppearanceSettings();
+            if (userSettings) {
+                ThemeManager.applyTheme(userSettings.theme || 'automation');
+                ThemeManager.applyDisplayOptions(userSettings);
+                ThemeManager.applyTransparency(userSettings.transparency || 50);
+            }
+            updateSidebarPermissions();
+        } else {
+            // Show login modal and wait for login
+            modules.users?.showLoginModal?.((user) => {
+                // Apply user's appearance settings
+                const userSettings = user.appearance_settings || {};
+                ThemeManager.applyTheme(userSettings.theme || 'automation');
+                ThemeManager.applyDisplayOptions(userSettings);
+                ThemeManager.applyTransparency(userSettings.transparency || 50);
+                
+                // Update sidebar permissions
+                updateSidebarPermissions();
+                
+                // Reload dashboard to reflect user state
+                loadDashboard();
+            });
+        }
         
         console.log('BPERP: Application initialized successfully');
     } catch (error) {
@@ -930,6 +1078,33 @@ function setupOfflineIndicator() {
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
     updateOnlineStatus();
+}
+
+function setupLogoutButton() {
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to log out?')) {
+                await modules.users?.logout?.();
+                modules.common?.showToast?.('Logged out successfully', 'success');
+                
+                // Show login modal again
+                modules.users?.showLoginModal?.((user) => {
+                    // Apply user's appearance settings
+                    const userSettings = user.appearance_settings || {};
+                    ThemeManager.applyTheme(userSettings.theme || 'automation');
+                    ThemeManager.applyDisplayOptions(userSettings);
+                    ThemeManager.applyTransparency(userSettings.transparency || 50);
+                    
+                    // Update sidebar permissions
+                    updateSidebarPermissions();
+                    
+                    // Reload dashboard
+                    loadDashboard();
+                });
+            }
+        });
+    }
 }
 
 // ==================== THEME MANAGEMENT ====================
@@ -956,6 +1131,15 @@ const ThemeManager = {
     
     getPreferences() {
         try {
+            // First check if user is logged in and has appearance settings
+            if (modules.users?.isLoggedIn?.() && modules.users?.getAppearanceSettings) {
+                const userSettings = modules.users.getAppearanceSettings();
+                if (userSettings && Object.keys(userSettings).length > 0) {
+                    return { ...this.defaults, ...userSettings };
+                }
+            }
+            
+            // Fall back to localStorage
             const saved = localStorage.getItem(this.STORAGE_KEY);
             if (saved) {
                 return { ...this.defaults, ...JSON.parse(saved) };
@@ -969,6 +1153,17 @@ const ThemeManager = {
     savePreferences(prefs) {
         try {
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(prefs));
+            
+            // Also save to user profile if logged in
+            if (modules.users?.isLoggedIn?.() && modules.users?.updateAppearanceSettings) {
+                modules.users.updateAppearanceSettings(prefs)
+                    .then(result => {
+                        if (result.success) {
+                            console.log('BPERP: Appearance settings saved to user profile');
+                        }
+                    })
+                    .catch(e => console.warn('Could not save to user profile:', e));
+            }
         } catch (e) {
             console.warn('Could not save theme preferences:', e);
         }

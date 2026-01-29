@@ -502,21 +502,43 @@ export async function exportToCSV(data, filename, headers, endpoint) {
 
 // ==================== BACKUP/RESTORE UTILITIES ====================
 export async function createBackup() {
+    // Collect localStorage data to include in backup
+    const localStorageData = {
+        quotes: JSON.parse(localStorage.getItem('bperp_quotes') || 'null'),
+        quote_documents: JSON.parse(localStorage.getItem('bperp_quote_documents') || 'null'),
+        work_orders: JSON.parse(localStorage.getItem('bperp_work_orders') || 'null'),
+        wo_documents: JSON.parse(localStorage.getItem('bperp_wo_documents') || 'null'),
+        archived_work_orders: JSON.parse(localStorage.getItem('bperp_archived_work_orders') || 'null'),
+        customers: JSON.parse(localStorage.getItem('bperp_customers') || 'null'),
+        materials: JSON.parse(localStorage.getItem('bperp_materials') || 'null'),
+        tooling: JSON.parse(localStorage.getItem('bperp_tooling') || 'null'),
+        misc_items: JSON.parse(localStorage.getItem('bperp_misc_items') || 'null'),
+        misc_tasks: JSON.parse(localStorage.getItem('bperp_misc_tasks') || 'null'),
+        // User profiles (includes appearance settings and permissions)
+        users_list: JSON.parse(localStorage.getItem('bperp_users_list') || 'null'),
+        // Theme preferences
+        theme_preferences: JSON.parse(localStorage.getItem('bperp_theme_preferences') || 'null'),
+        // Current user session (for reference, not for restore)
+        current_user: JSON.parse(localStorage.getItem('bperp_current_user') || 'null')
+    };
+    
     try {
+        // Try API first (includes database data)
         const response = await fetch(`${window.API_BASE}/backup/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({ localStorage: localStorageData })
         });
 
         if (!response.ok) {
-            throw new Error(`Backup failed: ${response.statusText}`);
+            throw new Error(`Server backup failed: ${response.statusText}`);
         }
 
         const result = await response.json();
         if (!result.success) {
-            throw new Error(result.error || 'Backup failed');
+            throw new Error(result.error || 'Server backup failed');
         }
 
         // Download the backup file from the server
@@ -527,8 +549,36 @@ export async function createBackup() {
 
         showToast(result.message, 'success');
     } catch (error) {
-        console.error('Failed to create backup:', error);
-        showToast('Failed to create backup: ' + error.message, 'error');
+        console.log('Server backup unavailable, creating client-side backup:', error.message);
+        
+        // Fallback: Create backup entirely client-side
+        try {
+            const backupData = {
+                timestamp: new Date().toISOString(),
+                version: 'BPERP-v1.2-offline',
+                source: 'client-side',
+                database: null, // No database access in offline mode
+                localStorage: localStorageData
+            };
+            
+            // Create and download the backup file
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const filename = `bperp_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showToast('Backup created successfully (offline mode)', 'success');
+        } catch (offlineError) {
+            console.error('Failed to create offline backup:', offlineError);
+            showToast('Failed to create backup: ' + offlineError.message, 'error');
+        }
     }
 }
 
@@ -540,34 +590,93 @@ export async function restoreFromBackup(fileInput) {
     }
 
     try {
-        // For now, show a message that restore is not yet implemented server-side
-        showToast('Restore functionality is coming soon. Please contact support for manual restoration.', 'info');
-        throw new Error('Restore not yet implemented server-side');
-
-        // Future implementation would upload the file and call the restore endpoint
-        // const formData = new FormData();
-        // formData.append('backup', file);
-        //
-        // const response = await fetch(`${window.API_BASE}/backup/restore`, {
-        //     method: 'POST',
-        //     body: formData
-        // });
-        //
-        // if (!response.ok) {
-        //     throw new Error(`Restore failed: ${response.statusText}`);
-        // }
-        //
-        // const result = await response.json();
-        // if (!result.success) {
-        //     throw new Error(result.error || 'Restore failed');
-        // }
-        //
-        // showToast(result.message, 'success');
-        // return result;
+        // Read and parse the backup file
+        const fileContent = await file.text();
+        const backupData = JSON.parse(fileContent);
+        
+        // Validate backup structure
+        if (!backupData.timestamp || !backupData.version) {
+            throw new Error('Invalid backup file format');
+        }
+        
+        // Confirm with user
+        const confirmRestore = confirm(
+            `Restore backup from ${new Date(backupData.timestamp).toLocaleString()}?\n\n` +
+            `Version: ${backupData.version}\n\n` +
+            `This will replace all current local data. This action cannot be undone.`
+        );
+        
+        if (!confirmRestore) {
+            throw new Error('Restore cancelled by user');
+        }
+        
+        // Restore localStorage data
+        if (backupData.localStorage) {
+            const storageKeys = {
+                quotes: 'bperp_quotes',
+                quote_documents: 'bperp_quote_documents',
+                work_orders: 'bperp_work_orders',
+                wo_documents: 'bperp_wo_documents',
+                archived_work_orders: 'bperp_archived_work_orders',
+                customers: 'bperp_customers',
+                materials: 'bperp_materials',
+                tooling: 'bperp_tooling',
+                misc_items: 'bperp_misc_items',
+                misc_tasks: 'bperp_misc_tasks',
+                users_list: 'bperp_users_list'
+            };
+            
+            for (const [key, storageKey] of Object.entries(storageKeys)) {
+                if (backupData.localStorage[key] !== null && backupData.localStorage[key] !== undefined) {
+                    localStorage.setItem(storageKey, JSON.stringify(backupData.localStorage[key]));
+                    console.log(`Restored ${key} to localStorage`);
+                }
+            }
+        }
+        
+        // If database data exists, we can also populate localStorage from it (for offline mode)
+        if (backupData.database) {
+            // Restore users from database backup if localStorage version is empty
+            if (backupData.database.users && !backupData.localStorage?.users_list) {
+                // Remove password hashes before storing in localStorage for security
+                const safeUsers = backupData.database.users.map(user => ({
+                    ...user,
+                    password_hash: undefined
+                }));
+                localStorage.setItem('bperp_users_list', JSON.stringify(safeUsers));
+                console.log('Restored users from database backup');
+            }
+            
+            // Restore other database tables to localStorage if not already present
+            const dbToStorage = {
+                customers: 'bperp_customers',
+                materials: 'bperp_materials',
+                tooling: 'bperp_tooling',
+                misc_items: 'bperp_misc_items'
+            };
+            
+            for (const [dbKey, storageKey] of Object.entries(dbToStorage)) {
+                if (backupData.database[dbKey] && !localStorage.getItem(storageKey)) {
+                    localStorage.setItem(storageKey, JSON.stringify(backupData.database[dbKey]));
+                    console.log(`Restored ${dbKey} from database backup`);
+                }
+            }
+        }
+        
+        showToast('Backup restored successfully! Reloading...', 'success');
+        
+        // Reload the page after a short delay to apply restored data
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
+        
+        return { success: true };
 
     } catch (error) {
         console.error('Failed to restore backup:', error);
-        showToast('Failed to restore backup: ' + error.message, 'error');
+        if (error.message !== 'Restore cancelled by user') {
+            showToast('Failed to restore backup: ' + error.message, 'error');
+        }
         throw error;
     }
 }

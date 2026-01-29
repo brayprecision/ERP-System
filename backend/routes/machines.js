@@ -1,427 +1,420 @@
 // Machines API Routes for BPERP
+// Uses PostgreSQL database for persistence
+
 const express = require('express');
-const router = express.Router();
 
-// In-memory storage
-let machines = [
-  {
-    id: 1, name: 'CNC Mill 1', machineId: 'CNC-M1', type: 'cnc_mill',
-    manufacturer: 'Haas', model: 'VF-2', serialNumber: 'HV21234',
-    workcenterId: 3, location: 'Bay 1',
-    status: 'Running', currentOperatorName: 'Mike Johnson',
-    maintenanceHours: 423, maintenanceCycles: 15200,
-    lastMaintenanceDate: '2025-01-01', nextMaintenanceDate: '2025-01-31',
-    maintenanceIntervalHours: 500, maintenanceIntervalDays: 30,
-    totalRunHours: 8423, totalCycles: 315200, isActive: true
-  },
-  {
-    id: 2, name: 'CNC Mill 2', machineId: 'CNC-M2', type: 'cnc_mill',
-    manufacturer: 'Haas', model: 'VF-3', serialNumber: 'HV31456',
-    workcenterId: 4, location: 'Bay 2',
-    status: 'Idle',
-    maintenanceHours: 180, maintenanceCycles: 6500,
-    lastMaintenanceDate: '2025-01-08', nextMaintenanceDate: '2025-02-07',
-    maintenanceIntervalHours: 500, maintenanceIntervalDays: 30,
-    totalRunHours: 6180, totalCycles: 226500, isActive: true
-  },
-  {
-    id: 3, name: 'CNC Lathe', machineId: 'CNC-L1', type: 'cnc_lathe',
-    manufacturer: 'Haas', model: 'ST-10', serialNumber: 'HL11789',
-    workcenterId: 5, location: 'Bay 3',
-    status: 'Running', currentOperatorName: 'Dave Martinez',
-    maintenanceHours: 320, maintenanceCycles: 8900,
-    lastMaintenanceDate: '2024-12-20', nextMaintenanceDate: '2025-01-19',
-    maintenanceIntervalHours: 400, maintenanceIntervalDays: 30,
-    totalRunHours: 5320, totalCycles: 178900, isActive: true
-  },
-  {
-    id: 4, name: 'Bandsaw', machineId: 'SAW-01', type: 'saw',
-    manufacturer: 'DoAll', model: 'C-916M', serialNumber: 'DA456789',
-    workcenterId: 1, location: 'Material Prep',
-    status: 'Running', currentOperatorName: 'Tom Wilson',
-    maintenanceHours: 95, maintenanceCycles: 2100,
-    lastMaintenanceDate: '2025-01-10', nextMaintenanceDate: '2025-01-24',
-    maintenanceIntervalHours: 200, maintenanceIntervalDays: 14,
-    totalRunHours: 3095, totalCycles: 52100, isActive: true
-  },
-  {
-    id: 5, name: 'Waterjet', machineId: 'WJ-01', type: 'waterjet',
-    manufacturer: 'Flow', model: 'Mach 500', serialNumber: 'FL789012',
-    workcenterId: 2, location: 'Waterjet Bay',
-    status: 'Idle',
-    maintenanceHours: 120, maintenanceCycles: 3200,
-    lastMaintenanceDate: '2025-01-05', nextMaintenanceDate: '2025-02-04',
-    maintenanceIntervalHours: 300, maintenanceIntervalDays: 30,
-    totalRunHours: 2120, totalCycles: 43200, isActive: true
-  },
-  {
-    id: 6, name: 'Manual Mill', machineId: 'MM-01', type: 'manual',
-    manufacturer: 'Bridgeport', model: 'Series I', serialNumber: 'BP234567',
-    workcenterId: 6, location: 'Bay 4',
-    status: 'Idle',
-    maintenanceHours: 45, maintenanceCycles: 0,
-    lastMaintenanceDate: '2025-01-12', nextMaintenanceDate: '2025-01-19',
-    maintenanceIntervalHours: 100, maintenanceIntervalDays: 7,
-    totalRunHours: 1245, totalCycles: 0, isActive: true
-  },
-  {
-    id: 7, name: 'Surface Grinder', machineId: 'GRD-01', type: 'grinder',
-    manufacturer: 'Chevalier', model: 'FSG-618M', serialNumber: 'CH345678',
-    workcenterId: 7, location: 'Grinding Area',
-    status: 'Idle',
-    maintenanceHours: 180, maintenanceCycles: 4500,
-    lastMaintenanceDate: '2025-01-03', nextMaintenanceDate: '2025-01-17',
-    maintenanceIntervalHours: 200, maintenanceIntervalDays: 14,
-    totalRunHours: 1680, totalCycles: 34500, isActive: true
-  }
-];
+module.exports = function(pool) {
+    const router = express.Router();
 
-let machineStatusHistory = [];
+    // Helper: Transform machine from DB to API format
+    function transformMachine(row) {
+        return {
+            id: row.id,
+            name: row.name,
+            machineId: row.machine_id,
+            type: row.type,
+            manufacturer: row.manufacturer,
+            model: row.model,
+            serialNumber: row.serial_number,
+            yearInstalled: row.year_installed,
+            workcenterId: row.workcenter_id,
+            location: row.location,
+            status: row.status,
+            currentJobId: row.current_job_id,
+            currentOperatorId: row.current_operator_id,
+            currentOperatorName: row.current_operator_name,
+            maintenanceHours: parseFloat(row.maintenance_hours) || 0,
+            maintenanceCycles: row.maintenance_cycles || 0,
+            lastMaintenanceDate: row.last_maintenance_date,
+            nextMaintenanceDate: row.next_maintenance_date,
+            maintenanceIntervalHours: row.maintenance_interval_hours,
+            maintenanceIntervalDays: row.maintenance_interval_days,
+            totalRunHours: parseFloat(row.total_run_hours) || 0,
+            totalCycles: row.total_cycles || 0,
+            notes: row.notes,
+            specifications: row.specifications || {},
+            isActive: row.is_active,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
+    }
 
-// Helper: Calculate maintenance status
-function getMaintenanceStatus(machine) {
-  const now = new Date();
-  const nextMaint = machine.nextMaintenanceDate ? new Date(machine.nextMaintenanceDate) : null;
-  const hoursRemaining = machine.maintenanceIntervalHours ? 
-    machine.maintenanceIntervalHours - machine.maintenanceHours : null;
-  
-  // Check if overdue
-  if (nextMaint && nextMaint < now) return 'Overdue';
-  if (hoursRemaining !== null && hoursRemaining <= 0) return 'Overdue';
-  
-  // Check if attention needed
-  const daysUntilMaint = nextMaint ? Math.ceil((nextMaint - now) / (1000 * 60 * 60 * 24)) : null;
-  if (daysUntilMaint !== null && daysUntilMaint <= 7) return 'Attention';
-  if (hoursRemaining !== null && hoursRemaining <= 50) return 'Attention';
-  
-  return 'Good';
-}
+    // Helper: Calculate maintenance status
+    function getMaintenanceStatus(machine) {
+        const now = new Date();
+        const nextMaint = machine.nextMaintenanceDate ? new Date(machine.nextMaintenanceDate) : null;
+        const hoursRemaining = machine.maintenanceIntervalHours ?
+            machine.maintenanceIntervalHours - machine.maintenanceHours : null;
 
-// Helper: Enrich machine with computed fields
-function enrichMachine(machine) {
-  return {
-    ...machine,
-    maintenanceStatus: getMaintenanceStatus(machine),
-    hoursUntilMaintenance: machine.maintenanceIntervalHours ? 
-      machine.maintenanceIntervalHours - machine.maintenanceHours : null,
-    daysUntilMaintenance: machine.nextMaintenanceDate ? 
-      Math.ceil((new Date(machine.nextMaintenanceDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
-  };
-}
+        // Check if overdue
+        if (nextMaint && nextMaint < now) return 'Overdue';
+        if (hoursRemaining !== null && hoursRemaining <= 0) return 'Overdue';
 
-// GET /api/machines - List all machines
-router.get('/', (req, res) => {
-  try {
-    let result = machines.filter(m => m.isActive);
-    
-    // Filter by type
-    if (req.query.type) {
-      result = result.filter(m => m.type === req.query.type);
+        // Check if attention needed
+        const daysUntilMaint = nextMaint ? Math.ceil((nextMaint - now) / (1000 * 60 * 60 * 24)) : null;
+        if (daysUntilMaint !== null && daysUntilMaint <= 7) return 'Attention';
+        if (hoursRemaining !== null && hoursRemaining <= 50) return 'Attention';
+
+        return 'Good';
     }
-    
-    // Filter by status
-    if (req.query.status) {
-      result = result.filter(m => m.status === req.query.status);
+
+    // Helper: Enrich machine with computed fields
+    function enrichMachine(machine) {
+        return {
+            ...machine,
+            maintenanceStatus: getMaintenanceStatus(machine),
+            hoursUntilMaintenance: machine.maintenanceIntervalHours ?
+                machine.maintenanceIntervalHours - machine.maintenanceHours : null,
+            daysUntilMaintenance: machine.nextMaintenanceDate ?
+                Math.ceil((new Date(machine.nextMaintenanceDate) - new Date()) / (1000 * 60 * 60 * 24)) : null
+        };
     }
-    
-    // Filter by workcenter
-    if (req.query.workcenterId) {
-      result = result.filter(m => m.workcenterId === parseInt(req.query.workcenterId));
-    }
-    
-    // Filter by maintenance status
-    if (req.query.maintenanceStatus) {
-      result = result.filter(m => getMaintenanceStatus(m) === req.query.maintenanceStatus);
-    }
-    
-    // Search
-    if (req.query.search) {
-      const search = req.query.search.toLowerCase();
-      result = result.filter(m =>
-        m.name.toLowerCase().includes(search) ||
-        (m.machineId && m.machineId.toLowerCase().includes(search)) ||
-        (m.manufacturer && m.manufacturer.toLowerCase().includes(search))
-      );
-    }
-    
-    // Enrich with computed fields
-    result = result.map(enrichMachine);
-    
-    // Calculate summary stats
-    const stats = {
-      total: result.length,
-      running: result.filter(m => m.status === 'Running').length,
-      idle: result.filter(m => m.status === 'Idle').length,
-      down: result.filter(m => m.status === 'Down').length,
-      maintenance: result.filter(m => m.status === 'Maintenance').length,
-      maintenanceOverdue: result.filter(m => m.maintenanceStatus === 'Overdue').length,
-      maintenanceAttention: result.filter(m => m.maintenanceStatus === 'Attention').length
-    };
-    
-    res.json({
-      success: true,
-      data: result,
-      stats
+
+    // GET /api/machines - List all machines
+    router.get('/', async (req, res) => {
+        try {
+            let query = 'SELECT * FROM machines WHERE is_active = TRUE';
+            const params = [];
+            let paramIndex = 1;
+
+            // Filter by type
+            if (req.query.type) {
+                query += ` AND type = $${paramIndex++}`;
+                params.push(req.query.type);
+            }
+
+            // Filter by status
+            if (req.query.status) {
+                query += ` AND status = $${paramIndex++}`;
+                params.push(req.query.status);
+            }
+
+            // Filter by workcenter
+            if (req.query.workcenterId) {
+                query += ` AND workcenter_id = $${paramIndex++}`;
+                params.push(parseInt(req.query.workcenterId));
+            }
+
+            // Search
+            if (req.query.search) {
+                query += ` AND (LOWER(name) LIKE LOWER($${paramIndex}) OR LOWER(machine_id) LIKE LOWER($${paramIndex}) OR LOWER(manufacturer) LIKE LOWER($${paramIndex}))`;
+                params.push(`%${req.query.search}%`);
+                paramIndex++;
+            }
+
+            query += ' ORDER BY name';
+
+            const result = await pool.query(query, params);
+            let machines = result.rows.map(row => enrichMachine(transformMachine(row)));
+
+            // Filter by maintenance status (computed field)
+            if (req.query.maintenanceStatus) {
+                machines = machines.filter(m => m.maintenanceStatus === req.query.maintenanceStatus);
+            }
+
+            // Calculate summary stats
+            const stats = {
+                total: machines.length,
+                running: machines.filter(m => m.status === 'Running').length,
+                idle: machines.filter(m => m.status === 'Idle').length,
+                down: machines.filter(m => m.status === 'Down').length,
+                maintenance: machines.filter(m => m.status === 'Maintenance').length,
+                maintenanceOverdue: machines.filter(m => m.maintenanceStatus === 'Overdue').length,
+                maintenanceAttention: machines.filter(m => m.maintenanceStatus === 'Attention').length
+            };
+
+            res.json({ success: true, data: machines, stats });
+        } catch (error) {
+            console.error('Get machines error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// GET /api/machines/:id - Get single machine
-router.get('/:id', (req, res) => {
-  try {
-    const machine = machines.find(m => m.id === parseInt(req.params.id) && m.isActive);
-    if (!machine) {
-      return res.status(404).json({ success: false, error: 'Machine not found' });
-    }
-    
-    // Get recent status history
-    const history = machineStatusHistory
-      .filter(h => h.machineId === machine.id)
-      .sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt))
-      .slice(0, 20);
-    
-    res.json({
-      success: true,
-      data: {
-        ...enrichMachine(machine),
-        statusHistory: history
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+    // GET /api/machines/:id - Get single machine
+    router.get('/:id', async (req, res) => {
+        try {
+            const machineResult = await pool.query(
+                'SELECT * FROM machines WHERE id = $1 AND is_active = TRUE',
+                [req.params.id]
+            );
 
-// POST /api/machines - Create new machine
-router.post('/', (req, res) => {
-  try {
-    const {
-      name, machineId, type, manufacturer, model, serialNumber,
-      yearInstalled, workcenterId, location,
-      maintenanceIntervalHours, maintenanceIntervalDays, notes, specifications
-    } = req.body;
-    
-    if (!name || !type) {
-      return res.status(400).json({ success: false, error: 'Name and type are required' });
-    }
-    
-    // Check for duplicate machineId
-    if (machineId && machines.some(m => m.machineId === machineId)) {
-      return res.status(400).json({ success: false, error: 'Machine ID already exists' });
-    }
-    
-    const newMachine = {
-      id: machines.length + 1,
-      name,
-      machineId,
-      type,
-      manufacturer,
-      model,
-      serialNumber,
-      yearInstalled,
-      workcenterId,
-      location,
-      status: 'Idle',
-      maintenanceHours: 0,
-      maintenanceCycles: 0,
-      lastMaintenanceDate: new Date().toISOString().split('T')[0],
-      nextMaintenanceDate: maintenanceIntervalDays ? 
-        new Date(Date.now() + maintenanceIntervalDays * 86400000).toISOString().split('T')[0] : null,
-      maintenanceIntervalHours,
-      maintenanceIntervalDays,
-      totalRunHours: 0,
-      totalCycles: 0,
-      notes,
-      specifications: specifications || {},
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    machines.push(newMachine);
-    
-    res.status(201).json({
-      success: true,
-      data: enrichMachine(newMachine)
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            if (machineResult.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Machine not found' });
+            }
 
-// PUT /api/machines/:id - Update machine
-router.put('/:id', (req, res) => {
-  try {
-    const machineIndex = machines.findIndex(m => m.id === parseInt(req.params.id));
-    if (machineIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Machine not found' });
-    }
-    
-    const updates = req.body;
-    
-    // Check for duplicate machineId
-    if (updates.machineId && 
-        machines.some(m => m.machineId === updates.machineId && m.id !== machines[machineIndex].id)) {
-      return res.status(400).json({ success: false, error: 'Machine ID already exists' });
-    }
-    
-    machines[machineIndex] = {
-      ...machines[machineIndex],
-      ...updates,
-      id: machines[machineIndex].id,
-      createdAt: machines[machineIndex].createdAt,
-      updatedAt: new Date().toISOString()
-    };
-    
-    res.json({
-      success: true,
-      data: enrichMachine(machines[machineIndex])
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            const historyResult = await pool.query(`
+                SELECT * FROM machine_status_history 
+                WHERE machine_id = $1 
+                ORDER BY changed_at DESC 
+                LIMIT 20
+            `, [req.params.id]);
 
-// PUT /api/machines/:id/status - Update machine status
-router.put('/:id/status', (req, res) => {
-  try {
-    const machineIndex = machines.findIndex(m => m.id === parseInt(req.params.id));
-    if (machineIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Machine not found' });
-    }
-    
-    const { status, currentOperatorName, workOrderId, notes } = req.body;
-    if (!status) {
-      return res.status(400).json({ success: false, error: 'Status is required' });
-    }
-    
-    const previousStatus = machines[machineIndex].status;
-    machines[machineIndex].status = status;
-    if (currentOperatorName !== undefined) {
-      machines[machineIndex].currentOperatorName = currentOperatorName;
-    }
-    if (workOrderId !== undefined) {
-      machines[machineIndex].currentJobId = workOrderId;
-    }
-    machines[machineIndex].updatedAt = new Date().toISOString();
-    
-    // Log status change
-    machineStatusHistory.push({
-      id: machineStatusHistory.length + 1,
-      machineId: machines[machineIndex].id,
-      status,
-      previousStatus,
-      operatorName: currentOperatorName,
-      workOrderId,
-      notes,
-      changedAt: new Date().toISOString()
-    });
-    
-    res.json({
-      success: true,
-      data: enrichMachine(machines[machineIndex])
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            const machine = enrichMachine(transformMachine(machineResult.rows[0]));
+            machine.statusHistory = historyResult.rows;
 
-// PUT /api/machines/:id/log-runtime - Log runtime hours/cycles
-router.put('/:id/log-runtime', (req, res) => {
-  try {
-    const machineIndex = machines.findIndex(m => m.id === parseInt(req.params.id));
-    if (machineIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Machine not found' });
-    }
-    
-    const { hours, cycles } = req.body;
-    
-    if (hours !== undefined) {
-      machines[machineIndex].maintenanceHours += hours;
-      machines[machineIndex].totalRunHours += hours;
-    }
-    if (cycles !== undefined) {
-      machines[machineIndex].maintenanceCycles += cycles;
-      machines[machineIndex].totalCycles += cycles;
-    }
-    machines[machineIndex].updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      data: enrichMachine(machines[machineIndex])
+            res.json({ success: true, data: machine });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// PUT /api/machines/:id/reset-maintenance - Reset maintenance counters
-router.put('/:id/reset-maintenance', (req, res) => {
-  try {
-    const machineIndex = machines.findIndex(m => m.id === parseInt(req.params.id));
-    if (machineIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Machine not found' });
-    }
-    
-    const machine = machines[machineIndex];
-    machine.maintenanceHours = 0;
-    machine.maintenanceCycles = 0;
-    machine.lastMaintenanceDate = new Date().toISOString().split('T')[0];
-    
-    // Calculate next maintenance date
-    if (machine.maintenanceIntervalDays) {
-      machine.nextMaintenanceDate = new Date(
-        Date.now() + machine.maintenanceIntervalDays * 86400000
-      ).toISOString().split('T')[0];
-    }
-    
-    machine.updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      data: enrichMachine(machine)
+    // POST /api/machines - Create new machine
+    router.post('/', async (req, res) => {
+        try {
+            const {
+                name, machineId, type, manufacturer, model, serialNumber,
+                yearInstalled, workcenterId, location,
+                maintenanceIntervalHours, maintenanceIntervalDays, notes, specifications
+            } = req.body;
+
+            if (!name || !type) {
+                return res.status(400).json({ success: false, error: 'Name and type are required' });
+            }
+
+            // Check for duplicate machineId
+            if (machineId) {
+                const existing = await pool.query('SELECT id FROM machines WHERE machine_id = $1', [machineId]);
+                if (existing.rows.length > 0) {
+                    return res.status(400).json({ success: false, error: 'Machine ID already exists' });
+                }
+            }
+
+            const nextMaintenanceDate = maintenanceIntervalDays ?
+                new Date(Date.now() + maintenanceIntervalDays * 86400000).toISOString().split('T')[0] : null;
+
+            const result = await pool.query(`
+                INSERT INTO machines (
+                    name, machine_id, type, manufacturer, model, serial_number,
+                    year_installed, workcenter_id, location, status,
+                    maintenance_hours, maintenance_cycles, last_maintenance_date, next_maintenance_date,
+                    maintenance_interval_hours, maintenance_interval_days,
+                    total_run_hours, total_cycles, notes, specifications, is_active
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Idle', 0, 0, CURRENT_DATE, $10, $11, $12, 0, 0, $13, $14, TRUE)
+                RETURNING *
+            `, [
+                name, machineId, type, manufacturer, model, serialNumber,
+                yearInstalled, workcenterId, location, nextMaintenanceDate,
+                maintenanceIntervalHours, maintenanceIntervalDays,
+                notes, JSON.stringify(specifications || {})
+            ]);
+
+            res.status(201).json({
+                success: true,
+                data: enrichMachine(transformMachine(result.rows[0]))
+            });
+        } catch (error) {
+            console.error('Create machine error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// DELETE /api/machines/:id - Soft delete machine
-router.delete('/:id', (req, res) => {
-  try {
-    const machineIndex = machines.findIndex(m => m.id === parseInt(req.params.id));
-    if (machineIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Machine not found' });
-    }
-    
-    machines[machineIndex].isActive = false;
-    machines[machineIndex].updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      message: 'Machine deleted successfully'
+    // PUT /api/machines/:id - Update machine
+    router.put('/:id', async (req, res) => {
+        try {
+            const updates = req.body;
+
+            // Check for duplicate machineId
+            if (updates.machineId) {
+                const existing = await pool.query(
+                    'SELECT id FROM machines WHERE machine_id = $1 AND id != $2',
+                    [updates.machineId, req.params.id]
+                );
+                if (existing.rows.length > 0) {
+                    return res.status(400).json({ success: false, error: 'Machine ID already exists' });
+                }
+            }
+
+            const setClauses = [];
+            const values = [];
+            let paramIndex = 1;
+
+            const fieldMap = {
+                name: 'name',
+                machineId: 'machine_id',
+                type: 'type',
+                manufacturer: 'manufacturer',
+                model: 'model',
+                serialNumber: 'serial_number',
+                yearInstalled: 'year_installed',
+                workcenterId: 'workcenter_id',
+                location: 'location',
+                maintenanceIntervalHours: 'maintenance_interval_hours',
+                maintenanceIntervalDays: 'maintenance_interval_days',
+                notes: 'notes'
+            };
+
+            for (const [jsField, dbField] of Object.entries(fieldMap)) {
+                if (updates[jsField] !== undefined) {
+                    setClauses.push(`${dbField} = $${paramIndex++}`);
+                    values.push(updates[jsField]);
+                }
+            }
+
+            if (updates.specifications !== undefined) {
+                setClauses.push(`specifications = $${paramIndex++}`);
+                values.push(JSON.stringify(updates.specifications));
+            }
+
+            if (setClauses.length === 0) {
+                return res.status(400).json({ success: false, error: 'No fields to update' });
+            }
+
+            setClauses.push('updated_at = NOW()');
+            values.push(parseInt(req.params.id));
+
+            const result = await pool.query(`
+                UPDATE machines SET ${setClauses.join(', ')}
+                WHERE id = $${paramIndex}
+                RETURNING *
+            `, values);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Machine not found' });
+            }
+
+            res.json({ success: true, data: enrichMachine(transformMachine(result.rows[0])) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// GET /api/machines/:id/history - Get status history
-router.get('/:id/history', (req, res) => {
-  try {
-    const history = machineStatusHistory
-      .filter(h => h.machineId === parseInt(req.params.id))
-      .sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt));
-    
-    res.json({
-      success: true,
-      data: history
+    // PUT /api/machines/:id/status - Update machine status
+    router.put('/:id/status', async (req, res) => {
+        try {
+            const { status, currentOperatorName, workOrderId, notes } = req.body;
+
+            if (!status) {
+                return res.status(400).json({ success: false, error: 'Status is required' });
+            }
+
+            // Get current status
+            const current = await pool.query('SELECT status FROM machines WHERE id = $1', [req.params.id]);
+            if (current.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Machine not found' });
+            }
+            const previousStatus = current.rows[0].status;
+
+            const result = await pool.query(`
+                UPDATE machines 
+                SET status = $1, 
+                    current_operator_name = COALESCE($2, current_operator_name),
+                    current_job_id = $3,
+                    updated_at = NOW()
+                WHERE id = $4
+                RETURNING *
+            `, [status, currentOperatorName, workOrderId, req.params.id]);
+
+            // Log status change
+            await pool.query(`
+                INSERT INTO machine_status_history (machine_id, status, previous_status, operator_name, work_order_id, notes)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [req.params.id, status, previousStatus, currentOperatorName, workOrderId, notes]);
+
+            res.json({ success: true, data: enrichMachine(transformMachine(result.rows[0])) });
+        } catch (error) {
+            console.error('Update status error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-module.exports = router;
+    // PUT /api/machines/:id/log-runtime - Log runtime hours/cycles
+    router.put('/:id/log-runtime', async (req, res) => {
+        try {
+            const { hours, cycles } = req.body;
+
+            let updateQuery = 'UPDATE machines SET updated_at = NOW()';
+            const params = [];
+            let paramIndex = 1;
+
+            if (hours !== undefined) {
+                updateQuery += `, maintenance_hours = maintenance_hours + $${paramIndex}, total_run_hours = total_run_hours + $${paramIndex}`;
+                params.push(hours);
+                paramIndex++;
+            }
+
+            if (cycles !== undefined) {
+                updateQuery += `, maintenance_cycles = maintenance_cycles + $${paramIndex}, total_cycles = total_cycles + $${paramIndex}`;
+                params.push(cycles);
+                paramIndex++;
+            }
+
+            params.push(req.params.id);
+            updateQuery += ` WHERE id = $${paramIndex} RETURNING *`;
+
+            const result = await pool.query(updateQuery, params);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Machine not found' });
+            }
+
+            res.json({ success: true, data: enrichMachine(transformMachine(result.rows[0])) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/machines/:id/reset-maintenance - Reset maintenance counters
+    router.put('/:id/reset-maintenance', async (req, res) => {
+        try {
+            const current = await pool.query('SELECT maintenance_interval_days FROM machines WHERE id = $1', [req.params.id]);
+            if (current.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Machine not found' });
+            }
+
+            const intervalDays = current.rows[0].maintenance_interval_days;
+            const nextMaintenanceDate = intervalDays ?
+                new Date(Date.now() + intervalDays * 86400000).toISOString().split('T')[0] : null;
+
+            const result = await pool.query(`
+                UPDATE machines 
+                SET maintenance_hours = 0, 
+                    maintenance_cycles = 0, 
+                    last_maintenance_date = CURRENT_DATE,
+                    next_maintenance_date = $1,
+                    updated_at = NOW()
+                WHERE id = $2
+                RETURNING *
+            `, [nextMaintenanceDate, req.params.id]);
+
+            res.json({ success: true, data: enrichMachine(transformMachine(result.rows[0])) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // DELETE /api/machines/:id - Soft delete machine
+    router.delete('/:id', async (req, res) => {
+        try {
+            const result = await pool.query(`
+                UPDATE machines SET is_active = FALSE, updated_at = NOW()
+                WHERE id = $1
+                RETURNING id
+            `, [req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Machine not found' });
+            }
+
+            res.json({ success: true, message: 'Machine deleted successfully' });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // GET /api/machines/:id/history - Get status history
+    router.get('/:id/history', async (req, res) => {
+        try {
+            const result = await pool.query(`
+                SELECT * FROM machine_status_history 
+                WHERE machine_id = $1 
+                ORDER BY changed_at DESC
+            `, [req.params.id]);
+
+            res.json({ success: true, data: result.rows });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    return router;
+};

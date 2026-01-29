@@ -42,9 +42,24 @@ function getDemoCustomers() {
 function getDemoQuotes() {
     const today = new Date();
     return [
-        { id: 1, quoteNumber: 'Q-2025-001', customerId: 1, customerName: 'Acme Manufacturing', partNumber: 'PLT-4001', description: 'Custom Plate Assembly', quantity: 100, status: 'New', requestedDate: new Date(today.getTime() - 2*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 7*24*60*60*1000).toISOString(), totalPrice: 4500.00, sentAt: null },
-        { id: 2, quoteNumber: 'Q-2025-002', customerId: 2, customerName: 'Precision Parts Inc', partNumber: 'SHF-2001', description: 'Precision Shaft', quantity: 50, status: 'Sent', requestedDate: new Date(today.getTime() - 5*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 3*24*60*60*1000).toISOString(), totalPrice: 2750.00, sentAt: new Date(today.getTime() - 3*24*60*60*1000).toISOString() },
-        { id: 3, quoteNumber: 'Q-2025-003', customerId: 1, customerName: 'Acme Manufacturing', partNumber: 'BRKT-1001', description: 'Mounting Bracket', quantity: 200, status: 'Won', requestedDate: new Date(today.getTime() - 10*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() - 2*24*60*60*1000).toISOString(), totalPrice: 3200.00, sentAt: new Date(today.getTime() - 8*24*60*60*1000).toISOString() }
+        // Open RFQs - New status
+        { id: 1, quoteNumber: 'Q-2026-001', customerId: 1, customerName: 'Acme Manufacturing', partNumber: 'PLT-4001', description: 'Custom Plate Assembly', quantity: 100, material: '6061 Aluminum', status: 'New', requestedDate: new Date(today.getTime() - 2*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 7*24*60*60*1000).toISOString(), totalPrice: 4500.00, sentAt: null, createdAt: new Date(today.getTime() - 2*24*60*60*1000).toISOString() },
+        { id: 2, quoteNumber: 'Q-2026-002', customerId: 3, customerName: 'Global Aerospace', partNumber: 'WING-001', description: 'Wing Rib Section', quantity: 24, material: '7075 Aluminum', status: 'New', requestedDate: new Date(today.getTime() - 1*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 14*24*60*60*1000).toISOString(), totalPrice: 18500.00, sentAt: null, createdAt: new Date(today.getTime() - 1*24*60*60*1000).toISOString() },
+        { id: 3, quoteNumber: 'Q-2026-003', customerId: 2, customerName: 'Precision Parts Inc', partNumber: 'GER-500', description: 'Helical Gear Set', quantity: 12, material: '4340 Steel', status: 'In Progress', requestedDate: new Date(today.getTime() - 3*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 5*24*60*60*1000).toISOString(), totalPrice: 6200.00, sentAt: null, createdAt: new Date(today.getTime() - 3*24*60*60*1000).toISOString() },
+        
+        // Sent Quotes - Awaiting Response
+        { id: 4, quoteNumber: 'Q-2026-004', customerId: 2, customerName: 'Precision Parts Inc', partNumber: 'SHF-2001', description: 'Precision Shaft', quantity: 50, material: '17-4 Stainless', status: 'Sent', requestedDate: new Date(today.getTime() - 5*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 3*24*60*60*1000).toISOString(), totalPrice: 2750.00, sentAt: new Date(today.getTime() - 3*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 5*24*60*60*1000).toISOString() },
+        { id: 5, quoteNumber: 'Q-2026-005', customerId: 1, customerName: 'Acme Manufacturing', partNumber: 'HSG-200', description: 'Bearing Housing', quantity: 30, material: 'A356 Aluminum', status: 'Sent', requestedDate: new Date(today.getTime() - 7*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 10*24*60*60*1000).toISOString(), totalPrice: 8900.00, sentAt: new Date(today.getTime() - 4*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 7*24*60*60*1000).toISOString() },
+        { id: 6, quoteNumber: 'Q-2026-006', customerId: 3, customerName: 'Global Aerospace', partNumber: 'FLG-100', description: 'Flange Assembly', quantity: 8, material: 'Inconel 718', status: 'Sent', requestedDate: new Date(today.getTime() - 6*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() + 21*24*60*60*1000).toISOString(), totalPrice: 12400.00, sentAt: new Date(today.getTime() - 2*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 6*24*60*60*1000).toISOString() },
+        
+        // Archived - Won (converted to WO)
+        { id: 7, quoteNumber: 'Q-2026-007', customerId: 1, customerName: 'Acme Manufacturing', partNumber: 'BRKT-1001', description: 'Mounting Bracket', quantity: 200, material: '6061 Aluminum', status: 'Won', requestedDate: new Date(today.getTime() - 15*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() - 2*24*60*60*1000).toISOString(), totalPrice: 3200.00, sentAt: new Date(today.getTime() - 12*24*60*60*1000).toISOString(), convertedToWO: 'WO-2025-001', updatedAt: new Date(today.getTime() - 10*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 15*24*60*60*1000).toISOString() },
+        { id: 8, quoteNumber: 'Q-2026-008', customerId: 2, customerName: 'Precision Parts Inc', partNumber: 'PLT-300', description: 'Base Plate', quantity: 75, material: '304 Stainless', status: 'Won', requestedDate: new Date(today.getTime() - 20*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() - 5*24*60*60*1000).toISOString(), totalPrice: 5600.00, sentAt: new Date(today.getTime() - 18*24*60*60*1000).toISOString(), convertedToWO: 'WO-2025-003', updatedAt: new Date(today.getTime() - 14*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 20*24*60*60*1000).toISOString() },
+        
+        // Archived - Lost
+        { id: 9, quoteNumber: 'Q-2026-009', customerId: 3, customerName: 'Global Aerospace', partNumber: 'SPL-050', description: 'Spline Coupling', quantity: 6, material: 'Titanium 6Al-4V', status: 'Lost', requestedDate: new Date(today.getTime() - 25*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() - 10*24*60*60*1000).toISOString(), totalPrice: 22000.00, sentAt: new Date(today.getTime() - 22*24*60*60*1000).toISOString(), lostReason: 'Price', lostAt: new Date(today.getTime() - 12*24*60*60*1000).toISOString(), updatedAt: new Date(today.getTime() - 12*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 25*24*60*60*1000).toISOString() },
+        { id: 10, quoteNumber: 'Q-2026-010', customerId: 1, customerName: 'Acme Manufacturing', partNumber: 'CVR-100', description: 'Cover Plate', quantity: 150, material: 'Cold Rolled Steel', status: 'Lost', requestedDate: new Date(today.getTime() - 30*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() - 15*24*60*60*1000).toISOString(), totalPrice: 2100.00, sentAt: new Date(today.getTime() - 28*24*60*60*1000).toISOString(), lostReason: 'Competitor', lostAt: new Date(today.getTime() - 18*24*60*60*1000).toISOString(), updatedAt: new Date(today.getTime() - 18*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 30*24*60*60*1000).toISOString() },
+        { id: 11, quoteNumber: 'Q-2026-011', customerId: 2, customerName: 'Precision Parts Inc', partNumber: 'PIN-025', description: 'Dowel Pins', quantity: 500, material: '4140 Steel', status: 'Lost', requestedDate: new Date(today.getTime() - 35*24*60*60*1000).toISOString(), dueDate: new Date(today.getTime() - 20*24*60*60*1000).toISOString(), totalPrice: 950.00, sentAt: new Date(today.getTime() - 32*24*60*60*1000).toISOString(), lostReason: 'Lead Time', lostAt: new Date(today.getTime() - 22*24*60*60*1000).toISOString(), updatedAt: new Date(today.getTime() - 22*24*60*60*1000).toISOString(), createdAt: new Date(today.getTime() - 35*24*60*60*1000).toISOString() }
     ];
 }
 
@@ -113,11 +128,41 @@ function getDemoWorkOrders() {
                     checklist: getDefaultChecklist().map((item, i) => ({ ...item, isCompleted: i < 7 }))
                 }
             ]
+        },
+        { 
+            id: 5, woNumber: 'WO-2025-005', customerId: 1, customerName: 'Acme Manufacturing',
+            dueDate: new Date(today.getTime() - 3*24*60*60*1000).toISOString(),
+            status: 'Ready for Invoice', notes: 'Shipped - awaiting invoicing',
+            lineItems: [
+                {
+                    id: 1, partNumber: 'FLG-3001', description: 'Mounting Flange', quantity: 25, material: '304 Stainless',
+                    completionPercentage: 91,
+                    // All steps complete through ready_for_shipment (index 0-9), but NOT invoicing_complete (index 10)
+                    checklist: getDefaultChecklist().map((item, i) => ({ ...item, isCompleted: i < 10 }))
+                }
+            ]
+        },
+        { 
+            id: 6, woNumber: 'WO-2025-006', customerId: 3, customerName: 'Global Aerospace',
+            dueDate: new Date(today.getTime() + 1*24*60*60*1000).toISOString(),
+            status: 'Ready for Invoice', notes: 'Quality approved - ready to ship',
+            lineItems: [
+                {
+                    id: 1, partNumber: 'BRG-5001', description: 'Bearing Housing', quantity: 10, material: '7075 Aluminum',
+                    completionPercentage: 91,
+                    checklist: getDefaultChecklist().map((item, i) => ({ ...item, isCompleted: i < 10 }))
+                },
+                {
+                    id: 2, partNumber: 'BRG-5002', description: 'Bearing Cap', quantity: 10, material: '7075 Aluminum',
+                    completionPercentage: 91,
+                    checklist: getDefaultChecklist().map((item, i) => ({ ...item, isCompleted: i < 10 }))
+                }
+            ]
         }
     ];
 }
 
-function getDefaultChecklist() {
+export function getDefaultChecklist() {
     return [
         { id: 1, stepOrder: 1, stepName: 'Part Programmed', stepKey: 'part_programmed', isCompleted: false },
         { id: 2, stepOrder: 2, stepName: 'Material Ordered', stepKey: 'material_ordered', isCompleted: false },
@@ -193,6 +238,46 @@ export function getWorkOrders() {
 
 export function saveWorkOrders(workOrders) {
     storage.set(STORAGE_KEYS.WORK_ORDERS, workOrders);
+}
+
+// Reset work orders to fresh demo data (useful for testing)
+export function resetWorkOrdersToDemo() {
+    const demoData = getDemoWorkOrders();
+    storage.set(STORAGE_KEYS.WORK_ORDERS, demoData, true);
+    // Also clear archived work orders
+    storage.set(STORAGE_KEYS.ARCHIVED_WORK_ORDERS, [], true);
+    storage.flushDirty();
+    return demoData;
+}
+
+// Reset all sales data to fresh demo data (quotes, work orders, documents)
+export function resetAllSalesToDemo() {
+    // Reset quotes
+    const demoQuotes = getDemoQuotes();
+    storage.set(STORAGE_KEYS.QUOTES, demoQuotes, true);
+    
+    // Reset work orders
+    const demoWOs = getDemoWorkOrders();
+    storage.set(STORAGE_KEYS.WORK_ORDERS, demoWOs, true);
+    
+    // Clear archived work orders
+    storage.set(STORAGE_KEYS.ARCHIVED_WORK_ORDERS, [], true);
+    
+    // Clear documents (start fresh)
+    storage.set(STORAGE_KEYS.QUOTE_DOCUMENTS, [], true);
+    storage.set(STORAGE_KEYS.WO_DOCUMENTS, [], true);
+    
+    // Add some demo documents to quotes
+    const demoQuoteDocs = [
+        { id: 1, quoteId: 1, type: 'BLUEPRINT', name: 'PLT-4001 Rev A Drawing', reference: 'Rev A', notes: 'Initial customer drawing', fileName: 'PLT-4001-RevA.pdf', uploadedAt: new Date().toISOString(), uploadedBy: 'Demo User' },
+        { id: 2, quoteId: 2, type: 'BLUEPRINT', name: 'Wing Rib Blueprint', reference: 'AS9100', notes: 'Aerospace spec drawing', fileName: 'WING-001-Blueprint.pdf', uploadedAt: new Date().toISOString(), uploadedBy: 'Demo User' },
+        { id: 3, quoteId: 4, type: 'QUOTE_DOC', name: 'Customer PO Request', reference: 'RFQ-2026-004', notes: 'Customer requirements document', fileName: 'PO-Request.pdf', uploadedAt: new Date().toISOString(), uploadedBy: 'Demo User' }
+    ];
+    storage.set(STORAGE_KEYS.QUOTE_DOCUMENTS, demoQuoteDocs, true);
+    
+    storage.flushDirty();
+    
+    return { quotes: demoQuotes, workOrders: demoWOs };
 }
 
 // ==================== WORKFLOW HELPERS ====================
@@ -521,30 +606,84 @@ function renderQuotesView(quotes) {
     const container = DOMCache.get('dashboardContent');
     if (!container) return;
     
-    const openRFQs = quotes.filter(q => !q.sentAt && q.status !== 'Won' && q.status !== 'Lost');
-    const sentQuotes = quotes.filter(q => q.sentAt || q.status === 'Won' || q.status === 'Lost');
+    // Open RFQs: New or In Progress (not yet sent)
+    const openRFQs = quotes.filter(q => (q.status === 'New' || q.status === 'In Progress') && !q.sentAt);
+    // Sent Quotes: Has been sent but not yet resolved (waiting for customer response)
+    const sentQuotes = quotes.filter(q => q.status === 'Sent' || (q.sentAt && q.status !== 'Won' && q.status !== 'Lost'));
     
-    const renderQuoteRow = (quote) => `
-        <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${quote.id}">
-            <td class="px-4 py-3 font-medium text-white">${quote.quoteNumber}</td>
-            <td class="px-4 py-3 text-gray-300">${quote.customerName}</td>
-            <td class="px-4 py-3 text-gray-300">${quote.partNumber}</td>
-            <td class="px-4 py-3 text-gray-300">${quote.quantity}</td>
-            <td class="px-4 py-3 text-gray-400">${formatDate(quote.requestedDate)}</td>
-            <td class="px-4 py-3 text-${getUrgencyColor(quote.dueDate)}-400">${formatDate(quote.dueDate)}</td>
-            <td class="px-4 py-3">
-                <span class="px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(quote.status)}">${quote.status}</span>
-            </td>
-            <td class="px-4 py-3">
-                <button data-action="edit-quote" data-id="${quote.id}" class="text-blue-400 hover:text-blue-300 mr-2">
-                    <i class="fa-solid fa-edit"></i>
-                </button>
-                <button data-action="convert-quote" data-id="${quote.id}" class="text-green-400 hover:text-green-300 mr-2" title="Convert to WO">
-                    <i class="fa-solid fa-arrow-right-to-bracket"></i>
-                </button>
-            </td>
-        </tr>
-    `;
+    // Render row for Open RFQs (New/In Progress) - shows "Mark as Sent" button
+    const renderOpenRFQRow = (quote) => {
+        const docCount = getQuoteDocuments(quote.id).length;
+        return `
+            <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${quote.id}">
+                <td class="px-4 py-3 font-medium text-white">${quote.quoteNumber}</td>
+                <td class="px-4 py-3 text-gray-300">${quote.customerName}</td>
+                <td class="px-4 py-3 text-gray-300">${quote.partNumber}</td>
+                <td class="px-4 py-3 text-gray-300">${quote.quantity}</td>
+                <td class="px-4 py-3 text-gray-400">${formatDate(quote.requestedDate)}</td>
+                <td class="px-4 py-3 text-${getUrgencyColor(quote.dueDate)}-400">${formatDate(quote.dueDate)}</td>
+                <td class="px-4 py-3">
+                    <span class="px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(quote.status)}">${quote.status}</span>
+                </td>
+                <td class="px-4 py-3">
+                    <div class="flex items-center gap-1">
+                        <button data-action="view-quote-docs" data-id="${quote.id}" data-number="${quote.quoteNumber}" 
+                            class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300" 
+                            title="Documents (${docCount})">
+                            <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
+                        </button>
+                        <button data-action="edit-quote" data-id="${quote.id}" class="text-blue-400 hover:text-blue-300" title="Edit">
+                            <i class="fa-solid fa-edit"></i>
+                        </button>
+                        <button data-action="mark-quote-sent" data-id="${quote.id}" data-number="${quote.quoteNumber}"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs ml-1" title="Mark as Sent">
+                            <i class="fa-solid fa-paper-plane mr-1"></i>Mark Sent
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    };
+    
+    // Render row for Sent Quotes - shows "Won" and "Archive" buttons
+    const renderSentQuoteRow = (quote) => {
+        const docCount = getQuoteDocuments(quote.id).length;
+        return `
+            <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${quote.id}">
+                <td class="px-4 py-3 font-medium text-white">${quote.quoteNumber}</td>
+                <td class="px-4 py-3 text-gray-300">${quote.customerName}</td>
+                <td class="px-4 py-3 text-gray-300">${quote.partNumber}</td>
+                <td class="px-4 py-3 text-gray-300">${quote.quantity}</td>
+                <td class="px-4 py-3 text-gray-400">${quote.sentAt ? formatDate(quote.sentAt) : '-'}</td>
+                <td class="px-4 py-3 text-${getUrgencyColor(quote.dueDate)}-400">${formatDate(quote.dueDate)}</td>
+                <td class="px-4 py-3">
+                    <span class="px-2 py-1 text-xs rounded-full bg-blue-600 text-blue-100">
+                        <i class="fa-solid fa-paper-plane mr-1"></i>Sent
+                    </span>
+                </td>
+                <td class="px-4 py-3">
+                    <div class="flex items-center gap-1">
+                        <button data-action="view-quote-docs" data-id="${quote.id}" data-number="${quote.quoteNumber}" 
+                            class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300" 
+                            title="Documents (${docCount})">
+                            <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
+                        </button>
+                        <button data-action="edit-quote" data-id="${quote.id}" class="text-blue-400 hover:text-blue-300" title="Edit">
+                            <i class="fa-solid fa-edit"></i>
+                        </button>
+                        <button data-action="mark-quote-won" data-id="${quote.id}" data-number="${quote.quoteNumber}"
+                            class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs" title="Mark as Won - Creates Work Order">
+                            <i class="fa-solid fa-trophy mr-1"></i>Won
+                        </button>
+                        <button data-action="mark-quote-lost" data-id="${quote.id}" data-number="${quote.quoteNumber}"
+                            class="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1 rounded text-xs" title="Mark as Lost - Archives Quote">
+                            <i class="fa-solid fa-archive mr-1"></i>Archive
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    };
     
     container.innerHTML = `
         <div class="col-span-3 space-y-6">
@@ -577,14 +716,14 @@ function renderQuotesView(quotes) {
                                 <th class="px-4 py-3">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>${openRFQs.map(renderQuoteRow).join('') || '<tr><td colspan="8" class="text-center py-4" style="color: var(--color-text-muted);">No open RFQs</td></tr>'}</tbody>
+                        <tbody>${openRFQs.map(renderOpenRFQRow).join('') || '<tr><td colspan="8" class="text-center py-4" style="color: var(--color-text-muted);">No open RFQs</td></tr>'}</tbody>
                     </table>
                 </div>
             </div>
             
             <div class="card p-6">
                 <h3 class="text-gray-400 text-sm font-medium mb-4">
-                    <i class="fa-solid fa-paper-plane mr-2 text-blue-400"></i>Sent Quotes
+                    <i class="fa-solid fa-paper-plane mr-2 text-blue-400"></i>Sent Quotes (Awaiting Response)
                     <span class="text-xs text-gray-500">(${sentQuotes.length})</span>
                 </h3>
                 <div class="table-container">
@@ -595,13 +734,13 @@ function renderQuotesView(quotes) {
                                 <th class="px-4 py-3">Customer</th>
                                 <th class="px-4 py-3">Part #</th>
                                 <th class="px-4 py-3">Qty</th>
-                                <th class="px-4 py-3">Requested</th>
+                                <th class="px-4 py-3">Sent Date</th>
                                 <th class="px-4 py-3">Due</th>
                                 <th class="px-4 py-3">Status</th>
                                 <th class="px-4 py-3">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>${sentQuotes.map(renderQuoteRow).join('') || '<tr><td colspan="8" class="text-center py-4" style="color: var(--color-text-muted);">No sent quotes</td></tr>'}</tbody>
+                        <tbody>${sentQuotes.map(renderSentQuoteRow).join('') || '<tr><td colspan="8" class="text-center py-4" style="color: var(--color-text-muted);">No sent quotes awaiting response</td></tr>'}</tbody>
                     </table>
                 </div>
             </div>
@@ -650,44 +789,51 @@ function renderWIPView(workOrders) {
             wo.lineItems = [legacyLineItem];
         }
         
-        return `
-            <div class="card mb-4 border-l-4 border-l-${urgencyColor}-500" style="background: var(--color-card-bg);" data-item-id="${wo.id}">
-                <!-- Work Order Header -->
-                <div class="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-800/30 transition-colors" 
-                     data-action="toggle-wo" data-id="${wo.id}">
-                    <div class="flex items-center gap-4">
-                        <button class="text-gray-500">
-                            <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} transition-transform"></i>
-                        </button>
-                        <div>
-                            <span class="font-bold text-lg" style="color: var(--color-accent-primary);">${wo.woNumber}</span>
-                            <span class="text-gray-400 ml-3">${wo.customerName}</span>
-                            <span class="text-xs ml-3 px-2 py-1 rounded-full bg-gray-700 text-gray-300">
-                                ${partCount} part${partCount > 1 ? 's' : ''}
-                            </span>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-6">
-                        <div class="text-right">
-                            <div class="text-xs text-gray-500">Due Date</div>
-                            <div class="text-${urgencyColor}-400 font-medium">${formatDate(wo.dueDate)}</div>
-                        </div>
-                        <div class="w-48">
-                            <div class="flex justify-between text-xs mb-1">
-                                <span style="color: var(--color-text-muted);">Overall Progress</span>
-                                <span style="color: var(--color-accent-primary);">${overallCompletion}%</span>
+                const docCount = getWODocuments(wo.id).length;
+                return `
+                    <div class="card mb-4 border-l-4 border-l-${urgencyColor}-500" style="background: var(--color-card-bg);" data-item-id="${wo.id}">
+                        <!-- Work Order Header -->
+                        <div class="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-800/30 transition-colors" 
+                             data-action="toggle-wo" data-id="${wo.id}">
+                            <div class="flex items-center gap-4">
+                                <button class="text-gray-500">
+                                    <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} transition-transform"></i>
+                                </button>
+                                <div>
+                                    <span class="font-bold text-lg" style="color: var(--color-accent-primary);">${wo.woNumber}</span>
+                                    <span class="text-gray-400 ml-3">${wo.customerName}</span>
+                                    <span class="text-xs ml-3 px-2 py-1 rounded-full bg-gray-700 text-gray-300">
+                                        ${partCount} part${partCount > 1 ? 's' : ''}
+                                    </span>
+                                    <!-- Documents Badge -->
+                                    <button data-action="view-wo-docs" data-id="${wo.id}" data-number="${wo.woNumber}" 
+                                        class="ml-2 px-2 py-1 rounded text-xs ${docCount > 0 ? 'bg-blue-600/30 text-blue-400' : 'bg-gray-700 text-gray-500'} hover:bg-blue-600/50"
+                                        title="View Documents" onclick="event.stopPropagation();">
+                                        <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'} mr-1"></i>${docCount}
+                                    </button>
+                                </div>
                             </div>
-                            <div class="w-full bg-gray-700 rounded-full h-3">
-                                <div class="h-3 rounded-full transition-all" 
-                                     style="width: ${overallCompletion}%; background: linear-gradient(90deg, var(--color-accent-primary), var(--color-accent-secondary));"></div>
+                            <div class="flex items-center gap-6">
+                                <div class="text-right">
+                                    <div class="text-xs text-gray-500">Due Date</div>
+                                    <div class="text-${urgencyColor}-400 font-medium">${formatDate(wo.dueDate)}</div>
+                                </div>
+                                <div class="w-48">
+                                    <div class="flex justify-between text-xs mb-1">
+                                        <span style="color: var(--color-text-muted);">Overall Progress</span>
+                                        <span style="color: var(--color-accent-primary);">${overallCompletion}%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-700 rounded-full h-3">
+                                        <div class="h-3 rounded-full transition-all" 
+                                             style="width: ${overallCompletion}%; background: linear-gradient(90deg, var(--color-accent-primary), var(--color-accent-secondary));"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+                        
+                        ${isExpanded ? renderWOLineItems(wo) : ''}
                     </div>
-                </div>
-                
-                ${isExpanded ? renderWOLineItems(wo) : ''}
-            </div>
-        `;
+                `;
     }).join('');
     
     container.innerHTML = `
@@ -849,32 +995,66 @@ export function loadArchivedWorkView() {
         const container = DOMCache.get('dashboardContent');
         if (!container) return;
         
-        // Get all work orders and filter for completed ones
-        const allWorkOrders = getWorkOrders();
-        const archivedWOs = allWorkOrders.filter(wo => wo.completionPercentage === 100 || wo.status === 'Completed');
-        
-        // Also get from archived storage
+        // Get archived work orders from dedicated storage (primary source)
         const archivedStorage = storage.get(STORAGE_KEYS.ARCHIVED_WORK_ORDERS) || [];
-        const allArchived = [...archivedWOs, ...archivedStorage].sort((a, b) => 
-            new Date(b.completedAt || b.updatedAt || b.createdAt) - new Date(a.completedAt || a.updatedAt || a.createdAt)
+        
+        // Also check active work orders for any that are 100% complete but not yet archived
+        const allWorkOrders = getWorkOrders();
+        const completedActiveWOs = allWorkOrders.filter(wo => 
+            (wo.completionPercentage === 100 || wo.status === 'Completed') &&
+            wo.status !== 'Archived'
         );
         
+        // Combine and deduplicate by ID (archived storage takes priority)
+        const archivedIds = new Set(archivedStorage.map(wo => wo.id));
+        const uniqueCompleted = completedActiveWOs.filter(wo => !archivedIds.has(wo.id));
+        
+        const allArchived = [...archivedStorage, ...uniqueCompleted].sort((a, b) => 
+            new Date(b.completedAt || b.archivedAt || b.updatedAt || b.createdAt) - 
+            new Date(a.completedAt || a.archivedAt || a.updatedAt || a.createdAt)
+        );
+        
+        // Helper to get part info for multi-part work orders
+        const getPartInfo = (wo) => {
+            if (wo.lineItems && wo.lineItems.length > 0) {
+                if (wo.lineItems.length === 1) {
+                    return wo.lineItems[0].partNumber || 'N/A';
+                }
+                return `${wo.lineItems.length} parts`;
+            }
+            return wo.partNumber || 'N/A';
+        };
+        
+        const getQuantityInfo = (wo) => {
+            if (wo.lineItems && wo.lineItems.length > 0) {
+                const totalQty = wo.lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+                return totalQty;
+            }
+            return wo.quantity || 'N/A';
+        };
+        
         const archivedRows = allArchived.map(wo => {
-            const completedDate = wo.completedAt || wo.updatedAt || wo.dueDate;
+            const completedDate = wo.completedAt || wo.archivedAt || wo.updatedAt || wo.dueDate;
+            const docCount = getWODocuments(wo.id).length;
             return `
                 <tr class="hover:bg-gray-800/50">
                     <td class="px-4 py-3">
                         <span class="font-medium text-white">${wo.woNumber}</span>
                     </td>
                     <td class="px-4 py-3" style="color: var(--color-text-secondary);">${wo.customerName}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${wo.partNumber}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${wo.quantity}</td>
+                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${getPartInfo(wo)}</td>
+                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${getQuantityInfo(wo)}</td>
                     <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(wo.dueDate)}</td>
                     <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(completedDate)}</td>
                     <td class="px-4 py-3">
-                        <span class="badge bg-green-600 text-green-100">Completed</span>
+                        <span class="badge bg-green-600 text-green-100">Archived</span>
                     </td>
                     <td class="px-4 py-3">
+                        <button data-action="view-wo-docs" data-id="${wo.id}" data-number="${wo.woNumber}" 
+                            class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300 text-sm mr-2"
+                            title="Documents (${docCount})">
+                            <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
+                        </button>
                         <button data-action="view-archived-wo" data-id="${wo.id}" class="text-blue-400 hover:text-blue-300 text-sm">
                             <i class="fa-solid fa-eye mr-1"></i>View
                         </button>
@@ -940,11 +1120,26 @@ export function loadArchivedQuotesView() {
         const container = DOMCache.get('dashboardContent');
         if (!container) return;
         
-        // Get all quotes and filter for Lost ones
+        // Get all quotes and filter for Won and Lost (archived quotes)
         const allQuotes = getQuotes();
-        const archivedQuotes = allQuotes.filter(q => q.status === 'Lost');
+        const archivedQuotes = allQuotes.filter(q => q.status === 'Won' || q.status === 'Lost');
+        
+        // Sort by closed date (most recent first)
+        archivedQuotes.sort((a, b) => {
+            const dateA = new Date(a.updatedAt || a.lostAt || a.createdAt);
+            const dateB = new Date(b.updatedAt || b.lostAt || b.createdAt);
+            return dateB - dateA;
+        });
+        
+        // Count won vs lost
+        const wonCount = archivedQuotes.filter(q => q.status === 'Won').length;
+        const lostCount = archivedQuotes.filter(q => q.status === 'Lost').length;
         
         const archivedRows = archivedQuotes.map(quote => {
+            const isWon = quote.status === 'Won';
+            const docCount = getQuoteDocuments(quote.id).length;
+            const closedDate = quote.updatedAt || quote.lostAt || quote.createdAt;
+            
             return `
                 <tr class="hover:bg-gray-800/50">
                     <td class="px-4 py-3">
@@ -954,15 +1149,32 @@ export function loadArchivedQuotesView() {
                     <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.partNumber}</td>
                     <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.quantity}</td>
                     <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(quote.dueDate)}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(quote.updatedAt || quote.createdAt)}</td>
+                    <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(closedDate)}</td>
                     <td class="px-4 py-3">
-                        <span class="badge bg-red-600 text-red-100">Lost</span>
+                        ${isWon ? `
+                            <span class="px-2 py-1 text-xs rounded-full bg-green-600 text-green-100">
+                                <i class="fa-solid fa-trophy mr-1"></i>Won
+                            </span>
+                            ${quote.convertedToWO ? `<span class="text-xs ml-1" style="color: var(--color-text-muted);">${quote.convertedToWO}</span>` : ''}
+                        ` : `
+                            <span class="px-2 py-1 text-xs rounded-full bg-red-600 text-red-100">
+                                <i class="fa-solid fa-times-circle mr-1"></i>Lost
+                            </span>
+                            ${quote.lostReason ? `<span class="text-xs ml-1" style="color: var(--color-text-muted);">${quote.lostReason}</span>` : ''}
+                        `}
                     </td>
                     <td class="px-4 py-3">
-                        <div class="flex space-x-2">
-                            <button data-action="reopen-quote" data-id="${quote.id}" class="text-blue-400 hover:text-blue-300 text-sm" title="Reopen Quote">
-                                <i class="fa-solid fa-redo mr-1"></i>Reopen
+                        <div class="flex items-center gap-2">
+                            <button data-action="view-quote-docs" data-id="${quote.id}" data-number="${quote.quoteNumber}" 
+                                class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300" 
+                                title="Documents (${docCount})">
+                                <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
                             </button>
+                            ${!isWon ? `
+                                <button data-action="reopen-quote" data-id="${quote.id}" class="text-blue-400 hover:text-blue-300 text-sm" title="Reopen Quote">
+                                    <i class="fa-solid fa-redo mr-1"></i>Reopen
+                                </button>
+                            ` : ''}
                             <button data-action="delete-quote" data-id="${quote.id}" data-name="${quote.quoteNumber}" class="text-red-400 hover:text-red-300 text-sm" title="Delete">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
@@ -976,13 +1188,35 @@ export function loadArchivedQuotesView() {
             <div class="col-span-3">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
-                        <i class="fa-solid fa-file-circle-xmark mr-2"></i>Archived Quotes (Lost)
+                        <i class="fa-solid fa-archive mr-2"></i>Archived Quotes
                         <span class="text-xs" style="color: var(--color-text-muted);">(${archivedQuotes.length} quotes)</span>
                     </h3>
                     <div class="flex space-x-2">
                         <button data-action="export-archived-quotes" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
                             <i class="fa-solid fa-download mr-1"></i>Export
                         </button>
+                    </div>
+                </div>
+                
+                <!-- Stats Summary -->
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="card p-4 border-l-4 border-l-green-500">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs" style="color: var(--color-text-muted);">Won Quotes</p>
+                                <p class="text-2xl font-bold text-green-400">${wonCount}</p>
+                            </div>
+                            <i class="fa-solid fa-trophy text-3xl text-green-500/30"></i>
+                        </div>
+                    </div>
+                    <div class="card p-4 border-l-4 border-l-red-500">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs" style="color: var(--color-text-muted);">Lost Quotes</p>
+                                <p class="text-2xl font-bold text-red-400">${lostCount}</p>
+                            </div>
+                            <i class="fa-solid fa-times-circle text-3xl text-red-500/30"></i>
+                        </div>
                     </div>
                 </div>
                 
@@ -998,7 +1232,7 @@ export function loadArchivedQuotesView() {
                                         <th class="px-4 py-3">Qty</th>
                                         <th class="px-4 py-3">Due Date</th>
                                         <th class="px-4 py-3">Closed</th>
-                                        <th class="px-4 py-3">Status</th>
+                                        <th class="px-4 py-3">Outcome</th>
                                         <th class="px-4 py-3">Actions</th>
                                     </tr>
                                 </thead>
@@ -1009,9 +1243,9 @@ export function loadArchivedQuotesView() {
                         </div>
                     ` : `
                         <div class="text-center py-12">
-                            <i class="fa-solid fa-file-circle-check text-5xl mb-4" style="color: var(--color-text-muted);"></i>
+                            <i class="fa-solid fa-archive text-5xl mb-4" style="color: var(--color-text-muted);"></i>
                             <p style="color: var(--color-text-muted);">No archived quotes yet</p>
-                            <p class="text-xs mt-2" style="color: var(--color-text-muted);">Quotes marked as Lost will appear here</p>
+                            <p class="text-xs mt-2" style="color: var(--color-text-muted);">Won and Lost quotes will appear here</p>
                         </div>
                     `}
                 </div>
@@ -1670,8 +1904,9 @@ async function exportArchivedWork() {
 
 async function exportArchivedQuotes() {
     const allQuotes = getQuotes();
-    const archivedQuotes = allQuotes.filter(q => q.status === 'Lost');
-    const headers = ['id', 'quoteNumber', 'customerId', 'customerName', 'partNumber', 'description', 'quantity', 'status', 'requestedDate', 'dueDate', 'totalPrice', 'sentAt'];
+    // Include both Won and Lost quotes in archive export
+    const archivedQuotes = allQuotes.filter(q => q.status === 'Won' || q.status === 'Lost');
+    const headers = ['id', 'quoteNumber', 'customerId', 'customerName', 'partNumber', 'description', 'quantity', 'status', 'requestedDate', 'dueDate', 'totalPrice', 'sentAt', 'lostReason', 'convertedToWO', 'updatedAt'];
 
     // For archived quotes, we still use client-side export since it's filtered from localStorage
     await exportToCSV(archivedQuotes, 'archived-quotes', headers);
@@ -1716,7 +1951,35 @@ function viewArchivedWorkOrder(woId) {
         return;
     }
     
-    const checklist = wo.checklist || getDefaultChecklist(wo.id);
+    // Get checklist - handle multi-part work orders
+    let checklist = [];
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        // Use first line item's checklist as representative
+        checklist = wo.lineItems[0].checklist || getDefaultChecklist();
+    } else {
+        checklist = wo.checklist || getDefaultChecklist();
+    }
+    
+    // Get documents for this work order
+    const documents = getWODocuments(parseInt(woId));
+    
+    // Get part info for display
+    const getPartDisplay = () => {
+        if (wo.lineItems && wo.lineItems.length > 0) {
+            if (wo.lineItems.length === 1) {
+                return wo.lineItems[0].partNumber;
+            }
+            return wo.lineItems.map(i => i.partNumber).join(', ');
+        }
+        return wo.partNumber || 'N/A';
+    };
+    
+    const getQtyDisplay = () => {
+        if (wo.lineItems && wo.lineItems.length > 0) {
+            return wo.lineItems.reduce((sum, i) => sum + (i.quantity || 0), 0);
+        }
+        return wo.quantity || 'N/A';
+    };
     
     const content = `
         <div class="p-6">
@@ -1735,12 +1998,12 @@ function viewArchivedWorkOrder(woId) {
                         <p class="text-white">${wo.customerName}</p>
                     </div>
                     <div>
-                        <label class="text-xs" style="color: var(--color-text-muted);">Part Number</label>
-                        <p class="text-white">${wo.partNumber}</p>
+                        <label class="text-xs" style="color: var(--color-text-muted);">Part Number(s)</label>
+                        <p class="text-white">${getPartDisplay()}</p>
                     </div>
                     <div>
-                        <label class="text-xs" style="color: var(--color-text-muted);">Quantity</label>
-                        <p class="text-white">${wo.quantity}</p>
+                        <label class="text-xs" style="color: var(--color-text-muted);">Total Quantity</label>
+                        <p class="text-white">${getQtyDisplay()}</p>
                     </div>
                     <div>
                         <label class="text-xs" style="color: var(--color-text-muted);">Due Date</label>
@@ -1751,9 +2014,43 @@ function viewArchivedWorkOrder(woId) {
                     <label class="text-xs" style="color: var(--color-text-muted);">Status</label>
                     <p><span class="badge bg-green-600 text-green-100">Completed</span></p>
                 </div>
+                
+                <!-- Documents Section -->
+                <div class="border-t pt-4" style="border-color: var(--color-border);">
+                    <label class="text-xs mb-2 block" style="color: var(--color-text-muted);">
+                        <i class="fa-solid fa-folder-open mr-1"></i>Documents & Certificates (${documents.length})
+                    </label>
+                    ${documents.length > 0 ? `
+                        <div class="space-y-2 max-h-32 overflow-y-auto">
+                            ${documents.map(doc => {
+                                const typeInfo = DOCUMENT_TYPES[doc.type] || DOCUMENT_TYPES.OTHER;
+                                return `
+                                    <div class="flex items-center justify-between p-2 rounded" style="background: var(--color-dark-bg);">
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid ${typeInfo.icon} ${typeInfo.color}"></i>
+                                            <span class="text-sm text-white">${doc.name}</span>
+                                            <span class="text-xs" style="color: var(--color-text-muted);">${typeInfo.label}</span>
+                                        </div>
+                                        ${doc.fileData ? `
+                                            <button onclick="BPERP.sales.downloadDocument(${doc.id}, 'wo')" 
+                                                class="text-blue-400 hover:text-blue-300 text-xs">
+                                                <i class="fa-solid fa-download"></i>
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    ` : `
+                        <div class="text-center py-4" style="color: var(--color-text-muted);">
+                            <i class="fa-solid fa-folder-open mr-1"></i>No documents attached
+                        </div>
+                    `}
+                </div>
+                
                 <div>
                     <label class="text-xs mb-2 block" style="color: var(--color-text-muted);">Workflow History</label>
-                    <div class="space-y-1">
+                    <div class="space-y-1 max-h-40 overflow-y-auto">
                         ${checklist.map(item => `
                             <div class="flex items-center gap-2 p-2 rounded bg-green-500/10">
                                 <i class="fa-solid fa-check text-green-400"></i>
@@ -1886,6 +2183,165 @@ function showEditQuoteModal(quoteId) {
     });
 }
 
+// ==================== QUOTE STATUS TRANSITIONS ====================
+
+// Mark quote as Sent (with confirmation)
+function markQuoteSent(quoteId, quoteNumber) {
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-paper-plane mr-2 text-blue-400"></i>Mark Quote as Sent
+                </h3>
+                <button onclick="BPERP.common.closeModal('confirmSentModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="mb-4 p-4 rounded-lg" style="background: var(--color-dark-bg);">
+                <p class="text-white mb-2">Are you sure you want to mark quote <strong>${quoteNumber}</strong> as sent?</p>
+                <p class="text-sm" style="color: var(--color-text-muted);">This indicates the quote has been sent to the customer and is awaiting their response.</p>
+            </div>
+            <div class="flex space-x-3">
+                <button onclick="BPERP.common.closeModal('confirmSentModal')" class="btn btn-secondary flex-1">Cancel</button>
+                <button id="confirmSentBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex-1">
+                    <i class="fa-solid fa-paper-plane mr-2"></i>Mark as Sent
+                </button>
+            </div>
+        </div>
+    `;
+    
+    createModal('confirmSentModal', content, { width: 'w-full max-w-md' });
+    
+    document.getElementById('confirmSentBtn').addEventListener('click', () => {
+        const quotes = getQuotes();
+        const index = quotes.findIndex(q => q.id === parseInt(quoteId));
+        
+        if (index !== -1) {
+            quotes[index].status = 'Sent';
+            quotes[index].sentAt = new Date().toISOString();
+            quotes[index].updatedAt = new Date().toISOString();
+            storage.set(STORAGE_KEYS.QUOTES, quotes);
+            
+            closeModal('confirmSentModal');
+            showToast(`Quote ${quoteNumber} marked as sent`, 'success');
+            loadQuotesView();
+        }
+    });
+}
+
+// Mark quote as Won (creates work order, with confirmation)
+function markQuoteWon(quoteId, quoteNumber) {
+    const quotes = getQuotes();
+    const quote = quotes.find(q => q.id === parseInt(quoteId));
+    
+    if (!quote) {
+        showToast('Quote not found', 'error');
+        return;
+    }
+    
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-trophy mr-2 text-green-400"></i>Mark Quote as Won
+                </h3>
+                <button onclick="BPERP.common.closeModal('confirmWonModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="mb-4 p-4 rounded-lg" style="background: var(--color-dark-bg);">
+                <p class="text-white mb-2">Mark quote <strong>${quoteNumber}</strong> as won?</p>
+                <p class="text-sm mb-3" style="color: var(--color-text-muted);">This will:</p>
+                <ul class="text-sm space-y-1" style="color: var(--color-text-muted);">
+                    <li><i class="fa-solid fa-check text-green-400 mr-2"></i>Create a new Work Order from this quote</li>
+                    <li><i class="fa-solid fa-check text-green-400 mr-2"></i>Copy all attached documents to the Work Order</li>
+                    <li><i class="fa-solid fa-check text-green-400 mr-2"></i>Move the quote to the archive</li>
+                </ul>
+            </div>
+            <div class="mb-4 p-3 rounded" style="background: var(--color-card-bg); border: 1px solid var(--color-border);">
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div><span style="color: var(--color-text-muted);">Customer:</span> <span class="text-white">${quote.customerName}</span></div>
+                    <div><span style="color: var(--color-text-muted);">Part:</span> <span class="text-white">${quote.partNumber}</span></div>
+                    <div><span style="color: var(--color-text-muted);">Quantity:</span> <span class="text-white">${quote.quantity}</span></div>
+                    <div><span style="color: var(--color-text-muted);">Due:</span> <span class="text-white">${formatDate(quote.dueDate)}</span></div>
+                </div>
+            </div>
+            <div class="flex space-x-3">
+                <button onclick="BPERP.common.closeModal('confirmWonModal')" class="btn btn-secondary flex-1">Cancel</button>
+                <button id="confirmWonBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex-1">
+                    <i class="fa-solid fa-trophy mr-2"></i>Confirm Won & Create WO
+                </button>
+            </div>
+        </div>
+    `;
+    
+    createModal('confirmWonModal', content, { width: 'w-full max-w-lg' });
+    
+    document.getElementById('confirmWonBtn').addEventListener('click', () => {
+        closeModal('confirmWonModal');
+        // Use existing convert function which handles everything
+        convertQuoteToWorkOrder(quoteId);
+    });
+}
+
+// Mark quote as Lost (archive, with confirmation)
+function markQuoteLost(quoteId, quoteNumber) {
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-archive mr-2 text-gray-400"></i>Archive Quote
+                </h3>
+                <button onclick="BPERP.common.closeModal('confirmLostModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="mb-4 p-4 rounded-lg" style="background: var(--color-dark-bg);">
+                <p class="text-white mb-2">Archive quote <strong>${quoteNumber}</strong> as lost?</p>
+                <p class="text-sm" style="color: var(--color-text-muted);">This indicates the customer did not accept the quote. It will be moved to the archived quotes section.</p>
+            </div>
+            <div class="mb-4">
+                <label class="form-label">Reason (optional)</label>
+                <select id="lostReason" class="form-input w-full">
+                    <option value="">Select reason...</option>
+                    <option value="Price">Price too high</option>
+                    <option value="Lead Time">Lead time too long</option>
+                    <option value="Competitor">Went with competitor</option>
+                    <option value="Cancelled">Project cancelled</option>
+                    <option value="No Response">No response from customer</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="flex space-x-3">
+                <button onclick="BPERP.common.closeModal('confirmLostModal')" class="btn btn-secondary flex-1">Cancel</button>
+                <button id="confirmLostBtn" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded flex-1">
+                    <i class="fa-solid fa-archive mr-2"></i>Archive Quote
+                </button>
+            </div>
+        </div>
+    `;
+    
+    createModal('confirmLostModal', content, { width: 'w-full max-w-md' });
+    
+    document.getElementById('confirmLostBtn').addEventListener('click', () => {
+        const quotes = getQuotes();
+        const index = quotes.findIndex(q => q.id === parseInt(quoteId));
+        const lostReason = document.getElementById('lostReason')?.value || '';
+        
+        if (index !== -1) {
+            quotes[index].status = 'Lost';
+            quotes[index].lostReason = lostReason;
+            quotes[index].lostAt = new Date().toISOString();
+            quotes[index].updatedAt = new Date().toISOString();
+            storage.set(STORAGE_KEYS.QUOTES, quotes);
+            
+            closeModal('confirmLostModal');
+            showToast(`Quote ${quoteNumber} archived`, 'success');
+            loadQuotesView();
+        }
+    });
+}
+
 // ==================== CONVERT QUOTE TO WORK ORDER ====================
 function convertQuoteToWorkOrder(quoteId) {
     const quotes = getQuotes();
@@ -1904,12 +2360,22 @@ function convertQuoteToWorkOrder(quoteId) {
         partNumber: quote.partNumber,
         quantity: quote.quantity,
         description: quote.description,
+        material: quote.material || '',
         dueDate: quote.dueDate,
         priority: 'Normal',
         notes: `Converted from Quote ${quote.quoteNumber}`,
         status: 'Open',
-        completionPercentage: 0,
-        checklist: getDefaultChecklist(),
+        sourceQuoteId: quote.id,
+        sourceQuoteNumber: quote.quoteNumber,
+        lineItems: [{
+            id: 1,
+            partNumber: quote.partNumber,
+            description: quote.description || '',
+            quantity: quote.quantity,
+            material: quote.material || '',
+            completionPercentage: 0,
+            checklist: getDefaultChecklist()
+        }],
         createdAt: new Date().toISOString()
     };
     
@@ -1917,15 +2383,21 @@ function convertQuoteToWorkOrder(quoteId) {
     workOrders.push(workOrder);
     storage.set(STORAGE_KEYS.WORK_ORDERS, workOrders);
     
+    // Copy quote documents to work order (blueprints, specs, etc.)
+    copyQuoteDocsToWO(quote.id, workOrder.id);
+    
     // Update quote status to Won
     const index = quotes.findIndex(q => q.id === parseInt(quoteId));
     if (index !== -1) {
         quotes[index].status = 'Won';
+        quotes[index].convertedToWO = workOrder.woNumber;
         quotes[index].updatedAt = new Date().toISOString();
         storage.set(STORAGE_KEYS.QUOTES, quotes);
     }
     
-    showToast(`Quote ${quote.quoteNumber} converted to Work Order ${workOrder.woNumber}!`, 'success');
+    const docCount = getQuoteDocuments(quote.id).length;
+    const docMsg = docCount > 0 ? ` (${docCount} documents copied)` : '';
+    showToast(`Quote ${quote.quoteNumber} converted to Work Order ${workOrder.woNumber}!${docMsg}`, 'success');
     loadQuotesView();
 }
 
@@ -1939,6 +2411,9 @@ export function registerActionHandlers(registerFn) {
     registerFn('add-quote', () => showAddQuoteModal());
     registerFn('edit-quote', (target) => showEditQuoteModal(target.dataset.id));
     registerFn('convert-quote', (target) => convertQuoteToWorkOrder(target.dataset.id));
+    registerFn('mark-quote-sent', (target) => markQuoteSent(target.dataset.id, target.dataset.number));
+    registerFn('mark-quote-won', (target) => markQuoteWon(target.dataset.id, target.dataset.number));
+    registerFn('mark-quote-lost', (target) => markQuoteLost(target.dataset.id, target.dataset.number));
     registerFn('add-wo', () => showAddWorkOrderModal());
     registerFn('export-customers', () => exportCustomers());
     registerFn('export-quotes', () => exportQuotes());
@@ -1948,6 +2423,13 @@ export function registerActionHandlers(registerFn) {
     registerFn('export-archived-quotes', () => exportArchivedQuotes());
     registerFn('reopen-quote', (target) => reopenQuote(target.dataset.id));
     registerFn('delete-quote', (target) => deleteQuote(target.dataset.id, target.dataset.name));
+    
+    // Document management actions
+    registerFn('view-quote-docs', (target) => showDocumentsModal('quote', parseInt(target.dataset.id), target.dataset.number));
+    registerFn('view-wo-docs', (target) => showDocumentsModal('wo', parseInt(target.dataset.id), target.dataset.number));
+    registerFn('add-quote-doc', (target) => showDocumentUploadModal('quote', parseInt(target.dataset.id)));
+    registerFn('add-wo-doc', (target) => showDocumentUploadModal('wo', parseInt(target.dataset.id)));
+    registerFn('add-material-cert', (target) => showDocumentUploadModal('wo', parseInt(target.dataset.id), 'MATERIAL_CERT'));
     
     // Line item actions
     registerFn('toggle-line-item', (target) => {
@@ -1981,6 +2463,402 @@ export function registerActionHandlers(registerFn) {
             loadWIPView();
         }
     });
+}
+
+// ==================== DOCUMENT MANAGEMENT ====================
+// Document types supported in the system
+const DOCUMENT_TYPES = {
+    BLUEPRINT: { label: 'Blueprint', icon: 'fa-drafting-compass', color: 'text-blue-400' },
+    QUOTE_DOC: { label: 'Quote Document', icon: 'fa-file-invoice', color: 'text-purple-400' },
+    MATERIAL_CERT: { label: 'Material Cert', icon: 'fa-certificate', color: 'text-green-400' },
+    INSPECTION: { label: 'Inspection Report', icon: 'fa-clipboard-check', color: 'text-cyan-400' },
+    OTHER: { label: 'Other', icon: 'fa-file', color: 'text-gray-400' }
+};
+
+// Get documents for a quote
+export function getQuoteDocuments(quoteId) {
+    const allDocs = storage.get(STORAGE_KEYS.QUOTE_DOCUMENTS) || [];
+    return allDocs.filter(doc => doc.quoteId === quoteId);
+}
+
+// Get documents for a work order
+export function getWODocuments(woId) {
+    const allDocs = storage.get(STORAGE_KEYS.WO_DOCUMENTS) || [];
+    return allDocs.filter(doc => doc.woId === woId);
+}
+
+// Add document to quote
+export function addQuoteDocument(quoteId, document) {
+    const allDocs = storage.get(STORAGE_KEYS.QUOTE_DOCUMENTS) || [];
+    const newDoc = {
+        id: Date.now(),
+        quoteId: quoteId,
+        ...document,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: 'Current User'
+    };
+    allDocs.push(newDoc);
+    storage.set(STORAGE_KEYS.QUOTE_DOCUMENTS, allDocs);
+    return newDoc;
+}
+
+// Add document to work order
+export function addWODocument(woId, document) {
+    const allDocs = storage.get(STORAGE_KEYS.WO_DOCUMENTS) || [];
+    const newDoc = {
+        id: Date.now(),
+        woId: woId,
+        ...document,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: 'Current User'
+    };
+    allDocs.push(newDoc);
+    storage.set(STORAGE_KEYS.WO_DOCUMENTS, allDocs);
+    return newDoc;
+}
+
+// Remove document
+export function removeQuoteDocument(docId) {
+    const allDocs = storage.get(STORAGE_KEYS.QUOTE_DOCUMENTS) || [];
+    const filtered = allDocs.filter(doc => doc.id !== docId);
+    storage.set(STORAGE_KEYS.QUOTE_DOCUMENTS, filtered);
+}
+
+export function removeWODocument(docId) {
+    const allDocs = storage.get(STORAGE_KEYS.WO_DOCUMENTS) || [];
+    const filtered = allDocs.filter(doc => doc.id !== docId);
+    storage.set(STORAGE_KEYS.WO_DOCUMENTS, filtered);
+}
+
+// Copy quote documents to work order (called during quote conversion)
+export function copyQuoteDocsToWO(quoteId, woId) {
+    const quoteDocs = getQuoteDocuments(quoteId);
+    const woDocs = storage.get(STORAGE_KEYS.WO_DOCUMENTS) || [];
+    
+    quoteDocs.forEach(doc => {
+        woDocs.push({
+            ...doc,
+            id: Date.now() + Math.random(), // Ensure unique ID
+            woId: woId,
+            sourceQuoteId: quoteId,
+            copiedAt: new Date().toISOString()
+        });
+    });
+    
+    storage.set(STORAGE_KEYS.WO_DOCUMENTS, woDocs);
+}
+
+// Show document upload modal
+export function showDocumentUploadModal(entityType, entityId, documentType = null) {
+    const isQuote = entityType === 'quote';
+    const entityLabel = isQuote ? 'Quote' : 'Work Order';
+    
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-file-upload mr-2" style="color: var(--color-accent-primary);"></i>
+                    Add Document to ${entityLabel}
+                </h3>
+                <button onclick="BPERP.common.closeModal('docUploadModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="docUploadForm" class="space-y-4">
+                <input type="hidden" name="entityType" value="${entityType}">
+                <input type="hidden" name="entityId" value="${entityId}">
+                
+                <div>
+                    <label class="form-label">Document Type *</label>
+                    <select name="docType" required class="form-input w-full" ${documentType ? 'disabled' : ''}>
+                        ${documentType ? `<option value="${documentType}" selected>${DOCUMENT_TYPES[documentType]?.label || documentType}</option>` : `
+                            <option value="">Select type...</option>
+                            <option value="BLUEPRINT">Blueprint / Drawing</option>
+                            <option value="QUOTE_DOC">Quote Document</option>
+                            <option value="MATERIAL_CERT">Material Certification</option>
+                            <option value="INSPECTION">Inspection Report</option>
+                            <option value="OTHER">Other</option>
+                        `}
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="form-label">Document Name *</label>
+                    <input type="text" name="docName" required class="form-input w-full" placeholder="e.g., Part Blueprint Rev A">
+                </div>
+                
+                <div>
+                    <label class="form-label">File</label>
+                    <div class="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center hover:border-gray-500 transition-colors">
+                        <input type="file" id="docFileInput" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" 
+                            class="hidden" onchange="BPERP.sales.handleFileSelect(this)">
+                        <div id="fileDropZone" class="cursor-pointer" onclick="document.getElementById('docFileInput').click()">
+                            <i class="fa-solid fa-cloud-upload-alt text-4xl mb-2" style="color: var(--color-text-muted);"></i>
+                            <p class="text-sm" style="color: var(--color-text-muted);">Click to upload or drag and drop</p>
+                            <p class="text-xs mt-1" style="color: var(--color-text-muted);">PDF, Images, Word, Excel (Max 10MB)</p>
+                        </div>
+                        <div id="selectedFileInfo" class="hidden mt-3">
+                            <div class="flex items-center justify-center gap-2 text-green-400">
+                                <i class="fa-solid fa-file-check"></i>
+                                <span id="selectedFileName">-</span>
+                                <button type="button" onclick="BPERP.sales.clearFileSelect()" class="text-red-400 hover:text-red-300 ml-2">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" name="fileData" id="docFileData">
+                    <input type="hidden" name="fileName" id="docFileName">
+                    <input type="hidden" name="fileSize" id="docFileSize">
+                </div>
+                
+                <div>
+                    <label class="form-label">Reference / Revision #</label>
+                    <input type="text" name="reference" class="form-input w-full" placeholder="e.g., Rev B, PO#12345">
+                </div>
+                
+                <div>
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-input w-full" rows="2" placeholder="Additional notes about this document..."></textarea>
+                </div>
+                
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('docUploadModal')" 
+                        class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fa-solid fa-plus mr-2"></i>Add Document
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    createModal('docUploadModal', content, { width: 'w-full max-w-lg' });
+    
+    document.getElementById('docUploadForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        
+        const document = {
+            type: formData.get('docType') || documentType,
+            name: formData.get('docName'),
+            reference: formData.get('reference'),
+            notes: formData.get('notes'),
+            fileName: formData.get('fileName') || null,
+            fileData: formData.get('fileData') || null,
+            fileSize: formData.get('fileSize') || null
+        };
+        
+        if (entityType === 'quote') {
+            addQuoteDocument(parseInt(entityId), document);
+            showToast(`Document "${document.name}" added to quote`, 'success');
+        } else {
+            addWODocument(parseInt(entityId), document);
+            showToast(`Document "${document.name}" added to work order`, 'success');
+        }
+        
+        closeModal('docUploadModal');
+        
+        // Refresh view
+        if (salesState.currentView === 'quotes') {
+            loadQuotesView();
+        } else if (salesState.currentView === 'wip') {
+            loadWIPView();
+        }
+    });
+}
+
+// Handle file selection for document upload
+export function handleFileSelect(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('File too large. Maximum size is 10MB.', 'error');
+        input.value = '';
+        return;
+    }
+    
+    // Read file as base64
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('docFileData').value = e.target.result;
+        document.getElementById('docFileName').value = file.name;
+        document.getElementById('docFileSize').value = file.size;
+        
+        document.getElementById('fileDropZone').classList.add('hidden');
+        document.getElementById('selectedFileInfo').classList.remove('hidden');
+        document.getElementById('selectedFileName').textContent = file.name;
+    };
+    reader.readAsDataURL(file);
+}
+
+export function clearFileSelect() {
+    document.getElementById('docFileInput').value = '';
+    document.getElementById('docFileData').value = '';
+    document.getElementById('docFileName').value = '';
+    document.getElementById('docFileSize').value = '';
+    
+    document.getElementById('fileDropZone').classList.remove('hidden');
+    document.getElementById('selectedFileInfo').classList.add('hidden');
+}
+
+// View documents modal
+export function showDocumentsModal(entityType, entityId, entityNumber) {
+    const isQuote = entityType === 'quote';
+    const documents = isQuote ? getQuoteDocuments(entityId) : getWODocuments(entityId);
+    const entityLabel = isQuote ? 'Quote' : 'Work Order';
+    
+    const renderDocument = (doc) => {
+        const typeInfo = DOCUMENT_TYPES[doc.type] || DOCUMENT_TYPES.OTHER;
+        return `
+            <div class="flex items-center justify-between p-3 rounded-lg" style="background: var(--color-dark-bg);">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center" style="background: var(--color-card-bg);">
+                        <i class="fa-solid ${typeInfo.icon} ${typeInfo.color}"></i>
+                    </div>
+                    <div>
+                        <div class="font-medium text-white">${doc.name}</div>
+                        <div class="text-xs" style="color: var(--color-text-muted);">
+                            ${typeInfo.label}
+                            ${doc.reference ? ` | ${doc.reference}` : ''}
+                            ${doc.fileName ? ` | ${doc.fileName}` : ''}
+                        </div>
+                        <div class="text-xs" style="color: var(--color-text-muted);">
+                            Uploaded ${formatDate(doc.uploadedAt)} by ${doc.uploadedBy}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    ${doc.fileData ? `
+                        <button onclick="BPERP.sales.downloadDocument(${doc.id}, '${entityType}')" 
+                            class="text-blue-400 hover:text-blue-300 px-2 py-1" title="Download">
+                            <i class="fa-solid fa-download"></i>
+                        </button>
+                    ` : ''}
+                    <button onclick="BPERP.sales.deleteDocument(${doc.id}, '${entityType}', '${doc.name}')" 
+                        class="text-red-400 hover:text-red-300 px-2 py-1" title="Delete">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    };
+    
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-folder-open mr-2" style="color: var(--color-accent-primary);"></i>
+                    Documents for ${entityLabel} ${entityNumber}
+                </h3>
+                <button onclick="BPERP.common.closeModal('documentsModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="mb-4">
+                <button onclick="BPERP.sales.showDocumentUploadModal('${entityType}', ${entityId})" 
+                    class="btn btn-primary w-full">
+                    <i class="fa-solid fa-plus mr-2"></i>Add Document
+                </button>
+            </div>
+            
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+                ${documents.length > 0 ? documents.map(renderDocument).join('') : `
+                    <div class="text-center py-8">
+                        <i class="fa-solid fa-folder-open text-4xl mb-3" style="color: var(--color-text-muted);"></i>
+                        <p style="color: var(--color-text-muted);">No documents attached</p>
+                        <p class="text-xs mt-1" style="color: var(--color-text-muted);">
+                            Add blueprints, material certs, and other documents
+                        </p>
+                    </div>
+                `}
+            </div>
+            
+            <div class="mt-4 pt-4 border-t" style="border-color: var(--color-border);">
+                <button onclick="BPERP.common.closeModal('documentsModal')" class="btn btn-secondary w-full">
+                    Close
+                </button>
+            </div>
+        </div>
+    `;
+    
+    createModal('documentsModal', content, { width: 'w-full max-w-lg' });
+}
+
+// Download document
+export function downloadDocument(docId, entityType) {
+    const allDocs = entityType === 'quote' 
+        ? storage.get(STORAGE_KEYS.QUOTE_DOCUMENTS) || []
+        : storage.get(STORAGE_KEYS.WO_DOCUMENTS) || [];
+    
+    const doc = allDocs.find(d => d.id === docId);
+    if (!doc || !doc.fileData) {
+        showToast('Document file not found', 'error');
+        return;
+    }
+    
+    // Create download link
+    const link = document.createElement('a');
+    link.href = doc.fileData;
+    link.download = doc.fileName || `${doc.name}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Delete document
+export function deleteDocument(docId, entityType, docName) {
+    if (!confirm(`Are you sure you want to delete "${docName}"?`)) {
+        return;
+    }
+    
+    if (entityType === 'quote') {
+        removeQuoteDocument(docId);
+    } else {
+        removeWODocument(docId);
+    }
+    
+    showToast(`Document "${docName}" deleted`, 'success');
+    closeModal('documentsModal');
+}
+
+// Render documents panel for work order card (inline display)
+function renderWODocumentsPanel(woId) {
+    const documents = getWODocuments(woId);
+    
+    if (documents.length === 0) {
+        return `
+            <div class="text-center py-2">
+                <span class="text-xs" style="color: var(--color-text-muted);">
+                    <i class="fa-solid fa-folder-open mr-1"></i>No documents attached
+                </span>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="flex flex-wrap gap-2">
+            ${documents.slice(0, 4).map(doc => {
+                const typeInfo = DOCUMENT_TYPES[doc.type] || DOCUMENT_TYPES.OTHER;
+                return `
+                    <div class="flex items-center gap-1 px-2 py-1 rounded text-xs" 
+                         style="background: var(--color-dark-bg);" 
+                         title="${doc.name}${doc.reference ? ' - ' + doc.reference : ''}">
+                        <i class="fa-solid ${typeInfo.icon} ${typeInfo.color}"></i>
+                        <span class="text-white truncate max-w-20">${doc.name}</span>
+                    </div>
+                `;
+            }).join('')}
+            ${documents.length > 4 ? `
+                <div class="flex items-center px-2 py-1 rounded text-xs" style="background: var(--color-dark-bg);">
+                    <span style="color: var(--color-text-muted);">+${documents.length - 4} more</span>
+                </div>
+            ` : ''}
+        </div>
+    `;
 }
 
 // ==================== AUTO-REFRESH ====================

@@ -11,6 +11,8 @@ export const STORAGE_KEYS = {
     ARCHIVED_WORK_ORDERS: 'bperp_archived_work_orders',
     CUSTOMERS: 'bperp_customers',
     QUOTES: 'bperp_quotes',
+    QUOTE_DOCUMENTS: 'bperp_quote_documents',
+    WO_DOCUMENTS: 'bperp_wo_documents',
     MACHINES: 'bperp_machines',
     MAINTENANCE_HISTORY: 'bperp_maintenance_history',
     MATERIALS: 'bperp_materials',
@@ -18,7 +20,11 @@ export const STORAGE_KEYS = {
     MISC_ITEMS: 'bperp_misc_items',
     MISC_TASKS: 'bperp_misc_tasks',
     USER_PREFERENCES: 'bperp_user_preferences',
-    CACHED_SEARCH: 'bperp_cached_search'
+    CACHED_SEARCH: 'bperp_cached_search',
+    // User management
+    CURRENT_USER: 'bperp_current_user',
+    AUTH_TOKEN: 'bperp_auth_token',
+    USERS_LIST: 'bperp_users_list'
 };
 
 // ==================== STORAGE MANAGER CLASS ====================

@@ -9,7 +9,7 @@ import {
     getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer
 } from './common.js';
 import { storage, STORAGE_KEYS, state } from './storage.js';
-import { getWorkOrders, getNextWorkflowStep, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders } from './sales.js';
+import { getWorkOrders, getNextWorkflowStep, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders, getWODocuments, showDocumentsModal, showDocumentUploadModal, getDefaultChecklist } from './sales.js';
 
 // ==================== WORKFLOW STEP CONFIGURATION ====================
 const WORKFLOW_STEPS = {
@@ -262,15 +262,24 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
         const isStarted = step.startedAt ? true : false;
         const hasIssue = step.hasIssue || false;
         
+        // Get document count for this WO
+        const docCount = getWODocuments(item.woId).length;
+        
         // Data attributes for action buttons
         const dataAttrs = `data-wo-id="${item.woId}" data-step-id="${step.id}" data-step-name="${step.stepName}" data-item-id="${item.lineItemId || ''}"`;
         
         return `
             <div class="card p-4 border-l-4 ${borderColor}">
                 <div class="flex justify-between items-start mb-2">
-                    <div>
+                    <div class="flex items-center gap-2">
                         <span class="font-bold text-sm" style="color: var(--color-accent-primary);">${item.woNumber}</span>
-                        ${hasIssue ? '<span class="text-red-400 ml-2"><i class="fa-solid fa-exclamation-triangle"></i></span>' : ''}
+                        ${hasIssue ? '<span class="text-red-400"><i class="fa-solid fa-exclamation-triangle"></i></span>' : ''}
+                        <!-- Documents Badge - Access blueprints from any workcenter -->
+                        <button data-action="view-wo-documents" data-wo-id="${item.woId}" data-wo-number="${item.woNumber}"
+                            class="px-2 py-0.5 rounded text-xs ${docCount > 0 ? 'bg-blue-600/30 text-blue-400' : 'bg-gray-700 text-gray-500'} hover:bg-blue-600/50"
+                            title="View Blueprints & Documents">
+                            <i class="fa-solid fa-drafting-compass mr-1"></i>${docCount}
+                        </button>
                     </div>
                     <span class="text-xs" style="color: var(--color-${urgency === 'red' ? 'error' : urgency === 'yellow' ? 'warning' : 'success'});">
                         ${formatDate(item.dueDate)}
@@ -380,15 +389,24 @@ function renderCompletedWorkView(workOrders) {
     const container = DOMCache.get('dashboardContent');
     if (!container) return;
 
+    // Helper to check if a step is complete across all line items (or in legacy checklist)
+    const isStepCompleteForWO = (wo, stepKey) => {
+        // Multi-line-item format: check if ALL line items have completed this step
+        if (wo.lineItems && wo.lineItems.length > 0) {
+            return wo.lineItems.every(item => {
+                const step = item.checklist?.find(s => s.stepKey === stepKey);
+                return step?.isCompleted || false;
+            });
+        }
+        // Legacy single-part format: check wo.checklist directly
+        const step = wo.checklist?.find(s => s.stepKey === stepKey);
+        return step?.isCompleted || false;
+    };
+
     // Filter work orders that have completed "ready_for_shipment" but not "invoicing_complete"
     const completedWOs = workOrders.filter(wo => {
-        // Check if ready_for_shipment is complete
-        const readyForShipmentStep = wo.checklist?.find(s => s.stepKey === 'ready_for_shipment');
-        const isReadyForShipment = readyForShipmentStep?.isCompleted || false;
-
-        // Check if invoicing is not yet complete
-        const invoicingStep = wo.checklist?.find(s => s.stepKey === 'invoicing_complete');
-        const isInvoicingComplete = invoicingStep?.isCompleted || false;
+        const isReadyForShipment = isStepCompleteForWO(wo, 'ready_for_shipment');
+        const isInvoicingComplete = isStepCompleteForWO(wo, 'invoicing_complete');
 
         return isReadyForShipment && !isInvoicingComplete;
     });
@@ -402,19 +420,27 @@ function renderCompletedWorkView(workOrders) {
         const urgency = getWOUrgencyColor(wo.dueDate);
         const borderColor = urgency === 'red' ? 'border-red-600' : urgency === 'yellow' ? 'border-yellow-600' : 'border-emerald-600';
 
-        // Check invoicing status
-        const invoicingStep = wo.checklist?.find(s => s.stepKey === 'invoicing_complete');
-        const isInvoicingComplete = invoicingStep?.isCompleted || false;
+        // Check invoicing status using the helper that handles multi-line-item format
+        const isInvoicingComplete = isStepCompleteForWO(wo, 'invoicing_complete');
 
         // Calculate total value (this would come from line items in a real system)
         const totalValue = '$' + (Math.random() * 5000 + 1000).toFixed(2); // Mock value
+        
+        // Get document count for this WO
+        const docCount = getWODocuments(wo.id).length;
 
         return `
             <div class="card p-4 border-l-4 ${borderColor}">
                 <div class="flex justify-between items-start mb-3">
-                    <div>
+                    <div class="flex items-center gap-2">
                         <span class="font-bold text-lg" style="color: var(--color-accent-primary);">${wo.woNumber}</span>
-                        <span class="text-sm ml-2" style="color: var(--color-text-muted);">${wo.customerName}</span>
+                        <span class="text-sm" style="color: var(--color-text-muted);">${wo.customerName}</span>
+                        <!-- Documents Badge -->
+                        <button data-action="view-wo-documents" data-wo-id="${wo.id}" data-wo-number="${wo.woNumber}"
+                            class="px-2 py-0.5 rounded text-xs ${docCount > 0 ? 'bg-blue-600/30 text-blue-400' : 'bg-gray-700 text-gray-500'} hover:bg-blue-600/50"
+                            title="View Blueprints & Documents">
+                            <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'} mr-1"></i>${docCount}
+                        </button>
                     </div>
                     <span class="text-xs px-2 py-1 rounded-full bg-emerald-600 text-emerald-100">
                         <i class="fa-solid fa-check-circle mr-1"></i>Shipped
@@ -693,6 +719,9 @@ function renderOrderingView(workOrders) {
         const urgency = getWOUrgencyColor(wo.dueDate);
         const borderColor = urgency === 'red' ? 'border-red-600' : urgency === 'yellow' ? 'border-yellow-600' : 'border-gray-700';
         
+        // Get document count for this WO
+        const docCount = getWODocuments(wo.id).length;
+        
         // Check which ordering steps are complete
         let materialOrdered = false;
         let toolingOrdered = false;
@@ -750,6 +779,12 @@ function renderOrderingView(workOrders) {
                         <span class="font-medium text-white">${wo.woNumber}</span>
                         <span class="text-sm ml-2" style="color: var(--color-text-muted);">${wo.partNumber}</span>
                         ${hasIssue ? '<span class="text-red-400 ml-2"><i class="fa-solid fa-exclamation-triangle"></i></span>' : ''}
+                        <!-- Documents Badge -->
+                        <button data-action="view-wo-documents" data-wo-id="${wo.id}" data-wo-number="${wo.woNumber}"
+                            class="ml-2 px-2 py-0.5 rounded text-xs ${docCount > 0 ? 'bg-blue-600/30 text-blue-400' : 'bg-gray-700 text-gray-500'} hover:bg-blue-600/50"
+                            title="View Documents & Blueprints">
+                            <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'} mr-1"></i>${docCount}
+                        </button>
                     </div>
                     <span class="text-xs" style="color: var(--color-${urgency === 'red' ? 'error' : urgency === 'yellow' ? 'warning' : 'success'});">
                         ${formatDate(wo.dueDate)}
@@ -796,6 +831,14 @@ function renderOrderingView(workOrders) {
                             class="${(!materialOrdered || !toolingOrdered) || (materialReceived && toolingReceived) ? 'bg-gray-600' : 'bg-purple-600 hover:bg-purple-700'} text-white px-2 py-1 rounded text-xs flex-1"
                             ${(!materialOrdered || !toolingOrdered) || (materialReceived && toolingReceived) ? 'disabled' : ''}>
                             <i class="fa-solid fa-check-double mr-1"></i>Receive All
+                        </button>
+                    </div>
+                    
+                    <!-- Material Cert & Documents Row -->
+                    <div class="flex gap-2 pt-1 border-t" style="border-color: var(--color-border);">
+                        <button data-action="add-material-cert" data-wo-id="${wo.id}" data-wo-number="${wo.woNumber}"
+                            class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs flex-1">
+                            <i class="fa-solid fa-certificate mr-1"></i>Add Material Cert
                         </button>
                         <button data-action="workflow-issue" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="Ordering"
                             class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700">
@@ -1085,6 +1128,18 @@ export function registerActionHandlers(registerFn) {
 
     registerFn('create-misc-task', () => {
         showCreateMiscTaskModal();
+    });
+    
+    // Document actions for workcenters
+    registerFn('view-wo-documents', (target) => {
+        const woId = parseInt(target.dataset.woId);
+        const woNumber = target.dataset.woNumber;
+        showDocumentsModal('wo', woId, woNumber);
+    });
+    
+    registerFn('add-material-cert', (target) => {
+        const woId = parseInt(target.dataset.woId);
+        showDocumentUploadModal('wo', woId, 'MATERIAL_CERT');
     });
 }
 
@@ -1381,6 +1436,49 @@ function markInvoicingComplete(woId) {
     }
 
     showToast(`Invoicing completed for ${wo.woNumber}`, 'success');
+    
+    // Automatically archive the work order after invoicing is complete
+    autoArchiveWorkOrder(woId, wo.woNumber);
+}
+
+// Auto-archive without confirmation (called after invoicing is complete)
+function autoArchiveWorkOrder(woId, woNumber) {
+    const workOrders = getWorkOrders();
+    const wo = workOrders.find(w => w.id === woId);
+    
+    if (!wo) {
+        return;
+    }
+    
+    // Set archive metadata
+    const now = new Date().toISOString();
+    wo.archivedAt = now;
+    wo.completedAt = now;  // Used for sorting in archived view
+    wo.status = 'Archived';
+    wo.completionPercentage = 100;
+    
+    // Move to archived work orders - use immediate save to prevent race conditions
+    const archivedWorkOrders = storage.get(STORAGE_KEYS.ARCHIVED_WORK_ORDERS) || [];
+    
+    // Prevent duplicates by checking if already archived
+    const existingIndex = archivedWorkOrders.findIndex(a => a.id === woId);
+    if (existingIndex === -1) {
+        archivedWorkOrders.unshift(wo); // Add to beginning of array
+    } else {
+        archivedWorkOrders[existingIndex] = wo; // Update existing
+    }
+    
+    // Use immediate save (true) to ensure data is persisted before view refresh
+    storage.set(STORAGE_KEYS.ARCHIVED_WORK_ORDERS, archivedWorkOrders, true);
+    
+    // Remove from active work orders
+    const updatedWorkOrders = workOrders.filter(w => w.id !== woId);
+    saveWorkOrders(updatedWorkOrders);
+    
+    // Force flush any pending saves
+    storage.flushDirty();
+    
+    showToast(`Work order ${woNumber} has been archived`, 'success');
     refreshCurrentView();
 }
 
@@ -1418,13 +1516,26 @@ function archiveWorkOrder(woId) {
         return;
     }
 
+    // Set archive metadata
+    const now = new Date().toISOString();
+    wo.archivedAt = now;
+    wo.completedAt = now;  // Used for sorting in archived view
+    wo.status = 'Archived';
+    wo.completionPercentage = 100;
+
     // Move to archived work orders
     const archivedWorkOrders = storage.get(STORAGE_KEYS.ARCHIVED_WORK_ORDERS) || [];
-    wo.archivedAt = new Date().toISOString();
-    wo.status = 'Archived';
-
-    archivedWorkOrders.unshift(wo); // Add to beginning of array
-    storage.set(STORAGE_KEYS.ARCHIVED_WORK_ORDERS, archivedWorkOrders);
+    
+    // Prevent duplicates
+    const existingIndex = archivedWorkOrders.findIndex(a => a.id === woId);
+    if (existingIndex === -1) {
+        archivedWorkOrders.unshift(wo);
+    } else {
+        archivedWorkOrders[existingIndex] = wo;
+    }
+    
+    // Use immediate save
+    storage.set(STORAGE_KEYS.ARCHIVED_WORK_ORDERS, archivedWorkOrders, true);
 
     // Remove from active work orders
     const updatedWorkOrders = workOrders.filter(w => w.id !== woId);

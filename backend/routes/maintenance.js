@@ -1,600 +1,531 @@
 // Maintenance API Routes for BPERP
+// Uses PostgreSQL database for persistence
+
 const express = require('express');
-const router = express.Router();
 
-// In-memory storage for maintenance tasks
-let maintenanceDefinitions = [
-  {
-    id: 1, machineType: 'cnc_mill', taskName: 'Daily Coolant Check',
-    description: 'Check coolant level and concentration', category: 'daily',
-    frequencyType: 'days', frequencyValue: 1, estimatedDuration: 10,
-    requiresShutdown: false, instructions: 'Check coolant reservoir level. Test concentration with refractometer. Top off as needed.',
-    isActive: true
-  },
-  {
-    id: 2, machineType: 'cnc_mill', taskName: 'Weekly Lubrication',
-    description: 'Lubricate way covers and check auto-lube system', category: 'weekly',
-    frequencyType: 'days', frequencyValue: 7, estimatedDuration: 30,
-    requiresShutdown: false, instructions: 'Apply way lube to exposed ways. Check auto-lube reservoir level.',
-    isActive: true
-  },
-  {
-    id: 3, machineType: 'cnc_mill', taskName: 'Monthly Full Service',
-    description: 'Complete machine inspection and service', category: 'monthly',
-    frequencyType: 'days', frequencyValue: 30, estimatedDuration: 120,
-    requiresShutdown: true, instructions: 'Check spindle runout. Verify axis backlash. Clean chip conveyor. Replace filters.',
-    isActive: true
-  },
-  {
-    id: 4, machineType: 'cnc_lathe', taskName: 'Daily Chip Removal',
-    description: 'Clean chips from work area', category: 'daily',
-    frequencyType: 'days', frequencyValue: 1, estimatedDuration: 15,
-    requiresShutdown: false, instructions: 'Remove chips from chuck, turret, and chip conveyor.',
-    isActive: true
-  },
-  {
-    id: 5, machineType: 'saw', taskName: 'Blade Tension Check',
-    description: 'Verify blade tension and tracking', category: 'weekly',
-    frequencyType: 'days', frequencyValue: 7, estimatedDuration: 15,
-    requiresShutdown: false, instructions: 'Check blade tension gauge. Verify blade tracking. Inspect blade for wear/damage.',
-    isActive: true
-  }
-];
+module.exports = function(pool) {
+    const router = express.Router();
 
-let maintenanceMaterials = [
-  { id: 1, taskDefinitionId: 1, materialName: 'Coolant Concentrate', partNumber: 'COOL-001', quantity: 1, unit: 'GAL', isCritical: true },
-  { id: 2, taskDefinitionId: 2, materialName: 'Way Lube Oil', partNumber: 'OIL-WAY-01', quantity: 0.5, unit: 'QT', isCritical: true },
-  { id: 3, taskDefinitionId: 3, materialName: 'Spindle Oil', partNumber: 'OIL-SPIN-01', quantity: 1, unit: 'QT', isCritical: true },
-  { id: 4, taskDefinitionId: 3, materialName: 'Air Filter', partNumber: 'FILT-AIR-01', quantity: 1, unit: 'EA', isCritical: false },
-  { id: 5, taskDefinitionId: 3, materialName: 'Coolant Filter', partNumber: 'FILT-COOL-01', quantity: 1, unit: 'EA', isCritical: false }
-];
-
-let maintenanceTasks = [
-  {
-    id: 1, definitionId: 1, machineId: 1, taskName: 'Daily Coolant Check - CNC Mill 1',
-    description: 'Check coolant level and concentration', category: 'daily',
-    scheduledDate: new Date().toISOString().split('T')[0], dueDate: new Date().toISOString().split('T')[0],
-    frequencyType: 'days', status: 'Scheduled', machineName: 'CNC Mill 1', machineType: 'cnc_mill'
-  },
-  {
-    id: 2, definitionId: 2, machineId: 1, taskName: 'Weekly Lubrication - CNC Mill 1',
-    description: 'Lubricate way covers and check auto-lube system', category: 'weekly',
-    scheduledDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-    dueDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-    frequencyType: 'days', status: 'Scheduled', machineName: 'CNC Mill 1', machineType: 'cnc_mill'
-  },
-  {
-    id: 3, definitionId: 3, machineId: 1, taskName: 'Monthly Full Service - CNC Mill 1',
-    description: 'Complete machine inspection and service', category: 'monthly',
-    scheduledDate: '2025-01-31', dueDate: '2025-01-31',
-    frequencyType: 'days', status: 'Scheduled', machineName: 'CNC Mill 1', machineType: 'cnc_mill'
-  },
-  {
-    id: 4, definitionId: 4, machineId: 3, taskName: 'Daily Chip Removal - CNC Lathe',
-    description: 'Clean chips from work area', category: 'daily',
-    scheduledDate: new Date().toISOString().split('T')[0], dueDate: new Date().toISOString().split('T')[0],
-    frequencyType: 'days', status: 'Scheduled', machineName: 'CNC Lathe', machineType: 'cnc_lathe'
-  },
-  {
-    id: 5, definitionId: 5, machineId: 4, taskName: 'Blade Tension Check - Bandsaw',
-    description: 'Verify blade tension and tracking', category: 'weekly',
-    scheduledDate: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
-    dueDate: new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
-    frequencyType: 'days', status: 'Scheduled', machineName: 'Bandsaw', machineType: 'saw'
-  },
-  {
-    id: 6, machineId: 3, taskName: 'Oil Change - CNC Lathe',
-    description: 'Replace hydraulic and spindle oil', category: 'monthly',
-    scheduledDate: new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0],
-    dueDate: new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0],
-    frequencyType: 'days', status: 'Overdue', machineName: 'CNC Lathe', machineType: 'cnc_lathe'
-  }
-];
-
-let maintenanceHistory = [];
-let nextTaskId = 7;
-let nextDefId = 6;
-
-// Helper: Check if task is overdue
-function updateTaskStatus(task) {
-  if (task.status === 'Complete' || task.status === 'Deferred') return task;
-  
-  const now = new Date();
-  const dueDate = new Date(task.dueDate);
-  
-  if (dueDate < now) {
-    return { ...task, status: 'Overdue' };
-  }
-  return task;
-}
-
-// Helper: Get stats
-function getStats(taskList) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const weekFromNow = new Date(today.getTime() + 7 * 86400000);
-  const weekAgo = new Date(today.getTime() - 7 * 86400000);
-  
-  return {
-    scheduledToday: taskList.filter(t => {
-      const due = new Date(t.dueDate);
-      return due >= today && due < new Date(today.getTime() + 86400000) && 
-             t.status !== 'Complete';
-    }).length,
-    overdue: taskList.filter(t => t.status === 'Overdue').length,
-    completedThisWeek: taskList.filter(t => {
-      return t.status === 'Complete' && t.completedAt && 
-             new Date(t.completedAt) >= weekAgo;
-    }).length,
-    upcomingThisWeek: taskList.filter(t => {
-      const due = new Date(t.dueDate);
-      return due >= today && due <= weekFromNow && t.status !== 'Complete';
-    }).length,
-    byCategory: taskList.reduce((acc, t) => {
-      if (t.category && t.status !== 'Complete') {
-        acc[t.category] = (acc[t.category] || 0) + 1;
-      }
-      return acc;
-    }, {})
-  };
-}
-
-// GET /api/maintenance/tasks - List maintenance tasks
-router.get('/tasks', (req, res) => {
-  try {
-    let result = maintenanceTasks.map(updateTaskStatus);
-    
-    // Filter by machine
-    if (req.query.machineId) {
-      result = result.filter(t => t.machineId === parseInt(req.query.machineId));
+    // Helper: Transform maintenance task from DB to API format
+    function transformTask(row) {
+        return {
+            id: row.id,
+            definitionId: row.definition_id,
+            machineId: row.machine_id,
+            taskName: row.task_name,
+            description: row.description,
+            category: row.category,
+            scheduledDate: row.scheduled_date,
+            dueDate: row.due_date,
+            frequencyType: row.frequency_type,
+            status: row.status,
+            startedAt: row.started_at,
+            completedAt: row.completed_at,
+            completedBy: row.completed_by,
+            completedByName: row.completed_by_name,
+            actualDuration: row.actual_duration,
+            deferredTo: row.deferred_to,
+            deferredReason: row.deferred_reason,
+            issuesFound: row.issues_found,
+            partsReplaced: row.parts_replaced,
+            notes: row.notes,
+            readings: row.readings || {},
+            machineName: row.machine_name,
+            machineType: row.machine_type,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
     }
-    
-    // Filter by category
-    if (req.query.category) {
-      result = result.filter(t => t.category === req.query.category);
+
+    // Helper: Update task status based on due date
+    function updateTaskStatus(task) {
+        if (task.status === 'Complete' || task.status === 'Deferred') return task;
+
+        const now = new Date();
+        const dueDate = new Date(task.dueDate);
+
+        if (dueDate < now) {
+            return { ...task, status: 'Overdue' };
+        }
+        return task;
     }
-    
-    // Filter by status
-    if (req.query.status) {
-      const statuses = Array.isArray(req.query.status) ? req.query.status : [req.query.status];
-      result = result.filter(t => statuses.includes(t.status));
+
+    // Helper: Get stats
+    async function getStats() {
+        try {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const weekFromNow = new Date(today.getTime() + 7 * 86400000);
+            const weekAgo = new Date(today.getTime() - 7 * 86400000);
+
+            const [scheduledToday, overdue, completedThisWeek, upcomingThisWeek, byCategory] = await Promise.all([
+                pool.query(`
+                    SELECT COUNT(*) FROM maintenance_tasks 
+                    WHERE status != 'Complete' AND due_date >= $1 AND due_date < $2
+                `, [today, new Date(today.getTime() + 86400000)]),
+                pool.query(`SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'Overdue' OR (status NOT IN ('Complete', 'Deferred') AND due_date < NOW())`),
+                pool.query(`SELECT COUNT(*) FROM maintenance_tasks WHERE status = 'Complete' AND completed_at >= $1`, [weekAgo]),
+                pool.query(`SELECT COUNT(*) FROM maintenance_tasks WHERE status != 'Complete' AND due_date >= $1 AND due_date <= $2`, [today, weekFromNow]),
+                pool.query(`SELECT category, COUNT(*) as count FROM maintenance_tasks WHERE status != 'Complete' AND category IS NOT NULL GROUP BY category`)
+            ]);
+
+            return {
+                scheduledToday: parseInt(scheduledToday.rows[0].count),
+                overdue: parseInt(overdue.rows[0].count),
+                completedThisWeek: parseInt(completedThisWeek.rows[0].count),
+                upcomingThisWeek: parseInt(upcomingThisWeek.rows[0].count),
+                byCategory: byCategory.rows.reduce((acc, r) => { acc[r.category] = parseInt(r.count); return acc; }, {})
+            };
+        } catch (err) {
+            console.error('Error calculating stats:', err);
+            return { scheduledToday: 0, overdue: 0, completedThisWeek: 0, upcomingThisWeek: 0, byCategory: {} };
+        }
     }
-    
-    // Filter by date range
-    if (req.query.dueDateFrom) {
-      result = result.filter(t => t.dueDate >= req.query.dueDateFrom);
-    }
-    if (req.query.dueDateTo) {
-      result = result.filter(t => t.dueDate <= req.query.dueDateTo);
-    }
-    
-    // Sort by due date
-    result.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-    
-    // Add materials to each task
-    result = result.map(t => ({
-      ...t,
-      materials: t.definitionId ? 
-        maintenanceMaterials.filter(m => m.taskDefinitionId === t.definitionId) : []
-    }));
-    
-    res.json({
-      success: true,
-      data: result,
-      stats: getStats(result)
+
+    // GET /api/maintenance/tasks - List maintenance tasks
+    router.get('/tasks', async (req, res) => {
+        try {
+            let query = `
+                SELECT mt.*, m.name as machine_name, m.type as machine_type
+                FROM maintenance_tasks mt
+                LEFT JOIN machines m ON mt.machine_id = m.id
+                WHERE 1=1
+            `;
+            const params = [];
+            let paramIndex = 1;
+
+            // Filter by machine
+            if (req.query.machineId) {
+                query += ` AND mt.machine_id = $${paramIndex++}`;
+                params.push(parseInt(req.query.machineId));
+            }
+
+            // Filter by category
+            if (req.query.category) {
+                query += ` AND mt.category = $${paramIndex++}`;
+                params.push(req.query.category);
+            }
+
+            // Filter by status
+            if (req.query.status) {
+                const statuses = Array.isArray(req.query.status) ? req.query.status : [req.query.status];
+                query += ` AND mt.status = ANY($${paramIndex++})`;
+                params.push(statuses);
+            }
+
+            // Filter by date range
+            if (req.query.dueDateFrom) {
+                query += ` AND mt.due_date >= $${paramIndex++}`;
+                params.push(req.query.dueDateFrom);
+            }
+            if (req.query.dueDateTo) {
+                query += ` AND mt.due_date <= $${paramIndex++}`;
+                params.push(req.query.dueDateTo);
+            }
+
+            query += ' ORDER BY mt.due_date ASC';
+
+            const result = await pool.query(query, params);
+
+            // Get materials for each task
+            const tasks = await Promise.all(result.rows.map(async (row) => {
+                const task = updateTaskStatus(transformTask(row));
+                if (task.definitionId) {
+                    const materials = await pool.query(
+                        'SELECT * FROM maintenance_materials WHERE task_definition_id = $1',
+                        [task.definitionId]
+                    );
+                    task.materials = materials.rows;
+                } else {
+                    task.materials = [];
+                }
+                return task;
+            }));
+
+            const stats = await getStats();
+
+            res.json({ success: true, data: tasks, stats });
+        } catch (error) {
+            console.error('Get maintenance tasks error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// GET /api/maintenance/tasks/:id - Get single task
-router.get('/tasks/:id', (req, res) => {
-  try {
-    let task = maintenanceTasks.find(t => t.id === parseInt(req.params.id));
-    if (!task) {
-      return res.status(404).json({ success: false, error: 'Task not found' });
-    }
-    
-    task = updateTaskStatus(task);
-    
-    // Get definition and materials
-    const definition = task.definitionId ? 
-      maintenanceDefinitions.find(d => d.id === task.definitionId) : null;
-    const materials = task.definitionId ?
-      maintenanceMaterials.filter(m => m.taskDefinitionId === task.definitionId) : [];
-    
-    res.json({
-      success: true,
-      data: {
-        ...task,
-        definition,
-        materials
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+    // GET /api/maintenance/tasks/:id - Get single task
+    router.get('/tasks/:id', async (req, res) => {
+        try {
+            const taskResult = await pool.query(`
+                SELECT mt.*, m.name as machine_name, m.type as machine_type
+                FROM maintenance_tasks mt
+                LEFT JOIN machines m ON mt.machine_id = m.id
+                WHERE mt.id = $1
+            `, [req.params.id]);
 
-// POST /api/maintenance/tasks - Create maintenance task
-router.post('/tasks', (req, res) => {
-  try {
-    const {
-      definitionId, machineId, taskName, description, category,
-      dueDate, frequencyType, machineName, machineType
-    } = req.body;
-    
-    if (!machineId || !taskName || !dueDate) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'machineId, taskName, and dueDate are required' 
-      });
-    }
-    
-    const newTask = {
-      id: nextTaskId++,
-      definitionId,
-      machineId,
-      taskName,
-      description,
-      category,
-      scheduledDate: dueDate,
-      dueDate,
-      frequencyType,
-      status: 'Scheduled',
-      machineName,
-      machineType,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    maintenanceTasks.push(newTask);
-    
-    res.status(201).json({
-      success: true,
-      data: newTask
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            if (taskResult.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Task not found' });
+            }
 
-// PUT /api/maintenance/tasks/:id/start - Start maintenance
-router.put('/tasks/:id/start', (req, res) => {
-  try {
-    const taskIndex = maintenanceTasks.findIndex(t => t.id === parseInt(req.params.id));
-    if (taskIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Task not found' });
-    }
-    
-    const { performerName } = req.body;
-    
-    maintenanceTasks[taskIndex].status = 'In Progress';
-    maintenanceTasks[taskIndex].startedAt = new Date().toISOString();
-    if (performerName) maintenanceTasks[taskIndex].performerName = performerName;
-    maintenanceTasks[taskIndex].updatedAt = new Date().toISOString();
-    
-    // Log history
-    maintenanceHistory.push({
-      id: maintenanceHistory.length + 1,
-      machineId: maintenanceTasks[taskIndex].machineId,
-      maintenanceTaskId: maintenanceTasks[taskIndex].id,
-      action: 'started',
-      performedByName: performerName,
-      performedAt: new Date().toISOString()
-    });
-    
-    res.json({
-      success: true,
-      data: maintenanceTasks[taskIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            const task = updateTaskStatus(transformTask(taskResult.rows[0]));
 
-// PUT /api/maintenance/tasks/:id/complete - Complete maintenance
-router.put('/tasks/:id/complete', (req, res) => {
-  try {
-    const taskIndex = maintenanceTasks.findIndex(t => t.id === parseInt(req.params.id));
-    if (taskIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Task not found' });
-    }
-    
-    const {
-      completedByName, actualDuration, issuesFound, partsReplaced, notes, readings
-    } = req.body;
-    
-    maintenanceTasks[taskIndex].status = 'Complete';
-    maintenanceTasks[taskIndex].completedAt = new Date().toISOString();
-    maintenanceTasks[taskIndex].completedByName = completedByName;
-    maintenanceTasks[taskIndex].actualDuration = actualDuration;
-    maintenanceTasks[taskIndex].issuesFound = issuesFound;
-    maintenanceTasks[taskIndex].partsReplaced = partsReplaced;
-    maintenanceTasks[taskIndex].notes = notes;
-    maintenanceTasks[taskIndex].readings = readings;
-    maintenanceTasks[taskIndex].updatedAt = new Date().toISOString();
-    
-    // Log history
-    maintenanceHistory.push({
-      id: maintenanceHistory.length + 1,
-      machineId: maintenanceTasks[taskIndex].machineId,
-      maintenanceTaskId: maintenanceTasks[taskIndex].id,
-      action: 'completed',
-      description: `Completed: ${maintenanceTasks[taskIndex].taskName}`,
-      performedByName: completedByName,
-      performedAt: new Date().toISOString(),
-      notes: issuesFound || notes
-    });
-    
-    // Create next scheduled task if recurring
-    const definition = maintenanceTasks[taskIndex].definitionId ?
-      maintenanceDefinitions.find(d => d.id === maintenanceTasks[taskIndex].definitionId) : null;
-    
-    if (definition && definition.frequencyValue) {
-      const nextDueDate = new Date(
-        Date.now() + definition.frequencyValue * 86400000
-      ).toISOString().split('T')[0];
-      
-      const nextTask = {
-        id: nextTaskId++,
-        definitionId: definition.id,
-        machineId: maintenanceTasks[taskIndex].machineId,
-        taskName: maintenanceTasks[taskIndex].taskName,
-        description: maintenanceTasks[taskIndex].description,
-        category: maintenanceTasks[taskIndex].category,
-        scheduledDate: nextDueDate,
-        dueDate: nextDueDate,
-        frequencyType: maintenanceTasks[taskIndex].frequencyType,
-        status: 'Scheduled',
-        machineName: maintenanceTasks[taskIndex].machineName,
-        machineType: maintenanceTasks[taskIndex].machineType,
-        createdAt: new Date().toISOString()
-      };
-      
-      maintenanceTasks.push(nextTask);
-    }
-    
-    res.json({
-      success: true,
-      data: maintenanceTasks[taskIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            // Get definition and materials
+            if (task.definitionId) {
+                const defResult = await pool.query(
+                    'SELECT * FROM maintenance_task_definitions WHERE id = $1',
+                    [task.definitionId]
+                );
+                task.definition = defResult.rows[0] || null;
 
-// PUT /api/maintenance/tasks/:id/defer - Defer maintenance
-router.put('/tasks/:id/defer', (req, res) => {
-  try {
-    const taskIndex = maintenanceTasks.findIndex(t => t.id === parseInt(req.params.id));
-    if (taskIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Task not found' });
-    }
-    
-    const { deferredTo, deferredReason, deferredByName } = req.body;
-    
-    if (!deferredTo || !deferredReason) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'deferredTo and deferredReason are required' 
-      });
-    }
-    
-    maintenanceTasks[taskIndex].status = 'Deferred';
-    maintenanceTasks[taskIndex].dueDate = deferredTo;
-    maintenanceTasks[taskIndex].deferredTo = deferredTo;
-    maintenanceTasks[taskIndex].deferredReason = deferredReason;
-    maintenanceTasks[taskIndex].deferredByName = deferredByName;
-    maintenanceTasks[taskIndex].updatedAt = new Date().toISOString();
-    
-    // Log history
-    maintenanceHistory.push({
-      id: maintenanceHistory.length + 1,
-      machineId: maintenanceTasks[taskIndex].machineId,
-      maintenanceTaskId: maintenanceTasks[taskIndex].id,
-      action: 'deferred',
-      description: `Deferred to ${deferredTo}: ${deferredReason}`,
-      performedByName: deferredByName,
-      performedAt: new Date().toISOString()
-    });
-    
-    res.json({
-      success: true,
-      data: maintenanceTasks[taskIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+                const matResult = await pool.query(
+                    'SELECT * FROM maintenance_materials WHERE task_definition_id = $1',
+                    [task.definitionId]
+                );
+                task.materials = matResult.rows;
+            } else {
+                task.materials = [];
+            }
 
-// POST /api/maintenance/tasks/:id/issue - Report issue during maintenance
-router.post('/tasks/:id/issue', (req, res) => {
-  try {
-    const taskIndex = maintenanceTasks.findIndex(t => t.id === parseInt(req.params.id));
-    if (taskIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Task not found' });
-    }
-    
-    const { issueDescription, severity = 'Medium', reportedByName } = req.body;
-    
-    if (!issueDescription) {
-      return res.status(400).json({ success: false, error: 'Issue description is required' });
-    }
-    
-    maintenanceTasks[taskIndex].issuesFound = 
-      (maintenanceTasks[taskIndex].issuesFound || '') + '\n' + issueDescription;
-    maintenanceTasks[taskIndex].updatedAt = new Date().toISOString();
-    
-    // Log history
-    maintenanceHistory.push({
-      id: maintenanceHistory.length + 1,
-      machineId: maintenanceTasks[taskIndex].machineId,
-      maintenanceTaskId: maintenanceTasks[taskIndex].id,
-      action: 'issue_found',
-      description: issueDescription,
-      performedByName: reportedByName,
-      performedAt: new Date().toISOString(),
-      notes: `Severity: ${severity}`
+            res.json({ success: true, data: task });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-    
-    res.json({
-      success: true,
-      data: maintenanceTasks[taskIndex]
+
+    // POST /api/maintenance/tasks - Create maintenance task
+    router.post('/tasks', async (req, res) => {
+        try {
+            const {
+                definitionId, machineId, taskName, description, category,
+                dueDate, frequencyType, machineName, machineType
+            } = req.body;
+
+            if (!machineId || !taskName || !dueDate) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'machineId, taskName, and dueDate are required'
+                });
+            }
+
+            const result = await pool.query(`
+                INSERT INTO maintenance_tasks (
+                    definition_id, machine_id, task_name, description, category,
+                    scheduled_date, due_date, frequency_type, status
+                ) VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 'Scheduled')
+                RETURNING *
+            `, [definitionId, machineId, taskName, description, category, dueDate, frequencyType]);
+
+            const task = transformTask(result.rows[0]);
+            task.machineName = machineName;
+            task.machineType = machineType;
+
+            res.status(201).json({ success: true, data: task });
+        } catch (error) {
+            console.error('Create maintenance task error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// DELETE /api/maintenance/tasks/:id - Delete/cancel task
-router.delete('/tasks/:id', (req, res) => {
-  try {
-    const taskIndex = maintenanceTasks.findIndex(t => t.id === parseInt(req.params.id));
-    if (taskIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Task not found' });
-    }
-    
-    maintenanceTasks.splice(taskIndex, 1);
-    
-    res.json({
-      success: true,
-      message: 'Task deleted'
+    // PUT /api/maintenance/tasks/:id/start - Start maintenance
+    router.put('/tasks/:id/start', async (req, res) => {
+        try {
+            const { performerName } = req.body;
+
+            const result = await pool.query(`
+                UPDATE maintenance_tasks 
+                SET status = 'In Progress', started_at = NOW(), completed_by_name = $1, updated_at = NOW()
+                WHERE id = $2
+                RETURNING *
+            `, [performerName, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Task not found' });
+            }
+
+            // Log history
+            await pool.query(`
+                INSERT INTO maintenance_history (machine_id, maintenance_task_id, action, performed_by_name)
+                VALUES ($1, $2, 'started', $3)
+            `, [result.rows[0].machine_id, req.params.id, performerName]);
+
+            res.json({ success: true, data: transformTask(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// ==================== DEFINITIONS ====================
+    // PUT /api/maintenance/tasks/:id/complete - Complete maintenance
+    router.put('/tasks/:id/complete', async (req, res) => {
+        try {
+            const {
+                completedByName, actualDuration, issuesFound, partsReplaced, notes, readings
+            } = req.body;
 
-// GET /api/maintenance/definitions - List task definitions
-router.get('/definitions', (req, res) => {
-  try {
-    let result = maintenanceDefinitions.filter(d => d.isActive);
-    
-    // Filter by machine type
-    if (req.query.machineType) {
-      result = result.filter(d => d.machineType === req.query.machineType);
-    }
-    
-    // Add materials to each definition
-    result = result.map(d => ({
-      ...d,
-      materials: maintenanceMaterials.filter(m => m.taskDefinitionId === d.id)
-    }));
-    
-    res.json({
-      success: true,
-      data: result
+            const result = await pool.query(`
+                UPDATE maintenance_tasks 
+                SET status = 'Complete', completed_at = NOW(), completed_by_name = $1,
+                    actual_duration = $2, issues_found = $3, parts_replaced = $4, 
+                    notes = $5, readings = $6, updated_at = NOW()
+                WHERE id = $7
+                RETURNING *
+            `, [completedByName, actualDuration, issuesFound, partsReplaced, notes, JSON.stringify(readings || {}), req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Task not found' });
+            }
+
+            const task = result.rows[0];
+
+            // Log history
+            await pool.query(`
+                INSERT INTO maintenance_history (machine_id, maintenance_task_id, action, description, performed_by_name, notes)
+                VALUES ($1, $2, 'completed', $3, $4, $5)
+            `, [task.machine_id, req.params.id, `Completed: ${task.task_name}`, completedByName, issuesFound || notes]);
+
+            // Create next scheduled task if recurring
+            if (task.definition_id) {
+                const defResult = await pool.query(
+                    'SELECT * FROM maintenance_task_definitions WHERE id = $1',
+                    [task.definition_id]
+                );
+                const definition = defResult.rows[0];
+
+                if (definition && definition.frequency_value) {
+                    const nextDueDate = new Date(Date.now() + definition.frequency_value * 86400000).toISOString().split('T')[0];
+
+                    await pool.query(`
+                        INSERT INTO maintenance_tasks (
+                            definition_id, machine_id, task_name, description, category,
+                            scheduled_date, due_date, frequency_type, status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 'Scheduled')
+                    `, [
+                        definition.id, task.machine_id, task.task_name, task.description,
+                        task.category, nextDueDate, task.frequency_type
+                    ]);
+                }
+            }
+
+            res.json({ success: true, data: transformTask(result.rows[0]) });
+        } catch (error) {
+            console.error('Complete maintenance error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// POST /api/maintenance/definitions - Create definition
-router.post('/definitions', (req, res) => {
-  try {
-    const {
-      machineId, machineType, taskName, description, category,
-      frequencyType, frequencyValue, estimatedDuration,
-      requiresShutdown, skillLevel, instructions, safetyNotes, materials
-    } = req.body;
-    
-    if (!taskName || !frequencyType) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'taskName and frequencyType are required' 
-      });
-    }
-    
-    const newDefinition = {
-      id: nextDefId++,
-      machineId,
-      machineType,
-      taskName,
-      description,
-      category,
-      frequencyType,
-      frequencyValue,
-      estimatedDuration,
-      requiresShutdown: requiresShutdown || false,
-      skillLevel,
-      instructions,
-      safetyNotes,
-      isActive: true,
-      createdAt: new Date().toISOString()
-    };
-    
-    maintenanceDefinitions.push(newDefinition);
-    
-    // Add materials if provided
-    if (materials && Array.isArray(materials)) {
-      materials.forEach(m => {
-        maintenanceMaterials.push({
-          id: maintenanceMaterials.length + 1,
-          taskDefinitionId: newDefinition.id,
-          ...m,
-          createdAt: new Date().toISOString()
-        });
-      });
-    }
-    
-    res.status(201).json({
-      success: true,
-      data: {
-        ...newDefinition,
-        materials: maintenanceMaterials.filter(m => m.taskDefinitionId === newDefinition.id)
-      }
+    // PUT /api/maintenance/tasks/:id/defer - Defer maintenance
+    router.put('/tasks/:id/defer', async (req, res) => {
+        try {
+            const { deferredTo, deferredReason, deferredByName } = req.body;
+
+            if (!deferredTo || !deferredReason) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'deferredTo and deferredReason are required'
+                });
+            }
+
+            const result = await pool.query(`
+                UPDATE maintenance_tasks 
+                SET status = 'Deferred', due_date = $1, deferred_to = $1, 
+                    deferred_reason = $2, updated_at = NOW()
+                WHERE id = $3
+                RETURNING *
+            `, [deferredTo, deferredReason, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Task not found' });
+            }
+
+            // Log history
+            await pool.query(`
+                INSERT INTO maintenance_history (machine_id, maintenance_task_id, action, description, performed_by_name)
+                VALUES ($1, $2, 'deferred', $3, $4)
+            `, [result.rows[0].machine_id, req.params.id, `Deferred to ${deferredTo}: ${deferredReason}`, deferredByName]);
+
+            res.json({ success: true, data: transformTask(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// ==================== HISTORY ====================
+    // POST /api/maintenance/tasks/:id/issue - Report issue during maintenance
+    router.post('/tasks/:id/issue', async (req, res) => {
+        try {
+            const { issueDescription, severity = 'Medium', reportedByName } = req.body;
 
-// GET /api/maintenance/history - Get maintenance history
-router.get('/history', (req, res) => {
-  try {
-    let result = [...maintenanceHistory];
-    
-    // Filter by machine
-    if (req.query.machineId) {
-      result = result.filter(h => h.machineId === parseInt(req.query.machineId));
-    }
-    
-    // Sort by date (newest first)
-    result.sort((a, b) => new Date(b.performedAt) - new Date(a.performedAt));
-    
-    // Pagination
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const startIndex = (page - 1) * limit;
-    result = result.slice(startIndex, startIndex + limit);
-    
-    res.json({
-      success: true,
-      data: result
+            if (!issueDescription) {
+                return res.status(400).json({ success: false, error: 'Issue description is required' });
+            }
+
+            const result = await pool.query(`
+                UPDATE maintenance_tasks 
+                SET issues_found = COALESCE(issues_found, '') || E'\n' || $1, updated_at = NOW()
+                WHERE id = $2
+                RETURNING *
+            `, [issueDescription, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Task not found' });
+            }
+
+            // Log history
+            await pool.query(`
+                INSERT INTO maintenance_history (machine_id, maintenance_task_id, action, description, performed_by_name, notes)
+                VALUES ($1, $2, 'issue_found', $3, $4, $5)
+            `, [result.rows[0].machine_id, req.params.id, issueDescription, reportedByName, `Severity: ${severity}`]);
+
+            res.json({ success: true, data: transformTask(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// GET /api/maintenance/stats - Get maintenance statistics
-router.get('/stats', (req, res) => {
-  try {
-    const updatedTasks = maintenanceTasks.map(updateTaskStatus);
-    res.json({
-      success: true,
-      data: getStats(updatedTasks)
+    // DELETE /api/maintenance/tasks/:id - Delete/cancel task
+    router.delete('/tasks/:id', async (req, res) => {
+        try {
+            const result = await pool.query(
+                'DELETE FROM maintenance_tasks WHERE id = $1 RETURNING id',
+                [req.params.id]
+            );
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Task not found' });
+            }
+
+            res.json({ success: true, message: 'Task deleted' });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-module.exports = router;
+    // ==================== DEFINITIONS ====================
+
+    // GET /api/maintenance/definitions - List task definitions
+    router.get('/definitions', async (req, res) => {
+        try {
+            let query = 'SELECT * FROM maintenance_task_definitions WHERE is_active = TRUE';
+            const params = [];
+
+            if (req.query.machineType) {
+                query += ' AND machine_type = $1';
+                params.push(req.query.machineType);
+            }
+
+            query += ' ORDER BY task_name';
+
+            const result = await pool.query(query, params);
+
+            // Get materials for each definition
+            const definitions = await Promise.all(result.rows.map(async (def) => {
+                const materials = await pool.query(
+                    'SELECT * FROM maintenance_materials WHERE task_definition_id = $1',
+                    [def.id]
+                );
+                return { ...def, materials: materials.rows };
+            }));
+
+            res.json({ success: true, data: definitions });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // POST /api/maintenance/definitions - Create definition
+    router.post('/definitions', async (req, res) => {
+        try {
+            const {
+                machineId, machineType, taskName, description, category,
+                frequencyType, frequencyValue, estimatedDuration,
+                requiresShutdown, skillLevel, instructions, safetyNotes, materials
+            } = req.body;
+
+            if (!taskName || !frequencyType) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'taskName and frequencyType are required'
+                });
+            }
+
+            const result = await pool.query(`
+                INSERT INTO maintenance_task_definitions (
+                    machine_id, machine_type, task_name, description, category,
+                    frequency_type, frequency_value, estimated_duration,
+                    requires_shutdown, skill_level, instructions, safety_notes, is_active
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE)
+                RETURNING *
+            `, [
+                machineId, machineType, taskName, description, category,
+                frequencyType, frequencyValue, estimatedDuration,
+                requiresShutdown || false, skillLevel, instructions, safetyNotes
+            ]);
+
+            const definition = result.rows[0];
+
+            // Add materials if provided
+            if (materials && Array.isArray(materials)) {
+                for (const m of materials) {
+                    await pool.query(`
+                        INSERT INTO maintenance_materials (task_definition_id, material_name, part_number, quantity, unit, is_critical)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                    `, [definition.id, m.materialName, m.partNumber, m.quantity || 1, m.unit || 'EA', m.isCritical || false]);
+                }
+            }
+
+            // Get materials
+            const matResult = await pool.query(
+                'SELECT * FROM maintenance_materials WHERE task_definition_id = $1',
+                [definition.id]
+            );
+
+            res.status(201).json({
+                success: true,
+                data: { ...definition, materials: matResult.rows }
+            });
+        } catch (error) {
+            console.error('Create definition error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // ==================== HISTORY ====================
+
+    // GET /api/maintenance/history - Get maintenance history
+    router.get('/history', async (req, res) => {
+        try {
+            let query = 'SELECT * FROM maintenance_history WHERE 1=1';
+            const params = [];
+            let paramIndex = 1;
+
+            if (req.query.machineId) {
+                query += ` AND machine_id = $${paramIndex++}`;
+                params.push(parseInt(req.query.machineId));
+            }
+
+            query += ' ORDER BY performed_at DESC';
+
+            // Pagination
+            const page = parseInt(req.query.page) || 1;
+            const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+            const offset = (page - 1) * limit;
+
+            query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+            params.push(limit, offset);
+
+            const result = await pool.query(query, params);
+
+            res.json({ success: true, data: result.rows });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // GET /api/maintenance/stats - Get maintenance statistics
+    router.get('/stats', async (req, res) => {
+        try {
+            const stats = await getStats();
+            res.json({ success: true, data: stats });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    return router;
+};

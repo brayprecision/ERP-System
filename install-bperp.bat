@@ -81,10 +81,10 @@ if not exist "frontend\assets\bperp-icon.ico" (
 
 :: Test the launcher before creating shortcuts
 echo [INFO] Testing launcher functionality...
-if exist "frontend\index-modular.html" (
+if exist "frontend\index.html" (
     echo [SUCCESS] Application files verified
 ) else (
-    echo [ERROR] Main application file ^(index-modular.html^) not found.
+    echo [ERROR] Main application file ^(index.html^) not found.
     pause
     exit /b 1
 )

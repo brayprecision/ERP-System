@@ -6,12 +6,27 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
+// Import rate limiters
+const { apiLimiter, exportLimiter } = require('./middleware/rateLimit');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// CORS configuration - restrict origins in production
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || '*', // Set CORS_ORIGIN env var in production
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    maxAge: 86400 // 24 hours
+};
+
 // Middleware
-app.use(cors()); // Allows your frontend to talk to this backend
-app.use(express.json());
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' })); // Limit request body size
+
+// Apply general rate limiting to all API routes
+app.use('/api/', apiLimiter);
 
 // Database Connection Configuration
 const pool = new Pool({
@@ -37,13 +52,14 @@ const inventoryRoutes = require('./routes/inventory')(pool);
 const customerRoutes = require('./routes/customers')(pool);
 const quoteRoutes = require('./routes/quotes')(pool);
 const workOrderRoutes = require('./routes/workorders')(pool);
+const usersRoutes = require('./routes/users')(pool);
 
-// Tasks module routes (in-memory for demo, can be converted to use pool)
-const tasksRoutes = require('./routes/tasks');
-const workcentersRoutes = require('./routes/workcenters');
-const machinesRoutes = require('./routes/machines');
-const maintenanceRoutes = require('./routes/maintenance');
-const ordersRoutes = require('./routes/orders');
+// Tasks module routes (now using PostgreSQL)
+const tasksRoutes = require('./routes/tasks')(pool);
+const workcentersRoutes = require('./routes/workcenters')(pool);
+const machinesRoutes = require('./routes/machines')(pool);
+const maintenanceRoutes = require('./routes/maintenance')(pool);
+const ordersRoutes = require('./routes/orders')(pool);
 
 // --- API ROUTES ---
 
@@ -52,8 +68,9 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/work-orders', workOrderRoutes);
+app.use('/api/users', usersRoutes);
 
-// Tasks module routes
+// Tasks module routes (now using PostgreSQL)
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/workcenters', workcentersRoutes);
 app.use('/api/machines', machinesRoutes);
@@ -178,7 +195,7 @@ if (!fs.existsSync(backupsDir)) {
 }
 
 // Export customers to CSV
-app.get('/api/export/customers', async (req, res) => {
+app.get('/api/export/customers', exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM customers ORDER BY name');
         const headers = ['id', 'name', 'address', 'phone', 'terms', 'openWOCount'];
@@ -203,7 +220,7 @@ app.get('/api/export/customers', async (req, res) => {
 });
 
 // Export quotes to CSV
-app.get('/api/export/quotes', async (req, res) => {
+app.get('/api/export/quotes', exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM quotes ORDER BY quote_number');
         const headers = ['id', 'quote_number', 'customer_id', 'customer_name', 'part_number', 'description', 'quantity', 'status', 'requested_date', 'due_date', 'total_amount', 'sent_at'];
@@ -228,7 +245,7 @@ app.get('/api/export/quotes', async (req, res) => {
 });
 
 // Export work orders to CSV
-app.get('/api/export/work-orders', async (req, res) => {
+app.get('/api/export/work-orders', exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM work_orders ORDER BY wo_number');
         const headers = ['id', 'wo_number', 'customer_id', 'customer_name', 'due_date', 'status', 'notes', 'completion_percentage'];
@@ -253,7 +270,7 @@ app.get('/api/export/work-orders', async (req, res) => {
 });
 
 // Export inventory (materials) to CSV
-app.get('/api/export/inventory/materials', async (req, res) => {
+app.get('/api/export/inventory/materials', exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM materials ORDER BY name');
         const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
@@ -278,7 +295,7 @@ app.get('/api/export/inventory/materials', async (req, res) => {
 });
 
 // Export inventory (tooling) to CSV
-app.get('/api/export/inventory/tooling', async (req, res) => {
+app.get('/api/export/inventory/tooling', exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM tooling ORDER BY name');
         const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
@@ -303,7 +320,7 @@ app.get('/api/export/inventory/tooling', async (req, res) => {
 });
 
 // Export inventory (misc items) to CSV
-app.get('/api/export/inventory/misc', async (req, res) => {
+app.get('/api/export/inventory/misc', exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM misc_items ORDER BY name');
         const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
@@ -328,20 +345,56 @@ app.get('/api/export/inventory/misc', async (req, res) => {
 });
 
 // Create backup
-app.post('/api/backup/create', async (req, res) => {
+app.post('/api/backup/create', exportLimiter, async (req, res) => {
     try {
-        // Collect all database data
+        // Get localStorage data passed from frontend (if available)
+        const localStorageData = req.body.localStorage || {};
+        
+        // Collect all database data including archived work orders and quote-related tables
+        // Helper to safely query tables that may not exist yet
+        const safeQuery = async (query) => {
+            try {
+                return (await pool.query(query)).rows;
+            } catch (e) {
+                console.warn('Table not found for backup:', e.message);
+                return [];
+            }
+        };
+        
         const backupData = {
             timestamp: new Date().toISOString(),
-            version: 'BPERP-v1.0',
+            version: 'BPERP-v1.2',
             database: {
-                customers: (await pool.query('SELECT * FROM customers')).rows,
-                quotes: (await pool.query('SELECT * FROM quotes')).rows,
-                work_orders: (await pool.query('SELECT * FROM work_orders')).rows,
-                materials: (await pool.query('SELECT * FROM materials')).rows,
-                tooling: (await pool.query('SELECT * FROM tooling')).rows,
-                misc_items: (await pool.query('SELECT * FROM misc_items')).rows,
-                tasks: (await pool.query('SELECT * FROM tasks')).rows
+                customers: await safeQuery('SELECT * FROM customers'),
+                contacts: await safeQuery('SELECT * FROM contacts'),
+                quotes: await safeQuery('SELECT * FROM quotes'),
+                quote_items: await safeQuery('SELECT * FROM quote_items'),
+                quote_documents: await safeQuery('SELECT * FROM quote_documents'),
+                work_orders: await safeQuery('SELECT * FROM work_orders'),
+                work_order_archive: await safeQuery('SELECT * FROM work_order_archive'),
+                wo_checklist: await safeQuery('SELECT * FROM wo_checklist'),
+                materials: await safeQuery('SELECT * FROM materials'),
+                tooling: await safeQuery('SELECT * FROM tooling'),
+                misc_items: await safeQuery('SELECT * FROM misc_items'),
+                tasks: await safeQuery('SELECT * FROM tasks'),
+                // User profiles (includes appearance_settings and tab_permissions)
+                users: await safeQuery('SELECT id, username, name, email, password_hash, role, appearance_settings, tab_permissions, is_active, last_login, created_at FROM users'),
+                role_defaults: await safeQuery('SELECT * FROM role_defaults')
+            },
+            // Include localStorage data for offline/demo mode support
+            localStorage: {
+                quotes: localStorageData.quotes || null,
+                quote_documents: localStorageData.quote_documents || null,
+                work_orders: localStorageData.work_orders || null,
+                wo_documents: localStorageData.wo_documents || null,
+                archived_work_orders: localStorageData.archived_work_orders || null,
+                customers: localStorageData.customers || null,
+                materials: localStorageData.materials || null,
+                tooling: localStorageData.tooling || null,
+                misc_items: localStorageData.misc_items || null,
+                misc_tasks: localStorageData.misc_tasks || null,
+                // User profiles for offline mode
+                users_list: localStorageData.users_list || null
             }
         };
 
@@ -499,4 +552,15 @@ app.listen(PORT, () => {
     console.log('  /api/orders/inspections      - Inspection tasks');
     console.log('  /api/orders/shipping         - Shipping tasks');
     console.log('  /api/orders/receiving        - Receiving tasks');
+    
+    console.log('\nUSERS & PERMISSIONS:');
+    console.log('  /api/users/login             - User login');
+    console.log('  /api/users/logout            - User logout');
+    console.log('  /api/users/me                - Get current user');
+    console.log('  /api/users/validate          - Validate session token');
+    console.log('  /api/users                   - CRUD for users (Admin only)');
+    console.log('  /api/users/:id/permissions   - Update user tab permissions');
+    console.log('  /api/users/:id/appearance    - Update user appearance settings');
+    console.log('  /api/users/roles/defaults    - Get role default permissions');
+    console.log('  /api/users/activity/log      - Get user activity log');
 });

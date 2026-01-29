@@ -1,424 +1,474 @@
 // Workcenters API Routes for BPERP
+// Uses PostgreSQL database for persistence
+
 const express = require('express');
-const router = express.Router();
 
-// In-memory storage
-let workcenters = [
-  { id: 1, name: 'Saw Station', type: 'saw', description: 'Horizontal bandsaw for cutting stock', capacity: 1, isActive: true, displayOrder: 1 },
-  { id: 2, name: 'Waterjet', type: 'waterjet', description: 'Flow waterjet cutting system', capacity: 1, isActive: true, displayOrder: 2 },
-  { id: 3, name: 'CNC Mill 1', type: 'cnc_mill', description: 'Haas VF-2 Vertical Mill', capacity: 1, isActive: true, displayOrder: 3 },
-  { id: 4, name: 'CNC Mill 2', type: 'cnc_mill', description: 'Haas VF-3 Vertical Mill', capacity: 1, isActive: true, displayOrder: 4 },
-  { id: 5, name: 'CNC Lathe', type: 'cnc_lathe', description: 'Haas ST-10 CNC Lathe', capacity: 1, isActive: true, displayOrder: 5 },
-  { id: 6, name: 'Manual Mill', type: 'manual', description: 'Bridgeport manual milling machine', capacity: 1, isActive: true, displayOrder: 6 },
-  { id: 7, name: 'Grinding', type: 'grinder', description: 'Surface and cylindrical grinding', capacity: 2, isActive: true, displayOrder: 7 },
-  { id: 8, name: 'Inspection', type: 'inspection', description: 'Quality control inspection station', capacity: 3, isActive: true, displayOrder: 8 },
-  { id: 9, name: 'Shipping', type: 'shipping', description: 'Shipping and receiving dock', capacity: 2, isActive: true, displayOrder: 9 }
-];
+module.exports = function(pool) {
+    const router = express.Router();
 
-let workcenterQueue = [
-  { 
-    id: 1, workcenterId: 1, sequence: 1, status: 'Running', priority: 3,
-    partNumber: 'ALU-6061-2X4', quantity: 25, operationDescription: 'Cut to 12" lengths',
-    estimatedTime: 45, operatorName: 'Tom Wilson', setupNotes: 'Use 14 TPI blade',
-    woNumber: 'WO-2025-002', material: 'Aluminum 6061', queuedAt: new Date().toISOString(),
-    processingStartedAt: new Date().toISOString()
-  },
-  { 
-    id: 2, workcenterId: 1, sequence: 2, status: 'Waiting', priority: 5,
-    partNumber: 'STL-4140-1.5RD', quantity: 10, operationDescription: 'Cut to 8" lengths',
-    estimatedTime: 30, setupNotes: 'Use coolant',
-    woNumber: 'WO-2025-003', material: 'Steel 4140', queuedAt: new Date().toISOString()
-  },
-  { 
-    id: 3, workcenterId: 3, sequence: 1, status: 'Setup', priority: 2,
-    partNumber: 'PLT-4001', quantity: 50, operationNumber: 10, operationDescription: 'Face and drill',
-    estimatedTime: 120, operatorName: 'Mike Johnson', setupNotes: 'Program #4001-OP10, Use 3/8 endmill',
-    woNumber: 'WO-2025-001', queuedAt: new Date().toISOString(), setupStartedAt: new Date().toISOString()
-  },
-  { 
-    id: 4, workcenterId: 3, sequence: 2, status: 'Waiting', priority: 4,
-    partNumber: 'BRKT-1001', quantity: 25, operationNumber: 10, operationDescription: 'Rough profile',
-    estimatedTime: 90, setupNotes: 'Program #1001-OP10',
-    woNumber: 'WO-2025-004', queuedAt: new Date().toISOString()
-  },
-  { 
-    id: 5, workcenterId: 5, sequence: 1, status: 'Running', priority: 3,
-    partNumber: 'SHF-2001', quantity: 12, operationNumber: 10, operationDescription: 'Turn OD and face',
-    estimatedTime: 60, operatorName: 'Dave Martinez', setupNotes: 'Use soft jaws',
-    woNumber: 'WO-2025-005', queuedAt: new Date().toISOString(), processingStartedAt: new Date().toISOString()
-  }
-];
-
-let nextQueueId = 6;
-
-// GET /api/workcenters - List all workcenters
-router.get('/', (req, res) => {
-  try {
-    let result = workcenters.filter(w => w.isActive);
-    result.sort((a, b) => a.displayOrder - b.displayOrder);
-    
-    // Add queue info to each workcenter
-    result = result.map(wc => {
-      const queue = workcenterQueue
-        .filter(q => q.workcenterId === wc.id && q.status !== 'Complete')
-        .sort((a, b) => a.sequence - b.sequence);
-      
-      return {
-        ...wc,
-        currentJobs: queue.filter(q => q.status === 'Running' || q.status === 'Setup'),
-        queueLength: queue.filter(q => q.status === 'Waiting').length,
-        nextJobs: queue.filter(q => q.status === 'Waiting').slice(0, 3)
-      };
-    });
-    
-    res.json({
-      success: true,
-      data: result
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/workcenters/:id - Get single workcenter with full queue
-router.get('/:id', (req, res) => {
-  try {
-    const workcenter = workcenters.find(w => w.id === parseInt(req.params.id));
-    if (!workcenter) {
-      return res.status(404).json({ success: false, error: 'Workcenter not found' });
+    // Helper: Transform queue item from DB to API format
+    function transformQueueItem(row) {
+        return {
+            id: row.id,
+            workcenterId: row.workcenter_id,
+            workOrderId: row.work_order_id,
+            taskId: row.task_id,
+            sequence: row.sequence,
+            status: row.status,
+            priority: row.priority,
+            partNumber: row.part_number,
+            quantity: row.quantity,
+            operationNumber: row.operation_number,
+            operationDescription: row.operation_description,
+            estimatedTime: row.estimated_time,
+            setupNotes: row.setup_notes,
+            woNumber: row.wo_number,
+            material: row.material,
+            operatorId: row.operator_id,
+            operatorName: row.operator_name,
+            queuedAt: row.queued_at,
+            setupStartedAt: row.setup_started_at,
+            processingStartedAt: row.processing_started_at,
+            completedAt: row.completed_at,
+            actualTime: row.actual_time,
+            notes: row.notes
+        };
     }
-    
-    const queue = workcenterQueue
-      .filter(q => q.workcenterId === workcenter.id && q.status !== 'Complete')
-      .sort((a, b) => a.sequence - b.sequence);
-    
-    res.json({
-      success: true,
-      data: {
-        ...workcenter,
-        queue,
-        currentJobs: queue.filter(q => q.status === 'Running' || q.status === 'Setup'),
-        waitingJobs: queue.filter(q => q.status === 'Waiting')
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// GET /api/workcenters/:id/queue - Get workcenter queue
-router.get('/:id/queue', (req, res) => {
-  try {
-    const queue = workcenterQueue
-      .filter(q => q.workcenterId === parseInt(req.params.id))
-      .sort((a, b) => a.sequence - b.sequence);
-    
-    res.json({
-      success: true,
-      data: queue
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// POST /api/workcenters/:id/queue - Add item to queue
-router.post('/:id/queue', (req, res) => {
-  try {
-    const workcenterId = parseInt(req.params.id);
-    const workcenter = workcenters.find(w => w.id === workcenterId);
-    if (!workcenter) {
-      return res.status(404).json({ success: false, error: 'Workcenter not found' });
+    // Helper: Transform workcenter from DB to API format
+    function transformWorkcenter(row) {
+        return {
+            id: row.id,
+            name: row.name,
+            type: row.type,
+            description: row.description,
+            location: row.location,
+            capacity: row.capacity,
+            isActive: row.is_active,
+            displayOrder: row.display_order,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
     }
-    
-    const { 
-      workOrderId, taskId, partNumber, quantity, operationNumber, 
-      operationDescription, estimatedTime, setupNotes, priority = 5,
-      woNumber, material
-    } = req.body;
-    
-    // Get next sequence number
-    const existingQueue = workcenterQueue.filter(q => q.workcenterId === workcenterId && q.status !== 'Complete');
-    const maxSequence = existingQueue.reduce((max, q) => Math.max(max, q.sequence), 0);
-    
-    const newItem = {
-      id: nextQueueId++,
-      workcenterId,
-      workOrderId,
-      taskId,
-      sequence: maxSequence + 1,
-      status: 'Waiting',
-      priority,
-      partNumber,
-      quantity,
-      operationNumber,
-      operationDescription,
-      estimatedTime,
-      setupNotes,
-      woNumber,
-      material,
-      queuedAt: new Date().toISOString()
-    };
-    
-    workcenterQueue.push(newItem);
-    
-    res.status(201).json({
-      success: true,
-      data: newItem
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// PUT /api/workcenters/:id/queue/:queueId - Update queue item
-router.put('/:id/queue/:queueId', (req, res) => {
-  try {
-    const queueIndex = workcenterQueue.findIndex(
-      q => q.id === parseInt(req.params.queueId) && q.workcenterId === parseInt(req.params.id)
-    );
-    
-    if (queueIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Queue item not found' });
-    }
-    
-    const updates = req.body;
-    workcenterQueue[queueIndex] = {
-      ...workcenterQueue[queueIndex],
-      ...updates,
-      id: workcenterQueue[queueIndex].id,
-      workcenterId: workcenterQueue[queueIndex].workcenterId,
-      updatedAt: new Date().toISOString()
-    };
-    
-    res.json({
-      success: true,
-      data: workcenterQueue[queueIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+    // GET /api/workcenters - List all workcenters
+    router.get('/', async (req, res) => {
+        try {
+            const wcResult = await pool.query(`
+                SELECT * FROM workcenters 
+                WHERE is_active = TRUE
+                ORDER BY display_order ASC
+            `);
 
-// PUT /api/workcenters/:id/queue/:queueId/start-setup - Start setup
-router.put('/:id/queue/:queueId/start-setup', (req, res) => {
-  try {
-    const queueIndex = workcenterQueue.findIndex(
-      q => q.id === parseInt(req.params.queueId) && q.workcenterId === parseInt(req.params.id)
-    );
-    
-    if (queueIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Queue item not found' });
-    }
-    
-    const { operatorName } = req.body;
-    
-    workcenterQueue[queueIndex].status = 'Setup';
-    workcenterQueue[queueIndex].setupStartedAt = new Date().toISOString();
-    if (operatorName) workcenterQueue[queueIndex].operatorName = operatorName;
-    workcenterQueue[queueIndex].updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      data: workcenterQueue[queueIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            const workcenters = await Promise.all(wcResult.rows.map(async (wc) => {
+                // Get queue for this workcenter
+                const queueResult = await pool.query(`
+                    SELECT * FROM workcenter_queue
+                    WHERE workcenter_id = $1 AND status != 'Complete'
+                    ORDER BY sequence ASC
+                `, [wc.id]);
 
-// PUT /api/workcenters/:id/queue/:queueId/start-processing - Start processing
-router.put('/:id/queue/:queueId/start-processing', (req, res) => {
-  try {
-    const queueIndex = workcenterQueue.findIndex(
-      q => q.id === parseInt(req.params.queueId) && q.workcenterId === parseInt(req.params.id)
-    );
-    
-    if (queueIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Queue item not found' });
-    }
-    
-    const { operatorName } = req.body;
-    
-    workcenterQueue[queueIndex].status = 'Running';
-    workcenterQueue[queueIndex].processingStartedAt = new Date().toISOString();
-    if (operatorName) workcenterQueue[queueIndex].operatorName = operatorName;
-    workcenterQueue[queueIndex].updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      data: workcenterQueue[queueIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+                const queue = queueResult.rows.map(transformQueueItem);
+                const workcenter = transformWorkcenter(wc);
 
-// PUT /api/workcenters/:id/queue/:queueId/complete - Complete job
-router.put('/:id/queue/:queueId/complete', (req, res) => {
-  try {
-    const queueIndex = workcenterQueue.findIndex(
-      q => q.id === parseInt(req.params.queueId) && q.workcenterId === parseInt(req.params.id)
-    );
-    
-    if (queueIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Queue item not found' });
-    }
-    
-    const { quantityComplete, actualTime, notes } = req.body;
-    
-    workcenterQueue[queueIndex].status = 'Complete';
-    workcenterQueue[queueIndex].completedAt = new Date().toISOString();
-    if (quantityComplete) workcenterQueue[queueIndex].quantityComplete = quantityComplete;
-    if (actualTime) workcenterQueue[queueIndex].actualTime = actualTime;
-    if (notes) workcenterQueue[queueIndex].notes = notes;
-    workcenterQueue[queueIndex].updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      data: workcenterQueue[queueIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+                return {
+                    ...workcenter,
+                    currentJobs: queue.filter(q => q.status === 'Running' || q.status === 'Setup'),
+                    queueLength: queue.filter(q => q.status === 'Waiting').length,
+                    nextJobs: queue.filter(q => q.status === 'Waiting').slice(0, 3)
+                };
+            }));
 
-// PUT /api/workcenters/:id/queue/:queueId/issue - Report issue
-router.put('/:id/queue/:queueId/issue', (req, res) => {
-  try {
-    const queueIndex = workcenterQueue.findIndex(
-      q => q.id === parseInt(req.params.queueId) && q.workcenterId === parseInt(req.params.id)
-    );
-    
-    if (queueIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Queue item not found' });
-    }
-    
-    const { issueType, description } = req.body;
-    
-    workcenterQueue[queueIndex].status = 'Issue';
-    workcenterQueue[queueIndex].issue = { issueType, description, reportedAt: new Date().toISOString() };
-    workcenterQueue[queueIndex].updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      data: workcenterQueue[queueIndex]
+            res.json({ success: true, data: workcenters });
+        } catch (error) {
+            console.error('Get workcenters error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// PUT /api/workcenters/:id/queue/reorder - Reorder queue
-router.put('/:id/queue/reorder', (req, res) => {
-  try {
-    const { items } = req.body; // Array of { id, sequence }
-    
-    if (!Array.isArray(items)) {
-      return res.status(400).json({ success: false, error: 'Items array is required' });
-    }
-    
-    items.forEach(({ id, sequence }) => {
-      const queueIndex = workcenterQueue.findIndex(q => q.id === id);
-      if (queueIndex !== -1) {
-        workcenterQueue[queueIndex].sequence = sequence;
-        workcenterQueue[queueIndex].updatedAt = new Date().toISOString();
-      }
-    });
-    
-    const queue = workcenterQueue
-      .filter(q => q.workcenterId === parseInt(req.params.id))
-      .sort((a, b) => a.sequence - b.sequence);
-    
-    res.json({
-      success: true,
-      data: queue
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+    // GET /api/workcenters/:id - Get single workcenter with full queue
+    router.get('/:id', async (req, res) => {
+        try {
+            const wcResult = await pool.query(
+                'SELECT * FROM workcenters WHERE id = $1',
+                [req.params.id]
+            );
 
-// DELETE /api/workcenters/:id/queue/:queueId - Remove from queue
-router.delete('/:id/queue/:queueId', (req, res) => {
-  try {
-    const queueIndex = workcenterQueue.findIndex(
-      q => q.id === parseInt(req.params.queueId) && q.workcenterId === parseInt(req.params.id)
-    );
-    
-    if (queueIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Queue item not found' });
-    }
-    
-    workcenterQueue.splice(queueIndex, 1);
-    
-    res.json({
-      success: true,
-      message: 'Queue item removed'
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            if (wcResult.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Workcenter not found' });
+            }
 
-// POST /api/workcenters - Create new workcenter
-router.post('/', (req, res) => {
-  try {
-    const { name, type, description, capacity = 1, location, displayOrder } = req.body;
-    
-    if (!name || !type) {
-      return res.status(400).json({ success: false, error: 'Name and type are required' });
-    }
-    
-    const maxOrder = workcenters.reduce((max, w) => Math.max(max, w.displayOrder || 0), 0);
-    
-    const newWorkcenter = {
-      id: workcenters.length + 1,
-      name,
-      type,
-      description,
-      location,
-      capacity,
-      isActive: true,
-      displayOrder: displayOrder || maxOrder + 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    workcenters.push(newWorkcenter);
-    
-    res.status(201).json({
-      success: true,
-      data: newWorkcenter
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            const queueResult = await pool.query(`
+                SELECT * FROM workcenter_queue
+                WHERE workcenter_id = $1 AND status != 'Complete'
+                ORDER BY sequence ASC
+            `, [req.params.id]);
 
-// PUT /api/workcenters/:id - Update workcenter
-router.put('/:id', (req, res) => {
-  try {
-    const wcIndex = workcenters.findIndex(w => w.id === parseInt(req.params.id));
-    if (wcIndex === -1) {
-      return res.status(404).json({ success: false, error: 'Workcenter not found' });
-    }
-    
-    const updates = req.body;
-    workcenters[wcIndex] = {
-      ...workcenters[wcIndex],
-      ...updates,
-      id: workcenters[wcIndex].id,
-      updatedAt: new Date().toISOString()
-    };
-    
-    res.json({
-      success: true,
-      data: workcenters[wcIndex]
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+            const workcenter = transformWorkcenter(wcResult.rows[0]);
+            const queue = queueResult.rows.map(transformQueueItem);
 
-module.exports = router;
+            res.json({
+                success: true,
+                data: {
+                    ...workcenter,
+                    queue,
+                    currentJobs: queue.filter(q => q.status === 'Running' || q.status === 'Setup'),
+                    waitingJobs: queue.filter(q => q.status === 'Waiting')
+                }
+            });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // GET /api/workcenters/:id/queue - Get workcenter queue
+    router.get('/:id/queue', async (req, res) => {
+        try {
+            const result = await pool.query(`
+                SELECT * FROM workcenter_queue
+                WHERE workcenter_id = $1
+                ORDER BY sequence ASC
+            `, [req.params.id]);
+
+            res.json({
+                success: true,
+                data: result.rows.map(transformQueueItem)
+            });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // POST /api/workcenters/:id/queue - Add item to queue
+    router.post('/:id/queue', async (req, res) => {
+        try {
+            const workcenterId = parseInt(req.params.id);
+
+            // Check workcenter exists
+            const wcCheck = await pool.query('SELECT id FROM workcenters WHERE id = $1', [workcenterId]);
+            if (wcCheck.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Workcenter not found' });
+            }
+
+            const {
+                workOrderId, taskId, partNumber, quantity, operationNumber,
+                operationDescription, estimatedTime, setupNotes, priority = 5,
+                woNumber, material
+            } = req.body;
+
+            // Get next sequence number
+            const seqResult = await pool.query(`
+                SELECT COALESCE(MAX(sequence), 0) + 1 as next_seq
+                FROM workcenter_queue
+                WHERE workcenter_id = $1 AND status != 'Complete'
+            `, [workcenterId]);
+
+            const nextSequence = seqResult.rows[0].next_seq;
+
+            const result = await pool.query(`
+                INSERT INTO workcenter_queue (
+                    workcenter_id, work_order_id, task_id, sequence, status, priority,
+                    part_number, quantity, operation_number, operation_description,
+                    estimated_time, setup_notes, wo_number, material
+                ) VALUES ($1, $2, $3, $4, 'Waiting', $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                RETURNING *
+            `, [
+                workcenterId, workOrderId, taskId, nextSequence, priority,
+                partNumber, quantity, operationNumber, operationDescription,
+                estimatedTime, setupNotes, woNumber, material
+            ]);
+
+            res.status(201).json({
+                success: true,
+                data: transformQueueItem(result.rows[0])
+            });
+        } catch (error) {
+            console.error('Add to queue error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/workcenters/:id/queue/:queueId - Update queue item
+    router.put('/:id/queue/:queueId', async (req, res) => {
+        try {
+            const updates = req.body;
+            const setClauses = [];
+            const values = [];
+            let paramIndex = 1;
+
+            const fieldMap = {
+                sequence: 'sequence',
+                status: 'status',
+                priority: 'priority',
+                partNumber: 'part_number',
+                quantity: 'quantity',
+                operationNumber: 'operation_number',
+                operationDescription: 'operation_description',
+                estimatedTime: 'estimated_time',
+                setupNotes: 'setup_notes',
+                operatorName: 'operator_name',
+                notes: 'notes'
+            };
+
+            for (const [jsField, dbField] of Object.entries(fieldMap)) {
+                if (updates[jsField] !== undefined) {
+                    setClauses.push(`${dbField} = $${paramIndex++}`);
+                    values.push(updates[jsField]);
+                }
+            }
+
+            if (setClauses.length === 0) {
+                return res.status(400).json({ success: false, error: 'No fields to update' });
+            }
+
+            setClauses.push(`updated_at = NOW()`);
+            values.push(parseInt(req.params.queueId), parseInt(req.params.id));
+
+            const result = await pool.query(`
+                UPDATE workcenter_queue 
+                SET ${setClauses.join(', ')}
+                WHERE id = $${paramIndex} AND workcenter_id = $${paramIndex + 1}
+                RETURNING *
+            `, values);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Queue item not found' });
+            }
+
+            res.json({ success: true, data: transformQueueItem(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/workcenters/:id/queue/:queueId/start-setup - Start setup
+    router.put('/:id/queue/:queueId/start-setup', async (req, res) => {
+        try {
+            const { operatorName } = req.body;
+
+            const result = await pool.query(`
+                UPDATE workcenter_queue 
+                SET status = 'Setup', setup_started_at = NOW(), operator_name = COALESCE($1, operator_name), updated_at = NOW()
+                WHERE id = $2 AND workcenter_id = $3
+                RETURNING *
+            `, [operatorName, req.params.queueId, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Queue item not found' });
+            }
+
+            res.json({ success: true, data: transformQueueItem(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/workcenters/:id/queue/:queueId/start-processing - Start processing
+    router.put('/:id/queue/:queueId/start-processing', async (req, res) => {
+        try {
+            const { operatorName } = req.body;
+
+            const result = await pool.query(`
+                UPDATE workcenter_queue 
+                SET status = 'Running', processing_started_at = NOW(), operator_name = COALESCE($1, operator_name), updated_at = NOW()
+                WHERE id = $2 AND workcenter_id = $3
+                RETURNING *
+            `, [operatorName, req.params.queueId, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Queue item not found' });
+            }
+
+            res.json({ success: true, data: transformQueueItem(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/workcenters/:id/queue/:queueId/complete - Complete job
+    router.put('/:id/queue/:queueId/complete', async (req, res) => {
+        try {
+            const { quantityComplete, actualTime, notes } = req.body;
+
+            const result = await pool.query(`
+                UPDATE workcenter_queue 
+                SET status = 'Complete', completed_at = NOW(), 
+                    quantity_complete = COALESCE($1, quantity),
+                    actual_time = $2, notes = COALESCE($3, notes), updated_at = NOW()
+                WHERE id = $4 AND workcenter_id = $5
+                RETURNING *
+            `, [quantityComplete, actualTime, notes, req.params.queueId, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Queue item not found' });
+            }
+
+            res.json({ success: true, data: transformQueueItem(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/workcenters/:id/queue/:queueId/issue - Report issue
+    router.put('/:id/queue/:queueId/issue', async (req, res) => {
+        try {
+            const { issueType, description } = req.body;
+
+            const result = await pool.query(`
+                UPDATE workcenter_queue 
+                SET status = 'Issue', 
+                    notes = COALESCE(notes, '') || E'\n' || $1 || ': ' || $2,
+                    updated_at = NOW()
+                WHERE id = $3 AND workcenter_id = $4
+                RETURNING *
+            `, [issueType || 'Issue', description, req.params.queueId, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Queue item not found' });
+            }
+
+            res.json({ success: true, data: transformQueueItem(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/workcenters/:id/queue/reorder - Reorder queue
+    router.put('/:id/queue/reorder', async (req, res) => {
+        try {
+            const { items } = req.body;
+
+            if (!Array.isArray(items)) {
+                return res.status(400).json({ success: false, error: 'Items array is required' });
+            }
+
+            // Update sequences in transaction
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+                for (const { id, sequence } of items) {
+                    await client.query(
+                        'UPDATE workcenter_queue SET sequence = $1, updated_at = NOW() WHERE id = $2',
+                        [sequence, id]
+                    );
+                }
+                await client.query('COMMIT');
+            } catch (err) {
+                await client.query('ROLLBACK');
+                throw err;
+            } finally {
+                client.release();
+            }
+
+            // Return updated queue
+            const result = await pool.query(`
+                SELECT * FROM workcenter_queue
+                WHERE workcenter_id = $1
+                ORDER BY sequence ASC
+            `, [req.params.id]);
+
+            res.json({ success: true, data: result.rows.map(transformQueueItem) });
+        } catch (error) {
+            console.error('Reorder queue error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // DELETE /api/workcenters/:id/queue/:queueId - Remove from queue
+    router.delete('/:id/queue/:queueId', async (req, res) => {
+        try {
+            const result = await pool.query(`
+                DELETE FROM workcenter_queue 
+                WHERE id = $1 AND workcenter_id = $2
+                RETURNING id
+            `, [req.params.queueId, req.params.id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Queue item not found' });
+            }
+
+            res.json({ success: true, message: 'Queue item removed' });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // POST /api/workcenters - Create new workcenter
+    router.post('/', async (req, res) => {
+        try {
+            const { name, type, description, capacity = 1, location, displayOrder } = req.body;
+
+            if (!name || !type) {
+                return res.status(400).json({ success: false, error: 'Name and type are required' });
+            }
+
+            // Get max display order
+            const maxOrderResult = await pool.query('SELECT COALESCE(MAX(display_order), 0) + 1 as next FROM workcenters');
+            const nextOrder = displayOrder || maxOrderResult.rows[0].next;
+
+            const result = await pool.query(`
+                INSERT INTO workcenters (name, type, description, location, capacity, is_active, display_order)
+                VALUES ($1, $2, $3, $4, $5, TRUE, $6)
+                RETURNING *
+            `, [name, type, description, location, capacity, nextOrder]);
+
+            res.status(201).json({
+                success: true,
+                data: transformWorkcenter(result.rows[0])
+            });
+        } catch (error) {
+            console.error('Create workcenter error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // PUT /api/workcenters/:id - Update workcenter
+    router.put('/:id', async (req, res) => {
+        try {
+            const updates = req.body;
+            const setClauses = [];
+            const values = [];
+            let paramIndex = 1;
+
+            const fieldMap = {
+                name: 'name',
+                type: 'type',
+                description: 'description',
+                location: 'location',
+                capacity: 'capacity',
+                isActive: 'is_active',
+                displayOrder: 'display_order'
+            };
+
+            for (const [jsField, dbField] of Object.entries(fieldMap)) {
+                if (updates[jsField] !== undefined) {
+                    setClauses.push(`${dbField} = $${paramIndex++}`);
+                    values.push(updates[jsField]);
+                }
+            }
+
+            if (setClauses.length === 0) {
+                return res.status(400).json({ success: false, error: 'No fields to update' });
+            }
+
+            setClauses.push(`updated_at = NOW()`);
+            values.push(parseInt(req.params.id));
+
+            const result = await pool.query(`
+                UPDATE workcenters SET ${setClauses.join(', ')}
+                WHERE id = $${paramIndex}
+                RETURNING *
+            `, values);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ success: false, error: 'Workcenter not found' });
+            }
+
+            res.json({ success: true, data: transformWorkcenter(result.rows[0]) });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    return router;
+};
