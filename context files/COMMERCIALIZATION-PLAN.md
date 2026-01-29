@@ -1,5 +1,8 @@
 # ERP Commercialization Plan (On-Premise Edition)
 
+> **Last Updated**: January 29, 2026  
+> **Status**: Phase 3 In Progress
+
 ## Business Model Summary
 
 - **Deployment**: On-premise (customer installs on their own hardware)
@@ -16,336 +19,632 @@ The ERP system is a **functional prototype** built with:
 
 - **Backend**: Express.js 4.18.2 + PostgreSQL (40+ tables)
 - **Frontend**: Vanilla ES6 modules + Tailwind CSS (SPA)
-- **Features**: Inventory, Sales (customers/quotes/work orders), Tasks, Maintenance, User management
+- **Features**: Inventory, Sales (customers/quotes/work orders), Tasks, Maintenance, User management with role-based permissions, Shop branding (white-label support)
 
-**Code Quality Score**: ~5-6/10 for production readiness
-
----
-
-## Phase 1: Critical Security Fixes (Must Have)
-
-### 1. Authentication Hardening
-
-- Replace SHA-256 password hashing with **bcrypt** or **argon2** (`backend/routes/users.js` line ~50)
-- Create centralized auth middleware (currently duplicated in each route file)
-- Implement refresh tokens with proper rotation
-- Add rate limiting on login endpoints (`express-rate-limit`)
-- Remove demo mode password bypass
-
-### 2. Input Validation & Sanitization
-
-- Add validation library (Joi, Zod, or express-validator)
-- Sanitize all HTML string generation in frontend to prevent XSS
-- Validate at both client and server layers
-
-### 3. CORS & Session Security
-
-- Configure CORS to allow only specific origins (currently allows all)
-- Add CSRF protection
-- Implement secure cookie flags
+**Code Quality Score**: ~7/10 for production readiness (improved from 5-6/10)
 
 ---
 
-## Phase 2: Architecture Improvements (High Priority)
+## Phase 1: Critical Security Fixes ✅ COMPLETED
 
-### 4. Database Consistency
+### 1. Authentication Hardening ✅
 
-Several routes use **in-memory arrays** instead of PostgreSQL:
+- [x] ~~Replace SHA-256 password hashing with **bcrypt**~~ → `backend/routes/users.js`
+- [x] ~~Create centralized auth middleware~~ → `backend/middleware/auth.js`
+- [x] ~~Add rate limiting on login endpoints~~ → `backend/middleware/rateLimit.js`
+- [x] ~~Remove demo mode password bypass~~ → Removed from `users.js`
+- [ ] Implement refresh tokens with proper rotation (deferred - not critical for v1)
 
-- `tasks` (lines 190-280 in `backend/server.js`)
-- `workcenters`, `machines`, `maintenance` routes
-- `orders` (purchase orders, receiving, shipping)
+### 2. Input Validation & Sanitization ✅
 
-**Action**: Migrate all in-memory routes to PostgreSQL using existing schema files in `database/`
+- [x] ~~Add validation library~~ → **Zod** (`backend/middleware/validation.js`)
+- [x] ~~Validate at server layer~~ → Schemas for login, users, customers, materials, quotes, work orders, tasks
+- [ ] Sanitize all HTML string generation in frontend (ongoing)
 
-### 5. Service Layer Architecture
+### 3. CORS & Session Security ✅
 
-- Extract business logic from route handlers into service classes
-- Create shared middleware directory
-- Implement dependency injection pattern
+- [x] ~~Configure CORS to allow specific origins~~ → Enhanced in `server.js`
+- [ ] Add CSRF protection (deferred - lower priority for on-premise)
+- [ ] Implement secure cookie flags (deferred)
 
-### 6. Database Migrations
+**Files Created/Modified:**
+- `backend/middleware/auth.js` - Centralized authentication
+- `backend/middleware/rateLimit.js` - Rate limiters (login, API, export, import)
+- `backend/middleware/validation.js` - Zod schemas and validation middleware
+- `backend/middleware/index.js` - Central exports
+- `backend/routes/users.js` - bcrypt integration, auth middleware
 
-- Implement migration tool (node-pg-migrate or Knex)
-- Fix schema conflicts (users table dropped/recreated in `database/users_schema.sql`)
-- Add version tracking
-- Create rollback scripts
+---
+
+## Phase 2: Architecture Improvements ✅ COMPLETED
+
+### 4. Database Consistency ✅
+
+All in-memory routes migrated to PostgreSQL:
+
+- [x] ~~`tasks`~~ → `backend/routes/tasks.js` (full PostgreSQL)
+- [x] ~~`workcenters`~~ → `backend/routes/workcenters.js` (full PostgreSQL)
+- [x] ~~`machines`~~ → `backend/routes/machines.js` (full PostgreSQL)
+- [x] ~~`maintenance`~~ → `backend/routes/maintenance.js` (full PostgreSQL)
+- [x] ~~`orders`~~ → `backend/routes/orders.js` (POs, receiving, shipping, inspection)
+
+### 5. Service Layer Architecture (Partial)
+
+- [x] ~~Create shared middleware directory~~ → `backend/middleware/`
+- [ ] Extract business logic into service classes (deferred - routes work well)
+- [ ] Implement dependency injection pattern (deferred)
+
+### 6. Database Migrations ✅
+
+- [x] ~~Implement migration tool~~ → Custom `backend/migrations/migrate.js`
+- [x] ~~Fix schema conflicts~~ → Consolidated in initial migration
+- [x] ~~Add version tracking~~ → `schema_migrations` table
+- [x] ~~Create rollback scripts~~ → `migrate.js down` command
+
+**Migration Commands:**
+```bash
+npm run migrate          # Run pending migrations
+npm run migrate:down     # Rollback last migration
+npm run migrate:status   # Show migration status
+npm run migrate:create   # Create new migration
+```
+
+**Files Created:**
+- `backend/migrations/migrate.js` - CLI migration tool
+- `backend/migrations/scripts/20260128_000000_initial_schema.js` - Initial schema
 
 ### 7. API Versioning
 
-- Add `/api/v1/` prefix to all routes
-- Document API changes between versions
+- [ ] Add `/api/v1/` prefix (deferred - breaking change, do before v1.0 release)
 
-### 8. TypeScript Migration
+### 8. TypeScript Migration ✅ IN PROGRESS
 
-**Backend (`backend/`):**
+**Backend (`backend/src/`):**
 
-- Add `typescript`, `ts-node`, `@types/node`, `@types/express`
-- Create `tsconfig.json` with strict mode
-- Gradually convert `.js` files to `.ts`
-- Start with new code, migrate existing over time
+- [x] ~~Add TypeScript and type definitions~~ → `typescript`, `ts-node`, `@types/*`
+- [x] ~~Create `tsconfig.json`~~ → Strict mode enabled
+- [x] ~~Create shared type definitions~~ → `src/types/index.ts` (500+ lines)
+- [x] ~~Convert middleware to TypeScript~~ → `src/middleware/*.ts`
+- [x] ~~Convert one route as example~~ → `src/routes/tasks.ts`
+- [ ] Convert remaining routes (can be done incrementally)
 
-**Frontend (`frontend/js/`):**
+**TypeScript Structure:**
+```
+backend/src/
+├── types/
+│   ├── index.ts       # All entity types (User, Task, Customer, etc.)
+│   └── database.ts    # DB row types, transform utilities
+├── middleware/
+│   ├── auth.ts        # Authentication middleware
+│   ├── validation.ts  # Zod schemas with type inference
+│   ├── rateLimit.ts   # Rate limiters
+│   └── index.ts       # Exports
+└── routes/
+    ├── tasks.ts       # Example fully-typed route
+    └── index.ts       # Exports
+```
 
-- Add TypeScript compilation step
-- Create type definitions for state objects
-- Convert modules incrementally (start with `common.js`, `storage.js`)
+**Build Commands:**
+```bash
+npm run build         # Compile TypeScript to dist/
+npm run build:watch   # Watch mode
+npm run typecheck     # Type check without emit
+```
 
-**Benefits:**
-
-- Catch bugs at compile time
-- Better IDE autocomplete
-- Self-documenting code
-- Easier refactoring
-
----
-
-## Phase 3: Data Import Feature (Critical for Target Market)
-
-### CSV/Spreadsheet Import System
-
-Small shops typically have existing data in spreadsheets. Build import wizards for:
-
-**Priority Entities:**
-
-- **Customers** - company name, contact info, addresses
-- **Inventory (Materials)** - part numbers, descriptions, quantities, locations
-- **Inventory (Tooling)** - tool IDs, descriptions, conditions
-- **Contacts** - names, emails, phones linked to customers
-
-**Import Flow:**
-
-1. Upload CSV/Excel file (.csv, .xlsx)
-2. Column mapping UI (match spreadsheet columns to database fields)
-3. Preview with validation errors highlighted
-4. Import with rollback on failure
-5. Summary report (imported, skipped, errors)
-
-**Libraries to use:**
-
-- `papaparse` for CSV parsing
-- `xlsx` (SheetJS) for Excel file support
-- `multer` for file upload handling
-
-**Google Sheets Integration (optional):**
-
-- OAuth2 connection to Google Sheets API
-- Select spreadsheet and sheet
-- Same column mapping flow
+**Frontend TypeScript:**
+- [ ] Add TypeScript compilation step
+- [ ] Convert modules incrementally
 
 ---
 
-## Phase 4: Native Installers & Packaging
+## TypeScript Migration Schedule
+
+### Migration Strategy
+
+The migration follows an **incremental approach** - existing JavaScript continues to work while TypeScript files are added alongside. The `allowJs: true` setting in tsconfig enables this hybrid mode.
+
+### Backend Migration Status
+
+#### Phase A: Foundation ✅ COMPLETED
+
+| Component | Status | File | Notes |
+|-----------|--------|------|-------|
+| TypeScript setup | ✅ Done | `tsconfig.json` | Strict mode, ES2020 target |
+| Type definitions | ✅ Done | `src/types/index.ts` | 500+ lines, all entities |
+| Database types | ✅ Done | `src/types/database.ts` | Row types, transformers |
+
+#### Phase B: Middleware ✅ COMPLETED
+
+| Component | Status | JS File | TS File | Notes |
+|-----------|--------|---------|---------|-------|
+| Auth middleware | ✅ Done | `middleware/auth.js` | `src/middleware/auth.ts` | Full typing |
+| Validation | ✅ Done | `middleware/validation.js` | `src/middleware/validation.ts` | Zod + inferred types |
+| Rate limiting | ✅ Done | `middleware/rateLimit.js` | `src/middleware/rateLimit.ts` | All limiters typed |
+| Index exports | ✅ Done | `middleware/index.js` | `src/middleware/index.ts` | Central exports |
+
+#### Phase C: Routes - In Progress
+
+| Route | Status | JS File | TS File | Priority | Complexity |
+|-------|--------|---------|---------|----------|------------|
+| tasks | ✅ Done | `routes/tasks.js` | `src/routes/tasks.ts` | Example | High |
+| users | 🔲 Pending | `routes/users.js` | - | High | High |
+| customers | 🔲 Pending | `routes/customers.js` | - | High | Medium |
+| inventory | 🔲 Pending | `routes/inventory.js` | - | High | Medium |
+| quotes | 🔲 Pending | `routes/quotes.js` | - | Medium | Medium |
+| workorders | 🔲 Pending | `routes/workorders.js` | - | Medium | Medium |
+| workcenters | 🔲 Pending | `routes/workcenters.js` | - | Medium | Medium |
+| machines | 🔲 Pending | `routes/machines.js` | - | Medium | Medium |
+| maintenance | 🔲 Pending | `routes/maintenance.js` | - | Low | High |
+| orders | 🔲 Pending | `routes/orders.js` | - | Low | High |
+| import | 🔲 Pending | `routes/import.js` | - | Low | Medium |
+
+**Recommended Order:** users → customers → inventory → quotes → workorders → workcenters → machines → maintenance → orders → import
+
+#### Phase D: Server & Config - Not Started
+
+| Component | Status | File | Notes |
+|-----------|--------|------|-------|
+| Main server | 🔲 Pending | `server.js` → `server.ts` | Last to convert |
+| Jest config | 🔲 Pending | `jest.config.js` → `jest.config.ts` | Optional |
+| Migration tool | 🔲 Pending | `migrations/migrate.js` | Optional |
+
+### Frontend Migration Status
+
+#### Phase E: Frontend Foundation - Not Started
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Vite setup | 🔲 Pending | Add build system first |
+| Type definitions | 🔲 Pending | Define state shapes |
+| tsconfig (frontend) | 🔲 Pending | Browser-focused config |
+
+#### Phase F: Frontend Modules - Not Started
+
+| Module | Status | File | Complexity |
+|--------|--------|------|------------|
+| storage | 🔲 Pending | `js/modules/storage.js` | Low (start here) |
+| common | 🔲 Pending | `js/modules/common.js` | Medium |
+| app | 🔲 Pending | `js/app.js` | High |
+| sales | 🔲 Pending | `js/modules/sales.js` | Very High (2000+ lines) |
+| tasks | 🔲 Pending | `js/modules/tasks.js` | High (1800+ lines) |
+| inventory | 🔲 Pending | `js/modules/inventory.js` | Medium |
+| maintenance | 🔲 Pending | `js/modules/maintenance.js` | Medium |
+| users | 🔲 Pending | `js/modules/users.js` | Medium |
+| search | 🔲 Pending | `js/modules/search.js` | Low |
+
+**Recommended Order:** storage → common → search → users → inventory → maintenance → tasks → sales → app
+
+### Migration Progress Summary
+
+| Category | Total | Completed | Remaining | % Done |
+|----------|-------|-----------|-----------|--------|
+| **Backend Types** | 2 | 2 | 0 | 100% |
+| **Backend Middleware** | 4 | 4 | 0 | 100% |
+| **Backend Routes** | 11 | 1 | 10 | 9% |
+| **Backend Config** | 3 | 0 | 3 | 0% |
+| **Frontend Setup** | 3 | 0 | 3 | 0% |
+| **Frontend Modules** | 9 | 0 | 9 | 0% |
+| **Overall** | 32 | 7 | 25 | **22%** |
+
+### Type Definitions Created
+
+The following types are defined in `src/types/index.ts`:
+
+**User & Auth:**
+- `User`, `UserRole`, `AppearanceSettings`, `TabPermissions`
+- `UserSession`, `LoginCredentials`, `CreateUserInput`
+- `AuthenticatedRequest`, `AuthMiddleware`
+
+**Business Entities:**
+- `Customer`, `Contact`, `CreateCustomerInput`
+- `Material`, `Tooling`, `MiscItem`, `CreateMaterialInput`
+- `Quote`, `QuoteItem`, `QuoteStatus`
+- `WorkOrder`, `WOChecklistItem`, `WorkOrderStatus`
+
+**Operations:**
+- `Task`, `TaskHistory`, `TaskType`, `TaskStatus`, `TaskPriority`
+- `Workcenter`, `WorkcenterQueueItem`, `WorkcenterType`, `QueueStatus`
+- `Machine`, `MachineType`, `MachineStatus`, `MaintenanceStatus`
+- `MaintenanceTask`, `MaintenanceTaskDefinition`, `MaintenanceCategory`
+
+**Orders & Shipping:**
+- `PurchaseOrder`, `POItem`, `POStatus`, `POItemType`
+- `InspectionTask`, `InspectionType`, `InspectionStatus`
+- `ShippingTask`, `ShippingStatus`, `ShippingItem`
+- `ReceivingTask`, `ReceivingStatus`, `ExpectedItem`, `ReceivedItem`
+
+**API:**
+- `ApiResponse<T>`, `PaginatedResponse<T>`, `StatsResponse<T>`
+- `ImportPreviewResult`, `ImportResult`, `ImportError`, `ImportEntityType`
+
+### Converting a Route: Step-by-Step
+
+To convert a JavaScript route to TypeScript:
+
+1. **Create the file**: `src/routes/{name}.ts`
+
+2. **Add imports**:
+```typescript
+import { Router, Request, Response } from 'express';
+import { Pool } from 'pg';
+import { EntityType, ApiResponse } from '../types';
+```
+
+3. **Define row types** (database format):
+```typescript
+interface EntityRow {
+    id: number;
+    field_name: string;  // snake_case from DB
+    // ...
+}
+```
+
+4. **Define input/output types**:
+```typescript
+interface CreateEntityInput {
+    fieldName: string;  // camelCase for API
+}
+```
+
+5. **Type the route factory**:
+```typescript
+export default function createRouter(pool: Pool): Router {
+    const router = Router();
+    // ...
+    return router;
+}
+```
+
+6. **Type each handler**:
+```typescript
+router.get('/:id', async (
+    req: Request<{ id: string }>,
+    res: Response<ApiResponse<Entity>>
+) => { ... });
+```
+
+7. **Run type check**: `npm run typecheck`
+
+8. **Build**: `npm run build`
+
+---
+
+## Phase 3: Data Import Feature ✅ COMPLETED
+
+### CSV/Spreadsheet Import System ✅
+
+- [x] ~~CSV parsing~~ → `papaparse`
+- [x] ~~Excel support~~ → `xlsx` (SheetJS)
+- [x] ~~File upload handling~~ → `multer`
+- [x] ~~Column mapping with aliases~~ → Smart header matching
+- [x] ~~Validation with detailed errors~~ → Row-level error reporting
+- [x] ~~Preview before import~~ → `/api/import/preview` endpoint
+- [x] ~~Template generation~~ → `/api/import/template/:entityType`
+
+**Supported Entity Types:**
+- `customers` - Company name, address, phone, terms, notes
+- `contacts` - Name, email, phone, role, customer link
+- `materials` - Part number, description, quantity, location, supplier
+- `tooling` - Tool ID, description, condition, location
+- `workcenters` - Name, type, description, capacity
+- `machines` - Name, type, manufacturer, model, serial number
+
+**API Endpoints:**
+```
+POST   /api/import/preview              # Preview with validation
+POST   /api/import/customers            # Import customers
+POST   /api/import/materials            # Import materials
+POST   /api/import/tooling              # Import tooling
+POST   /api/import/workcenters          # Import workcenters
+POST   /api/import/machines             # Import machines
+GET    /api/import/template/:entityType # Download CSV template
+GET    /api/import/supported-types      # List supported types
+```
+
+**Files Created:**
+- `backend/routes/import.js` - Full import system
+
+### Testing Infrastructure ✅ PARTIAL
+
+- [x] ~~Test framework~~ → Jest configured
+- [x] ~~API integration tests~~ → Supertest setup
+- [x] ~~Test helpers~~ → `backend/tests/helpers/testDb.js`
+- [x] ~~Unit tests for validation~~ → `backend/tests/middleware/validation.test.js`
+- [x] ~~Integration tests for import~~ → `backend/tests/routes/import.test.js`
+- [ ] E2E tests with Playwright
+- [ ] Increase test coverage
+
+**Test Commands:**
+```bash
+npm test              # Run all tests
+npm run test:watch    # Watch mode
+npm run test:coverage # Coverage report
+npm run test:unit     # Unit tests only
+npm run test:integration # Integration tests only
+```
+
+**Files Created:**
+- `backend/jest.config.js` - Jest configuration
+- `backend/tests/setup.js` - Test environment setup
+- `backend/tests/helpers/testDb.js` - Database test helpers
+- `backend/tests/middleware/validation.test.js` - Validation tests
+- `backend/tests/routes/import.test.js` - Import API tests
+
+---
+
+## Phase 3.5: User Experience & Customization ✅ COMPLETED
+
+### Users & Permissions System ✅
+
+- [x] ~~Role-based access control~~ → Administrator, Machinist, Operator
+- [x] ~~Tab-level permissions~~ → Per-user access to Dashboard, Workcenter, Inventory, Sales, Tasks, Settings
+- [x] ~~User appearance settings~~ → Theme preferences saved to user profile
+- [x] ~~User management UI~~ → `frontend/js/modules/users.js`
+- [x] ~~Login/logout flow~~ → Session-based auth with demo mode support
+- [x] ~~Permission checking~~ → Sidebar hides inaccessible sections
+
+**Database Tables:**
+- `users` - Enhanced with `appearance_settings`, `tab_permissions` (JSONB)
+- `user_sessions` - Token management with expiration
+- `role_defaults` - Default permissions per role
+- `user_activity_log` - Audit trail for user actions
+
+### Shop Branding (White-Label Support) ✅
+
+- [x] ~~Customizable shop name~~ → Displayed in sidebar and browser tab
+- [x] ~~Custom logo upload~~ → Base64 storage, supports PNG/JPG up to 2MB
+- [x] ~~Tagline customization~~ → Short description below shop name
+- [x] ~~Live preview~~ → See changes before saving
+- [x] ~~Admin-only access~~ → Only administrators can modify branding
+- [x] ~~Backup integration~~ → Branding preserved in backups
+
+**Files Created/Modified:**
+- `frontend/js/modules/users.js` - Full user management module
+- `frontend/js/app.js` - ShopBranding manager, permission checking
+- `database/users_schema.sql` - Enhanced user tables
+- `backend/routes/users.js` - User API endpoints
+
+### Backup & Restore Enhancements ✅
+
+- [x] ~~Offline backup support~~ → Creates client-side backup when server unavailable
+- [x] ~~User profiles in backups~~ → Includes users, roles, permissions
+- [x] ~~Shop branding in backups~~ → Logo and settings preserved
+- [x] ~~Full restore functionality~~ → Restores localStorage with confirmation
+
+---
+
+## Phase 4: Native Installers & Packaging 🔲 NOT STARTED
 
 ### Desktop Application with Electron
 
-Package the ERP as a desktop app using **Electron**:
+- [ ] Electron wrapper
+- [ ] Bundled backend
+- [ ] PostgreSQL installer integration
+- [ ] Auto-updater for maintenance subscribers
 
-**Architecture:**
+### Platform Installers
 
-```
-┌─────────────────────────────────────────┐
-│           Electron Shell                │
-│  ┌─────────────────────────────────┐   │
-│  │   Frontend (Chromium webview)   │   │
-│  └─────────────────────────────────┘   │
-│  ┌─────────────────────────────────┐   │
-│  │   Backend (Express - bundled)   │   │
-│  └─────────────────────────────────┘   │
-│  ┌─────────────────────────────────┐   │
-│  │   PostgreSQL (embedded/bundled) │   │
-│  └─────────────────────────────────┘   │
-└─────────────────────────────────────────┘
-```
-
-**Key Components:**
-
-- **electron-builder** - Creates installers for all platforms
-- **PostgreSQL** - Bundle with installer OR guide user to install separately
-- **Auto-updater** - Check for updates (for maintenance subscribers)
-
-**Platform Installers:**
-
-- **Windows**: `.exe` installer (NSIS or MSI)
-- **macOS**: `.dmg` with drag-to-Applications
-- **Linux**: `.deb` (Debian/Ubuntu) and `.rpm` (Fedora/RHEL)
-
-**Alternative: Simpler Approach**
-
-If Electron adds too much complexity, consider:
-
-- Distribute as a standalone Node.js app with bundled runtime
-- Use `pkg` to compile Node.js app into single executable
-- Provide PostgreSQL installer separately with setup guide
+- [ ] Windows `.exe` installer
+- [ ] macOS `.dmg`
+- [ ] Linux `.deb` and `.rpm`
 
 ### First-Run Setup Wizard
 
-- Database connection configuration
-- Create admin user
-- License key activation
-- Optional: Import existing data
+- [ ] Database configuration
+- [ ] Admin user creation
+- [ ] License activation
+- [ ] Data import option
 
-### Local Logging
+### Logging
 
-- Replace `console.log` with **Winston** or **Pino**
-- Log to rotating files (not cloud services)
-- Log levels: error, warn, info, debug
-- Include request IDs for tracing
-- Add "Export Logs" feature for support tickets
+- [ ] Replace console.log with Winston/Pino
+- [ ] Rotating log files
+- [ ] Export logs feature
 
 ---
 
-## Phase 5: Quality Assurance
+## Phase 5: Quality Assurance 🔲 PARTIAL
 
-### Testing Infrastructure
+### Testing (continued from Phase 3)
 
-Currently **no tests exist**. Add:
-
-- Unit tests with **Vitest** (works well with Vite build system)
-- API integration tests with **Supertest**
-- E2E tests with **Playwright** (can test the Electron app)
-- Focus on critical paths: auth, data import, license validation
+- [x] ~~Unit test framework~~ → Jest
+- [x] ~~API tests~~ → Supertest
+- [ ] E2E tests with Playwright
+- [ ] Critical path coverage (auth, import, license)
 
 ### Frontend Improvements
 
-**Code Splitting (Recommended):**
-
-Large files should be split for maintainability:
-
-- `frontend/js/modules/sales.js` - 2000+ lines (split into customers.ts, quotes.ts, workorders.ts)
-- `frontend/js/modules/tasks.js` - 1822 lines (split into workflow.ts, assignments.ts)
-
-**Build System:**
-
-Add a build step for TypeScript and bundling:
-
-- **Vite** (recommended) - fast builds, good TypeScript support
-- Minification for production builds
-- Source maps for debugging
-- Bundle for Electron distribution
-
-**Accessibility (Nice to Have):**
-
-- Add ARIA attributes to interactive elements
-- Keyboard navigation for forms and modals
-- Screen reader labels
+- [ ] Code splitting (large files)
+- [ ] Build system (Vite)
+- [ ] Minification
+- [ ] Accessibility improvements
 
 ---
 
-## Phase 6: Business Requirements
+## Phase 6: Business Requirements 🔲 NOT STARTED
 
-### Licensing System (On-Premise)
+### Licensing System
 
-**License Key Structure:**
-
-- Generate keys with embedded metadata (expiry, user count, features)
-- Offline validation (no phone-home required for basic license)
-- Optional online check for maintenance subscription status
-
-**Implementation:**
-
-- Use cryptographic signing (RSA or Ed25519)
-- License file stored locally
-- Validate on app startup
-- Grace period for expired maintenance (app still works, no updates)
-
-**Tiers (example):**
-
-- **Starter**: 1-3 users, core features
-- **Professional**: 4-10 users, all features
-- **Shop**: 11-20 users, all features + priority support
+- [ ] License key generation
+- [ ] Offline validation
+- [ ] Tier support (Starter/Professional/Shop)
 
 ### Update System
 
-**For Maintenance Subscribers:**
+- [ ] Update checker
+- [ ] Download and apply updates
+- [ ] Changelog display
 
-- Check for updates on startup (optional, can disable)
-- Download and apply updates in-app
-- Database migration runs automatically
-- Changelog display
+### Legal & Documentation
 
-**For Non-Subscribers:**
-
-- App continues working indefinitely
-- No updates, security patches require re-purchase or subscription
-
-### Legal & Compliance
-
-- **EULA** (End User License Agreement) - displayed during install
-- **Privacy Policy** - especially for telemetry if any
-- **Refund Policy** - typical for software sales
-- No GDPR data processing agreement needed (data stays on customer's machine)
-
-### Documentation
-
-- **Installation Guide** - step-by-step with screenshots
-- **User Manual** - feature documentation with examples
-- **Admin Guide** - backup, restore, user management
-- **Data Import Guide** - CSV templates and column mapping
-- **Troubleshooting/FAQ**
-
-### Branding
-
-- Configurable company logo in app settings
-- Theme customization (already partially implemented)
-- Remove "BPERP" hardcoded references, make configurable
+- [ ] EULA
+- [ ] Privacy Policy
+- [ ] Installation Guide
+- [ ] User Manual
+- [ ] Data Import Guide
 
 ---
 
-## Implementation Roadmap
+## Progress Summary
+
+| Phase | Status | Completion |
+|-------|--------|------------|
+| Phase 1: Security | ✅ Complete | 90% |
+| Phase 2: Architecture | ✅ Complete | 85% |
+| Phase 2.5: TypeScript Migration | 🔄 In Progress | 22% |
+| Phase 3: Data Import & Testing | ✅ Complete | 90% |
+| Phase 3.5: UX & Customization | ✅ Complete | 100% |
+| Phase 4: Packaging | 🔲 Not Started | 0% |
+| Phase 5: Quality Assurance | 🔲 Partial | 30% |
+| Phase 6: Business Requirements | 🔲 Not Started | 0% |
+
+**Overall Progress: ~55%** (Core functionality ready, users/permissions complete, packaging/commercialization remaining)
+
+### TypeScript Migration Progress
+
+| Category | Completed | Total | Progress |
+|----------|-----------|-------|----------|
+| Backend Types | 2 | 2 | ✅ 100% |
+| Backend Middleware | 4 | 4 | ✅ 100% |
+| Backend Routes | 1 | 11 | 🔄 9% |
+| Backend Config | 0 | 3 | 🔲 0% |
+| Frontend | 0 | 12 | 🔲 0% |
+| **Total** | **7** | **32** | **22%** |
+
+---
+
+## Key Dependencies Added
+
+```json
+{
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "express-rate-limit": "^8.2.1",
+    "zod": "^4.3.6",
+    "papaparse": "^5.4.1",
+    "xlsx": "^0.18.5",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.x",
+    "ts-node": "^10.x",
+    "@types/node": "^20.x",
+    "@types/express": "^4.x",
+    "@types/cors": "^2.x",
+    "@types/bcrypt": "^5.x",
+    "@types/multer": "^1.x",
+    "@types/pg": "^8.x",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
+  }
+}
+```
+
+---
+
+## Next Steps
+
+### Immediate Priority: TypeScript Migration
+
+1. **Next route to convert**: `users.js` → `src/routes/users.ts`
+   - High priority (core authentication)
+   - Already has TypeScript middleware counterpart
+   
+2. **After users**: `customers.js` → `src/routes/customers.ts`
+   - High priority (most-used entity)
+   - Simpler structure for practice
+
+3. **Continue with**: inventory → quotes → workorders
+
+### Short-term
+
+4. Add E2E tests with Playwright
+5. Increase unit test coverage to 60%+
+
+### Medium-term
+
+6. Begin Phase 4 (Electron packaging)
+7. Create native installers
+
+### Long-term
+
+8. Phase 6: Licensing system
+9. Documentation and EULA
+
+---
+
+## File Structure After Phases 1-3.5
 
 ```
-Phase 1: Security Foundation
-├── Password hashing (bcrypt)
-├── Auth middleware
-└── Input validation
+backend/
+├── middleware/           # JavaScript middleware (runtime)
+│   ├── auth.js
+│   ├── rateLimit.js
+│   ├── validation.js
+│   └── index.js
+├── migrations/
+│   ├── migrate.js       # Migration CLI
+│   └── scripts/
+│       └── 20260128_000000_initial_schema.js
+├── routes/              # JavaScript routes (runtime)
+│   ├── customers.js
+│   ├── import.js        # Data import
+│   ├── inventory.js
+│   ├── machines.js
+│   ├── maintenance.js
+│   ├── orders.js
+│   ├── quotes.js
+│   ├── tasks.js
+│   ├── users.js         # Enhanced: auth, permissions, appearance
+│   ├── workcenters.js
+│   └── workorders.js
+├── src/                 # TypeScript source
+│   ├── types/
+│   │   ├── index.ts     # All entity types
+│   │   └── database.ts  # DB row types
+│   ├── middleware/
+│   │   ├── auth.ts
+│   │   ├── rateLimit.ts
+│   │   ├── validation.ts
+│   │   └── index.ts
+│   └── routes/
+│       ├── tasks.ts     # Example typed route
+│       └── index.ts
+├── dist/                # Compiled TypeScript
+├── tests/
+│   ├── setup.js
+│   ├── helpers/
+│   │   └── testDb.js
+│   ├── middleware/
+│   │   └── validation.test.js
+│   └── routes/
+│       └── import.test.js
+├── server.js
+├── package.json
+├── tsconfig.json
+└── jest.config.js
 
-Phase 2: Architecture
-├── Migrate in-memory routes to PostgreSQL
-├── Database migrations system
-└── Add TypeScript
+frontend/
+├── js/
+│   ├── app.js           # Enhanced: ShopBranding, permission checks
+│   └── modules/
+│       ├── common.js    # Enhanced: backup/restore with users
+│       ├── inventory.js
+│       ├── maintenance.js
+│       ├── sales.js
+│       ├── search.js
+│       ├── storage.js   # Enhanced: user/branding storage keys
+│       ├── tasks.js
+│       └── users.js     # NEW: User management module
+├── css/
+│   └── dashboard.css
+├── assets/
+│   └── bperp-icon.ico
+└── index.html           # Enhanced: permission categories, branding IDs
 
-Phase 3: Features and Quality
-├── CSV/Spreadsheet import
-├── Test framework
-└── Core tests
-
-Phase 4: Packaging
-├── Electron wrapper
-├── Native installers
-├── Setup wizard
-└── Auto-updater
-
-Phase 5: Commercialization
-├── License key system
-├── Maintenance validation
-├── Documentation
-└── EULA and legal
+database/
+├── schema.sql
+├── sales_schema.sql
+├── tasks_schema.sql
+└── users_schema.sql     # NEW: Enhanced users, sessions, roles
 ```
-
----
-
-## Effort Estimation by Priority
-
-| Priority | Category | Items | Effort |
-|----------|----------|-------|--------|
-| P0 | Security | Password hashing, auth middleware, input validation | Medium |
-| P1 | Architecture | Migrate in-memory routes, migrations, TypeScript | High |
-| P1 | Features | CSV/Excel import, column mapping UI, validation | High |
-| P2 | Packaging | Electron wrapper, native installers, setup wizard, updater | High |
-| P2 | Quality | Test framework, unit tests, structured logging | Medium |
-| P3 | Commercial | License keys, maintenance check, docs, legal | Medium |
-
----
-
-## Summary
-
-This plan transforms BPERP from a prototype into a sellable on-premise ERP for small machine shops. The key additions are:
-
-1. **Security hardening** - Production-grade auth and validation
-2. **Data import** - Let customers bring existing spreadsheet data
-3. **Native installers** - Easy installation without technical knowledge
-4. **Offline licensing** - One-time purchase with optional maintenance
-5. **TypeScript** - Long-term maintainability
-
-The target customer can install the software on their Windows/Mac/Linux machine, import their customer list and inventory from spreadsheets, and start using the system immediately.

@@ -514,13 +514,15 @@ export async function createBackup() {
         tooling: JSON.parse(localStorage.getItem('bperp_tooling') || 'null'),
         misc_items: JSON.parse(localStorage.getItem('bperp_misc_items') || 'null'),
         misc_tasks: JSON.parse(localStorage.getItem('bperp_misc_tasks') || 'null'),
-        // User profiles (includes appearance settings and permissions)
-        users_list: JSON.parse(localStorage.getItem('bperp_users_list') || 'null'),
-        // Theme preferences
-        theme_preferences: JSON.parse(localStorage.getItem('bperp_theme_preferences') || 'null'),
-        // Current user session (for reference, not for restore)
-        current_user: JSON.parse(localStorage.getItem('bperp_current_user') || 'null')
-    };
+            // User profiles (includes appearance settings and permissions)
+            users_list: JSON.parse(localStorage.getItem('bperp_users_list') || 'null'),
+            // Theme preferences
+            theme_preferences: JSON.parse(localStorage.getItem('bperp_theme_preferences') || 'null'),
+            // Shop branding (logo, name, tagline)
+            shop_branding: JSON.parse(localStorage.getItem('bperp_shop_branding') || 'null'),
+            // Current user session (for reference, not for restore)
+            current_user: JSON.parse(localStorage.getItem('bperp_current_user') || 'null')
+        };
     
     try {
         // Try API first (includes database data)
@@ -623,7 +625,9 @@ export async function restoreFromBackup(fileInput) {
                 tooling: 'bperp_tooling',
                 misc_items: 'bperp_misc_items',
                 misc_tasks: 'bperp_misc_tasks',
-                users_list: 'bperp_users_list'
+                users_list: 'bperp_users_list',
+                theme_preferences: 'bperp_theme_preferences',
+                shop_branding: 'bperp_shop_branding'
             };
             
             for (const [key, storageKey] of Object.entries(storageKeys)) {

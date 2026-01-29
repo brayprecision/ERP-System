@@ -24,7 +24,9 @@ export const STORAGE_KEYS = {
     // User management
     CURRENT_USER: 'bperp_current_user',
     AUTH_TOKEN: 'bperp_auth_token',
-    USERS_LIST: 'bperp_users_list'
+    USERS_LIST: 'bperp_users_list',
+    // Shop branding
+    SHOP_BRANDING: 'bperp_shop_branding'
 };
 
 // ==================== STORAGE MANAGER CLASS ====================

@@ -61,6 +61,9 @@ const machinesRoutes = require('./routes/machines')(pool);
 const maintenanceRoutes = require('./routes/maintenance')(pool);
 const ordersRoutes = require('./routes/orders')(pool);
 
+// Data import routes
+const importRoutes = require('./routes/import')(pool);
+
 // --- API ROUTES ---
 
 // Mount routes
@@ -76,6 +79,9 @@ app.use('/api/workcenters', workcentersRoutes);
 app.use('/api/machines', machinesRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/orders', ordersRoutes);
+
+// Data import routes
+app.use('/api/import', importRoutes);
 
 // 1. Get Quote Stats (For the "Quotes in March" card)
 app.get('/api/quotes/stats', async (req, res) => {
@@ -158,17 +164,6 @@ app.get('/api/inventory/alerts', async (req, res) => {
         }));
         
         res.json(formattedAlerts);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ success: false, error: "Server Error" });
-    }
-});
-
-// 4. Get Tasks (For the "Tasks Due" card)
-app.get('/api/tasks', async (req, res) => {
-    try {
-        const tasks = await pool.query("SELECT * FROM tasks WHERE is_completed = FALSE ORDER BY due_date ASC LIMIT 5");
-        res.json(tasks.rows);
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ success: false, error: "Server Error" });
@@ -394,7 +389,10 @@ app.post('/api/backup/create', exportLimiter, async (req, res) => {
                 misc_items: localStorageData.misc_items || null,
                 misc_tasks: localStorageData.misc_tasks || null,
                 // User profiles for offline mode
-                users_list: localStorageData.users_list || null
+                users_list: localStorageData.users_list || null,
+                // Theme and branding
+                theme_preferences: localStorageData.theme_preferences || null,
+                shop_branding: localStorageData.shop_branding || null
             }
         };
 
@@ -563,4 +561,14 @@ app.listen(PORT, () => {
     console.log('  /api/users/:id/appearance    - Update user appearance settings');
     console.log('  /api/users/roles/defaults    - Get role default permissions');
     console.log('  /api/users/activity/log      - Get user activity log');
+    
+    console.log('\nDATA IMPORT:');
+    console.log('  /api/import/preview          - Preview import without saving');
+    console.log('  /api/import/customers        - Import customers from CSV/Excel');
+    console.log('  /api/import/materials        - Import materials from CSV/Excel');
+    console.log('  /api/import/tooling          - Import tooling from CSV/Excel');
+    console.log('  /api/import/workcenters      - Import workcenters from CSV/Excel');
+    console.log('  /api/import/machines         - Import machines from CSV/Excel');
+    console.log('  /api/import/template/:type   - Download CSV template');
+    console.log('  /api/import/supported-types  - List supported import types');
 });

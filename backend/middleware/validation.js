@@ -225,6 +225,18 @@ const idParamSchema = z.object({
 // ==================== VALIDATION MIDDLEWARE ====================
 
 /**
+ * Helper to extract errors from Zod result (handles both v3 and v4 formats)
+ */
+function extractZodErrors(error) {
+    // Zod v4 uses error.issues, v3 uses error.errors
+    const issues = error.issues || error.errors || [];
+    return issues.map(e => ({
+        field: (e.path || []).join('.'),
+        message: e.message
+    }));
+}
+
+/**
  * Creates validation middleware for request body
  * @param {z.ZodSchema} schema - Zod schema to validate against
  */
@@ -233,16 +245,14 @@ function validateBody(schema) {
         try {
             const result = schema.safeParse(req.body);
             if (!result.success) {
-                const errors = result.error.errors.map(e => ({
-                    field: e.path.join('.'),
-                    message: e.message
-                }));
+                const errors = extractZodErrors(result.error);
                 return res.status(400).json({
                     success: false,
-                    error: 'Validation failed',
+                    error: errors.length > 0 ? errors[0].message : 'Validation failed',
                     details: errors
                 });
             }
+            req.body = result.data; // Replace body with validated/transformed data
             req.validatedBody = result.data;
             next();
         } catch (err) {
@@ -261,16 +271,14 @@ function validateParams(schema) {
         try {
             const result = schema.safeParse(req.params);
             if (!result.success) {
-                const errors = result.error.errors.map(e => ({
-                    field: e.path.join('.'),
-                    message: e.message
-                }));
+                const errors = extractZodErrors(result.error);
                 return res.status(400).json({
                     success: false,
-                    error: 'Invalid parameters',
+                    error: errors.length > 0 ? errors[0].message : 'Invalid parameters',
                     details: errors
                 });
             }
+            req.params = result.data; // Replace params with validated/transformed data
             req.validatedParams = result.data;
             next();
         } catch (err) {
@@ -289,13 +297,10 @@ function validateQuery(schema) {
         try {
             const result = schema.safeParse(req.query);
             if (!result.success) {
-                const errors = result.error.errors.map(e => ({
-                    field: e.path.join('.'),
-                    message: e.message
-                }));
+                const errors = extractZodErrors(result.error);
                 return res.status(400).json({
                     success: false,
-                    error: 'Invalid query parameters',
+                    error: errors.length > 0 ? errors[0].message : 'Invalid query parameters',
                     details: errors
                 });
             }

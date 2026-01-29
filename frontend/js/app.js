@@ -135,6 +135,7 @@ const routes = {
     'tasks-maintenance': () => modules.maintenance?.loadMaintenanceTasks(),
     
     // Settings
+    'settings-branding': () => ShopBranding.showSettings(),
     'settings-preferences': () => ThemeManager.showModal(),
     'settings-users': () => modules.users?.loadUsersView(),
     'settings-backup': () => loadBackupRestoreView()
@@ -369,6 +370,7 @@ const routeToCategory = {
     'tasks-shipping': 'tasks',
     'tasks-completed': 'tasks',
     'tasks-maintenance': 'tasks',
+    'settings-branding': 'settings',
     'settings-preferences': 'settings',
     'settings-users': 'settings',
     'settings-backup': 'settings'
@@ -509,6 +511,7 @@ function updatePageTitle(route) {
         'tasks-shipping': 'Shipping & Receiving',
         'tasks-completed': 'Completed Work',
         'tasks-maintenance': 'Machine Maintenance',
+        'settings-branding': 'Shop Branding',
         'settings-users': 'Users & Permissions',
         'settings-backup': 'Backup & Restore',
         'settings-preferences': 'Preferences'
@@ -1033,6 +1036,9 @@ async function initializeApp() {
         // Initialize theme manager
         ThemeManager.init();
         
+        // Initialize shop branding
+        ShopBranding.init();
+        
         // Check if user is logged in, if not show login modal
         if (modules.users?.isLoggedIn?.()) {
             // User is already logged in, apply their settings
@@ -1313,6 +1319,301 @@ const ThemeManager = {
 
 // Expose ThemeManager globally
 window.ThemeManager = ThemeManager;
+
+// ==================== SHOP BRANDING MANAGEMENT ====================
+const ShopBranding = {
+    STORAGE_KEY: 'bperp_shop_branding',
+    
+    defaults: {
+        shopName: 'Your Shop Name',
+        tagline: 'Manufacturing ERP',
+        logoUrl: 'assets/modern-logo.png',
+        logoData: null  // Base64 data for custom uploaded logos
+    },
+    
+    init() {
+        // Load and apply saved branding
+        const branding = this.getBranding();
+        this.applyBranding(branding);
+        
+        // Setup click handler for brand area
+        const brandArea = document.getElementById('shopBrandArea');
+        if (brandArea) {
+            brandArea.addEventListener('click', () => {
+                // Only allow admins to change branding
+                if (modules.users?.isAdmin?.() || !modules.users?.isLoggedIn?.()) {
+                    this.showSettings();
+                } else {
+                    modules.common?.showToast?.('Only administrators can change shop branding', 'info');
+                }
+            });
+        }
+    },
+    
+    getBranding() {
+        try {
+            const saved = localStorage.getItem(this.STORAGE_KEY);
+            if (saved) {
+                return { ...this.defaults, ...JSON.parse(saved) };
+            }
+        } catch (e) {
+            console.warn('Could not load shop branding:', e);
+        }
+        return { ...this.defaults };
+    },
+    
+    saveBranding(branding) {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(branding));
+            this.applyBranding(branding);
+            return true;
+        } catch (e) {
+            console.warn('Could not save shop branding:', e);
+            return false;
+        }
+    },
+    
+    applyBranding(branding) {
+        // Update shop name
+        const nameEl = document.getElementById('shopName');
+        if (nameEl) nameEl.textContent = branding.shopName || this.defaults.shopName;
+        
+        // Update tagline
+        const taglineEl = document.getElementById('shopTagline');
+        if (taglineEl) taglineEl.textContent = branding.tagline || this.defaults.tagline;
+        
+        // Update logo
+        const logoEl = document.getElementById('shopLogo');
+        if (logoEl) {
+            if (branding.logoData) {
+                logoEl.src = branding.logoData;
+            } else if (branding.logoUrl) {
+                logoEl.src = branding.logoUrl;
+            } else {
+                logoEl.src = this.defaults.logoUrl;
+            }
+            logoEl.alt = branding.shopName || 'Shop Logo';
+        }
+        
+        // Update page title
+        document.title = `${branding.shopName || 'BPERP'} - Manufacturing ERP`;
+    },
+    
+    showSettings() {
+        const container = document.getElementById('dashboardContent');
+        if (!container) return;
+        
+        const branding = this.getBranding();
+        const currentLogo = branding.logoData || branding.logoUrl || this.defaults.logoUrl;
+        
+        container.innerHTML = `
+            <div class="col-span-3 space-y-6">
+                <!-- Header -->
+                <div class="flex items-center">
+                    <i class="fa-solid fa-store text-3xl mr-4" style="color: var(--color-accent-primary);"></i>
+                    <div>
+                        <h2 class="text-xl font-semibold text-white">Shop Branding</h2>
+                        <p class="text-gray-400 text-sm">Customize your shop's name and logo</p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Branding Form -->
+                    <div class="card p-6">
+                        <h3 class="text-lg font-medium text-white mb-4">
+                            <i class="fa-solid fa-pen mr-2" style="color: var(--color-accent-primary);"></i>
+                            Shop Information
+                        </h3>
+                        
+                        <form id="brandingForm" class="space-y-4">
+                            <div>
+                                <label class="block text-gray-400 text-sm mb-1">Shop Name</label>
+                                <input type="text" id="brandingShopName" value="${branding.shopName || ''}" 
+                                       placeholder="Enter your shop name"
+                                       class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white focus:border-accentGreen focus:outline-none">
+                                <p class="text-gray-500 text-xs mt-1">This appears in the sidebar and browser tab</p>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-400 text-sm mb-1">Tagline</label>
+                                <input type="text" id="brandingTagline" value="${branding.tagline || ''}" 
+                                       placeholder="Manufacturing ERP"
+                                       class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white focus:border-accentGreen focus:outline-none">
+                                <p class="text-gray-500 text-xs mt-1">Short description shown below shop name</p>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-gray-400 text-sm mb-2">Shop Logo</label>
+                                <div class="flex items-start gap-4">
+                                    <div class="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0" style="background: var(--color-dark-bg);">
+                                        <img id="logoPreview" src="${currentLogo}" alt="Logo Preview" class="w-full h-full object-contain">
+                                    </div>
+                                    <div class="flex-1 space-y-2">
+                                        <input type="file" id="logoFileInput" accept="image/*" class="hidden">
+                                        <button type="button" id="uploadLogoBtn" class="btn btn-secondary w-full">
+                                            <i class="fa-solid fa-upload mr-2"></i>Upload Logo
+                                        </button>
+                                        <button type="button" id="resetLogoBtn" class="btn btn-secondary w-full text-sm">
+                                            <i class="fa-solid fa-undo mr-2"></i>Reset to Default
+                                        </button>
+                                        <p class="text-gray-500 text-xs">Recommended: Square image, 200x200px or larger</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="pt-4 border-t border-gray-700 flex gap-3">
+                                <button type="submit" class="btn btn-primary flex-1">
+                                    <i class="fa-solid fa-save mr-2"></i>Save Changes
+                                </button>
+                                <button type="button" id="resetAllBrandingBtn" class="btn btn-secondary">
+                                    <i class="fa-solid fa-rotate-left mr-2"></i>Reset All
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Preview -->
+                    <div class="card p-6">
+                        <h3 class="text-lg font-medium text-white mb-4">
+                            <i class="fa-solid fa-eye mr-2" style="color: var(--color-accent-primary);"></i>
+                            Live Preview
+                        </h3>
+                        
+                        <div class="rounded-lg p-4" style="background: var(--color-dark-bg);">
+                            <p class="text-gray-500 text-xs mb-3 uppercase tracking-wide">Sidebar Header Preview</p>
+                            <div class="flex items-center gap-3 p-3 rounded-lg" style="background: var(--color-card-bg); border: 1px solid var(--color-border);">
+                                <img id="previewLogo" src="${currentLogo}" alt="Preview" class="w-12 h-12 object-contain rounded-lg">
+                                <div>
+                                    <h4 id="previewName" class="font-bold text-white">${branding.shopName || this.defaults.shopName}</h4>
+                                    <p id="previewTagline" class="text-xs text-gray-500">${branding.tagline || this.defaults.tagline}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6 p-4 rounded-lg" style="background: rgba(var(--color-info-rgb), 0.1); border: 1px solid var(--color-info);">
+                            <h4 class="text-sm font-medium text-white mb-2">
+                                <i class="fa-solid fa-info-circle mr-2" style="color: var(--color-info);"></i>
+                                Tips for Best Results
+                            </h4>
+                            <ul class="text-sm text-gray-400 space-y-1">
+                                <li>• Use a square logo (1:1 aspect ratio)</li>
+                                <li>• PNG with transparent background works best</li>
+                                <li>• Keep shop name concise for sidebar display</li>
+                                <li>• Branding is saved locally to this browser</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        this.setupBrandingHandlers();
+    },
+    
+    setupBrandingHandlers() {
+        const form = document.getElementById('brandingForm');
+        const shopNameInput = document.getElementById('brandingShopName');
+        const taglineInput = document.getElementById('brandingTagline');
+        const fileInput = document.getElementById('logoFileInput');
+        const uploadBtn = document.getElementById('uploadLogoBtn');
+        const resetLogoBtn = document.getElementById('resetLogoBtn');
+        const resetAllBtn = document.getElementById('resetAllBrandingBtn');
+        
+        // Live preview updates
+        const updatePreview = () => {
+            const previewName = document.getElementById('previewName');
+            const previewTagline = document.getElementById('previewTagline');
+            if (previewName) previewName.textContent = shopNameInput.value || this.defaults.shopName;
+            if (previewTagline) previewTagline.textContent = taglineInput.value || this.defaults.tagline;
+        };
+        
+        shopNameInput?.addEventListener('input', updatePreview);
+        taglineInput?.addEventListener('input', updatePreview);
+        
+        // Upload logo button
+        uploadBtn?.addEventListener('click', () => fileInput?.click());
+        
+        // Handle file selection
+        fileInput?.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                modules.common?.showToast?.('Please select an image file', 'error');
+                return;
+            }
+            
+            // Validate file size (max 2MB)
+            if (file.size > 2 * 1024 * 1024) {
+                modules.common?.showToast?.('Logo must be less than 2MB', 'error');
+                return;
+            }
+            
+            // Read and convert to base64
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const base64 = event.target.result;
+                
+                // Update preview
+                const logoPreview = document.getElementById('logoPreview');
+                const previewLogo = document.getElementById('previewLogo');
+                if (logoPreview) logoPreview.src = base64;
+                if (previewLogo) previewLogo.src = base64;
+                
+                // Store temporarily (will be saved on form submit)
+                fileInput.dataset.base64 = base64;
+                
+                modules.common?.showToast?.('Logo uploaded - click Save to apply', 'success');
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        // Reset logo to default
+        resetLogoBtn?.addEventListener('click', () => {
+            const logoPreview = document.getElementById('logoPreview');
+            const previewLogo = document.getElementById('previewLogo');
+            if (logoPreview) logoPreview.src = this.defaults.logoUrl;
+            if (previewLogo) previewLogo.src = this.defaults.logoUrl;
+            if (fileInput) {
+                fileInput.value = '';
+                delete fileInput.dataset.base64;
+            }
+            modules.common?.showToast?.('Logo reset - click Save to apply', 'info');
+        });
+        
+        // Reset all branding
+        resetAllBtn?.addEventListener('click', () => {
+            if (confirm('Reset all branding to default values?')) {
+                localStorage.removeItem(this.STORAGE_KEY);
+                this.applyBranding(this.defaults);
+                this.showSettings(); // Refresh the form
+                modules.common?.showToast?.('Branding reset to defaults', 'success');
+            }
+        });
+        
+        // Form submission
+        form?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const branding = {
+                shopName: shopNameInput.value.trim() || this.defaults.shopName,
+                tagline: taglineInput.value.trim() || this.defaults.tagline,
+                logoUrl: this.defaults.logoUrl,
+                logoData: fileInput?.dataset.base64 || this.getBranding().logoData || null
+            };
+            
+            if (this.saveBranding(branding)) {
+                modules.common?.showToast?.('Shop branding saved!', 'success');
+            } else {
+                modules.common?.showToast?.('Failed to save branding', 'error');
+            }
+        });
+    }
+};
+
+// Expose ShopBranding globally
+window.ShopBranding = ShopBranding;
 
 // ==================== START APPLICATION ====================
 if (document.readyState === 'loading') {
