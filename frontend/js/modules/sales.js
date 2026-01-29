@@ -490,10 +490,13 @@ function renderCustomersView(customers) {
                 </td>
                 <td class="px-4 py-3 text-gray-300">${customer.terms || 'NET 30'}</td>
                 <td class="px-4 py-3">
-                    <button data-action="edit-customer" data-id="${customer.id}" class="text-blue-400 hover:text-blue-300 mr-2">
+                    <button data-action="manage-contacts" data-id="${customer.id}" data-name="${customer.name}" class="text-purple-400 hover:text-purple-300 mr-2" title="Manage Contacts">
+                        <i class="fa-solid fa-users"></i>
+                    </button>
+                    <button data-action="edit-customer" data-id="${customer.id}" class="text-blue-400 hover:text-blue-300 mr-2" title="Edit Customer">
                         <i class="fa-solid fa-edit"></i>
                     </button>
-                    <button data-action="delete-customer" data-id="${customer.id}" data-name="${customer.name}" class="text-red-400 hover:text-red-300">
+                    <button data-action="delete-customer" data-id="${customer.id}" data-name="${customer.name}" class="text-red-400 hover:text-red-300" title="Delete Customer">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
@@ -1878,6 +1881,271 @@ function deleteCustomer(customerId, customerName) {
     });
 }
 
+// ==================== CONTACTS MANAGEMENT ====================
+function showContactsModal(customerId, customerName) {
+    const customers = getCustomers();
+    const customer = customers.find(c => c.id === parseInt(customerId));
+    if (!customer) {
+        showToast('Customer not found', 'error');
+        return;
+    }
+    
+    const contacts = customer.contacts || [];
+    
+    const renderContactsList = () => {
+        if (contacts.length === 0) {
+            return `
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fa-solid fa-user-slash text-4xl mb-3 opacity-50"></i>
+                    <p>No contacts yet</p>
+                    <p class="text-sm">Click "Add Contact" to create one</p>
+                </div>
+            `;
+        }
+        
+        return contacts.map((contact, index) => `
+            <div class="bg-gray-800 rounded-lg p-4 mb-3 border border-gray-700" data-contact-index="${index}">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="font-medium text-white">${contact.name}</span>
+                        ${contact.isPrimary ? '<span class="px-2 py-0.5 text-xs rounded bg-green-600 text-green-100">Primary</span>' : ''}
+                    </div>
+                    <div class="flex gap-2">
+                        <button data-action="edit-contact" data-index="${index}" class="text-blue-400 hover:text-blue-300" title="Edit">
+                            <i class="fa-solid fa-edit"></i>
+                        </button>
+                        <button data-action="delete-contact" data-index="${index}" data-name="${contact.name}" class="text-red-400 hover:text-red-300" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                ${contact.role ? `<div class="text-sm text-gray-400 mb-1"><i class="fa-solid fa-briefcase mr-1"></i>${contact.role}</div>` : ''}
+                ${contact.email ? `<div class="text-sm"><i class="fa-solid fa-envelope mr-1 text-gray-500"></i><a href="mailto:${contact.email}" class="text-blue-400 hover:text-blue-300">${contact.email}</a></div>` : ''}
+                ${contact.phone ? `<div class="text-sm text-gray-300"><i class="fa-solid fa-phone mr-1 text-gray-500"></i>${contact.phone}</div>` : ''}
+                ${contact.mobile ? `<div class="text-sm text-gray-300"><i class="fa-solid fa-mobile mr-1 text-gray-500"></i>${contact.mobile}</div>` : ''}
+                ${contact.notes ? `<div class="text-sm text-gray-400 mt-2 italic"><i class="fa-solid fa-note-sticky mr-1"></i>${contact.notes}</div>` : ''}
+            </div>
+        `).join('');
+    };
+    
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-users mr-2" style="color: var(--color-accent-primary);"></i>
+                    Contacts for ${customerName}
+                </h3>
+                <button onclick="BPERP.common.closeModal('contactsModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            
+            <div id="contactsList" class="max-h-80 overflow-y-auto mb-4">
+                ${renderContactsList()}
+            </div>
+            
+            <div class="border-t border-gray-700 pt-4">
+                <button id="addContactBtn" class="btn btn-primary w-full">
+                    <i class="fa-solid fa-plus mr-2"></i>Add Contact
+                </button>
+            </div>
+        </div>
+    `;
+    
+    createModal('contactsModal', content, { width: 'w-full max-w-lg' });
+    
+    // Setup event handlers within the modal
+    const modal = document.getElementById('contactsModal');
+    
+    // Add contact button
+    document.getElementById('addContactBtn').addEventListener('click', () => {
+        showContactFormModal(customerId, customerName, null);
+    });
+    
+    // Edit contact buttons
+    modal.querySelectorAll('[data-action="edit-contact"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            showContactFormModal(customerId, customerName, contacts[index], index);
+        });
+    });
+    
+    // Delete contact buttons
+    modal.querySelectorAll('[data-action="delete-contact"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.dataset.index);
+            const contactName = btn.dataset.name;
+            deleteContact(customerId, index, contactName);
+        });
+    });
+}
+
+function showContactFormModal(customerId, customerName, contact = null, contactIndex = null) {
+    const isEdit = contact !== null;
+    
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-user-${isEdit ? 'edit' : 'plus'} mr-2" style="color: var(--color-accent-primary);"></i>
+                    ${isEdit ? 'Edit' : 'Add'} Contact
+                </h3>
+                <button onclick="BPERP.common.closeModal('contactFormModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            
+            <form id="contactForm" class="space-y-4">
+                <input type="hidden" name="customerId" value="${customerId}">
+                <input type="hidden" name="contactIndex" value="${contactIndex !== null ? contactIndex : ''}">
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Name *</label>
+                        <input type="text" name="name" value="${contact?.name || ''}" required
+                            class="form-input w-full" placeholder="John Smith">
+                    </div>
+                    <div>
+                        <label class="form-label">Role / Title</label>
+                        <input type="text" name="role" value="${contact?.role || ''}"
+                            class="form-input w-full" placeholder="e.g. Purchasing Manager">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="form-label">Email</label>
+                    <input type="email" name="email" value="${contact?.email || ''}"
+                        class="form-input w-full" placeholder="john@company.com">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Phone</label>
+                        <input type="tel" name="phone" value="${contact?.phone || ''}"
+                            class="form-input w-full" placeholder="(555) 123-4567">
+                    </div>
+                    <div>
+                        <label class="form-label">Mobile</label>
+                        <input type="tel" name="mobile" value="${contact?.mobile || ''}"
+                            class="form-input w-full" placeholder="(555) 987-6543">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" rows="2" class="form-input w-full" 
+                        placeholder="Additional notes about this contact...">${contact?.notes || ''}</textarea>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" name="isPrimary" id="isPrimary" ${contact?.isPrimary ? 'checked' : ''}
+                        class="mr-2 rounded border-gray-600 bg-gray-700 text-green-500 focus:ring-green-500">
+                    <label for="isPrimary" class="text-gray-300">Primary Contact</label>
+                </div>
+                
+                <div class="flex space-x-3 pt-4 border-t border-gray-700">
+                    <button type="button" onclick="BPERP.common.closeModal('contactFormModal')" 
+                        class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fa-solid fa-${isEdit ? 'save' : 'plus'} mr-2"></i>${isEdit ? 'Save Changes' : 'Add Contact'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    createModal('contactFormModal', content, { width: 'w-full max-w-md' });
+    
+    document.getElementById('contactForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        
+        const contactData = {
+            id: contact?.id || Date.now(),
+            name: formData.get('name').trim(),
+            role: formData.get('role')?.trim() || '',
+            email: formData.get('email')?.trim() || '',
+            phone: formData.get('phone')?.trim() || '',
+            mobile: formData.get('mobile')?.trim() || '',
+            notes: formData.get('notes')?.trim() || '',
+            isPrimary: formData.get('isPrimary') === 'on'
+        };
+        
+        if (!contactData.name) {
+            showToast('Contact name is required', 'error');
+            return;
+        }
+        
+        saveContact(parseInt(customerId), contactData, contactIndex !== null ? parseInt(contactIndex) : null, customerName);
+    });
+}
+
+function saveContact(customerId, contactData, contactIndex, customerName) {
+    const customers = getCustomers();
+    const customerIdx = customers.findIndex(c => c.id === customerId);
+    
+    if (customerIdx === -1) {
+        showToast('Customer not found', 'error');
+        return;
+    }
+    
+    const customer = customers[customerIdx];
+    if (!customer.contacts) {
+        customer.contacts = [];
+    }
+    
+    // If setting as primary, unset others
+    if (contactData.isPrimary) {
+        customer.contacts.forEach(c => c.isPrimary = false);
+    }
+    
+    if (contactIndex !== null) {
+        // Edit existing contact
+        customer.contacts[contactIndex] = { ...customer.contacts[contactIndex], ...contactData };
+        showToast(`Contact "${contactData.name}" updated`, 'success');
+    } else {
+        // Add new contact
+        customer.contacts.push(contactData);
+        showToast(`Contact "${contactData.name}" added`, 'success');
+    }
+    
+    customer.updatedAt = new Date().toISOString();
+    storage.set(STORAGE_KEYS.CUSTOMERS, customers);
+    
+    closeModal('contactFormModal');
+    closeModal('contactsModal');
+    showContactsModal(customerId, customerName);
+}
+
+function deleteContact(customerId, contactIndex, contactName) {
+    if (!confirm(`Delete contact "${contactName}"?`)) {
+        return;
+    }
+    
+    const customers = getCustomers();
+    const customerIdx = customers.findIndex(c => c.id === parseInt(customerId));
+    
+    if (customerIdx === -1) {
+        showToast('Customer not found', 'error');
+        return;
+    }
+    
+    const customer = customers[customerIdx];
+    const customerName = customer.name;
+    
+    if (customer.contacts && customer.contacts[contactIndex]) {
+        customer.contacts.splice(contactIndex, 1);
+        customer.updatedAt = new Date().toISOString();
+        storage.set(STORAGE_KEYS.CUSTOMERS, customers);
+        
+        showToast(`Contact "${contactName}" deleted`, 'success');
+        closeModal('contactsModal');
+        showContactsModal(customerId, customerName);
+    }
+}
+
 // ==================== EXPORT FUNCTIONS ====================
 async function exportCustomers() {
     await exportToCSV(null, 'customers', null, '/export/customers');
@@ -2408,6 +2676,7 @@ export function registerActionHandlers(registerFn) {
     registerFn('add-customer', () => showAddCustomerModal());
     registerFn('edit-customer', (target) => showEditCustomerModal(target.dataset.id));
     registerFn('delete-customer', (target) => deleteCustomer(target.dataset.id, target.dataset.name));
+    registerFn('manage-contacts', (target) => showContactsModal(target.dataset.id, target.dataset.name));
     registerFn('add-quote', () => showAddQuoteModal());
     registerFn('edit-quote', (target) => showEditQuoteModal(target.dataset.id));
     registerFn('convert-quote', (target) => convertQuoteToWorkOrder(target.dataset.id));

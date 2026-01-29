@@ -555,21 +555,28 @@ function renderAllTasksView(workOrders) {
     if (!container) return;
     
     const activeWOs = workOrders.filter(wo => wo.completionPercentage < 100);
+    const miscTasks = (storage.get(STORAGE_KEYS.MISC_TASKS) || []).filter(t => t.status !== 'Completed');
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today.getTime() + 24*60*60*1000);
     
     const stats = {
-        totalOpen: activeWOs.length,
-        overdue: activeWOs.filter(wo => getWOUrgencyColor(wo.dueDate) === 'red').length,
+        totalOpen: activeWOs.length + miscTasks.length,
+        overdue: activeWOs.filter(wo => getWOUrgencyColor(wo.dueDate) === 'red').length + 
+                 miscTasks.filter(t => t.dueDate && getWOUrgencyColor(t.dueDate) === 'red').length,
         dueToday: activeWOs.filter(wo => {
             const due = new Date(wo.dueDate);
+            return due >= today && due < tomorrow;
+        }).length + miscTasks.filter(t => {
+            if (!t.dueDate) return false;
+            const due = new Date(t.dueDate);
             return due >= today && due < tomorrow;
         }).length,
         completed: workOrders.filter(wo => wo.completionPercentage === 100).length
     };
     
-    const taskRows = activeWOs.map(wo => {
+    // Render work order tasks
+    const woTaskRows = activeWOs.map(wo => {
         const nextStep = getNextWorkflowStep(wo);
         if (!nextStep) return '';
         
@@ -620,6 +627,55 @@ function renderAllTasksView(workOrders) {
             </tr>
         `;
     }).join('');
+    
+    // Render misc tasks
+    const miscTaskRows = miscTasks.map(task => {
+        const typeConfig = TASK_TYPE_CONFIG.misc;
+        const urgency = task.dueDate ? getWOUrgencyColor(task.dueDate) : 'gray';
+        const urgencyClass = urgency === 'red' ? 'text-red-500 font-bold' : urgency === 'yellow' ? 'text-yellow-500' : 'text-gray-400';
+        const statusClass = task.status === 'In Progress' ? 'bg-blue-600 text-blue-100' : 
+                           task.status === 'Not Started' ? 'bg-gray-600 text-gray-200' : 'bg-green-600 text-green-100';
+        
+        return `
+            <tr class="border-b border-gray-700 hover:bg-gray-800 bg-gray-800/30">
+                <td class="px-4 py-3">
+                    <span class="${typeConfig.color}">
+                        <i class="fa-solid ${typeConfig.icon} mr-2"></i>${typeConfig.label}
+                    </span>
+                </td>
+                <td class="px-4 py-3">
+                    <div class="font-medium text-white">${task.title}</div>
+                    <div class="text-xs text-gray-500">${task.description || 'No description'}</div>
+                </td>
+                <td class="px-4 py-3 text-gray-300">${task.assignedTo || '-'}</td>
+                <td class="px-4 py-3 ${urgencyClass}">${task.dueDate ? formatDate(task.dueDate) : '-'}</td>
+                <td class="px-4 py-3">
+                    <span class="px-2 py-1 text-xs rounded-full ${statusClass}">${task.status}</span>
+                </td>
+                <td class="px-4 py-3">
+                    <span class="text-xs text-gray-500">${task.priority || 'Normal'}</span>
+                </td>
+                <td class="px-4 py-3">
+                    <div class="flex space-x-2">
+                        <button data-action="complete-misc-task" data-task-id="${task.id}" 
+                            class="text-green-500 hover:text-green-400" title="Mark Complete">
+                            <i class="fa-solid fa-check"></i>
+                        </button>
+                        <button data-action="edit-misc-task" data-task-id="${task.id}" 
+                            class="text-blue-500 hover:text-blue-400" title="Edit Task">
+                            <i class="fa-solid fa-edit"></i>
+                        </button>
+                        <button data-action="delete-misc-task" data-task-id="${task.id}" data-task-name="${task.title}"
+                            class="text-red-500 hover:text-red-400" title="Delete Task">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    const taskRows = woTaskRows + miscTaskRows;
     
     container.innerHTML = `
         <div class="col-span-3">
@@ -1128,6 +1184,18 @@ export function registerActionHandlers(registerFn) {
 
     registerFn('create-misc-task', () => {
         showCreateMiscTaskModal();
+    });
+    
+    registerFn('complete-misc-task', (target) => {
+        completeMiscTask(target.dataset.taskId);
+    });
+    
+    registerFn('edit-misc-task', (target) => {
+        editMiscTask(target.dataset.taskId);
+    });
+    
+    registerFn('delete-misc-task', (target) => {
+        deleteMiscTask(target.dataset.taskId, target.dataset.taskName);
     });
     
     // Document actions for workcenters
@@ -1760,6 +1828,180 @@ function showCreateMiscTaskModal() {
             refreshCurrentView();
         }
     });
+}
+
+// ==================== MISC TASK ACTIONS ====================
+function completeMiscTask(taskId) {
+    let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+    const taskIndex = miscTasks.findIndex(t => t.id === parseInt(taskId));
+    
+    if (taskIndex === -1) {
+        showToast('Task not found', 'error');
+        return;
+    }
+    
+    const task = miscTasks[taskIndex];
+    task.status = 'Completed';
+    task.completedAt = new Date().toISOString();
+    storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+    
+    showToast(`Task "${task.title}" marked as complete!`, 'success');
+    
+    if (tasksState.isActive) {
+        refreshCurrentView();
+    }
+}
+
+function editMiscTask(taskId) {
+    const miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+    const task = miscTasks.find(t => t.id === parseInt(taskId));
+    
+    if (!task) {
+        showToast('Task not found', 'error');
+        return;
+    }
+    
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-edit mr-2" style="color: var(--color-accent-primary);"></i>Edit Task
+                </h3>
+                <button onclick="BPERP.common.closeModal('editTaskModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            
+            <form id="editTaskForm" class="space-y-4">
+                <input type="hidden" name="taskId" value="${task.id}">
+                
+                <div>
+                    <label class="form-label">Title *</label>
+                    <input type="text" name="title" value="${task.title || ''}" required
+                        class="form-input w-full" placeholder="Task title">
+                </div>
+                
+                <div>
+                    <label class="form-label">Description</label>
+                    <textarea name="description" rows="3" class="form-input w-full" 
+                        placeholder="Task description">${task.description || ''}</textarea>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Category</label>
+                        <select name="category" class="form-input w-full">
+                            <option value="General" ${task.category === 'General' ? 'selected' : ''}>General</option>
+                            <option value="Administrative" ${task.category === 'Administrative' ? 'selected' : ''}>Administrative</option>
+                            <option value="Quality" ${task.category === 'Quality' ? 'selected' : ''}>Quality</option>
+                            <option value="Safety" ${task.category === 'Safety' ? 'selected' : ''}>Safety</option>
+                            <option value="Training" ${task.category === 'Training' ? 'selected' : ''}>Training</option>
+                            <option value="Other" ${task.category === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Priority</label>
+                        <select name="priority" class="form-input w-full">
+                            <option value="Low" ${task.priority === 'Low' ? 'selected' : ''}>Low</option>
+                            <option value="Normal" ${task.priority === 'Normal' ? 'selected' : ''}>Normal</option>
+                            <option value="High" ${task.priority === 'High' ? 'selected' : ''}>High</option>
+                            <option value="Urgent" ${task.priority === 'Urgent' ? 'selected' : ''}>Urgent</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-input w-full">
+                            <option value="Not Started" ${task.status === 'Not Started' ? 'selected' : ''}>Not Started</option>
+                            <option value="In Progress" ${task.status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                            <option value="Completed" ${task.status === 'Completed' ? 'selected' : ''}>Completed</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Assigned To</label>
+                        <input type="text" name="assignedTo" value="${task.assignedTo || ''}"
+                            class="form-input w-full" placeholder="Person responsible">
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Due Date</label>
+                        <input type="date" name="dueDate" value="${task.dueDate || ''}"
+                            class="form-input w-full">
+                    </div>
+                    <div>
+                        <label class="form-label">Est. Duration</label>
+                        <input type="text" name="estimatedDuration" value="${task.estimatedDuration || ''}"
+                            class="form-input w-full" placeholder="e.g., 2 hours">
+                    </div>
+                </div>
+                
+                <div class="flex space-x-3 pt-4 border-t border-gray-700">
+                    <button type="button" onclick="BPERP.common.closeModal('editTaskModal')" 
+                        class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fa-solid fa-save mr-2"></i>Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    createModal('editTaskModal', content, { width: 'w-full max-w-lg' });
+    
+    document.getElementById('editTaskForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        
+        let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+        const taskIndex = miscTasks.findIndex(t => t.id === parseInt(formData.get('taskId')));
+        
+        if (taskIndex === -1) {
+            showToast('Task not found', 'error');
+            return;
+        }
+        
+        miscTasks[taskIndex] = {
+            ...miscTasks[taskIndex],
+            title: formData.get('title'),
+            description: formData.get('description'),
+            category: formData.get('category'),
+            priority: formData.get('priority'),
+            status: formData.get('status'),
+            assignedTo: formData.get('assignedTo'),
+            dueDate: formData.get('dueDate'),
+            estimatedDuration: formData.get('estimatedDuration'),
+            updatedAt: new Date().toISOString()
+        };
+        
+        storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+        
+        closeModal('editTaskModal');
+        showToast(`Task "${miscTasks[taskIndex].title}" updated successfully!`, 'success');
+        
+        if (tasksState.isActive) {
+            refreshCurrentView();
+        }
+    });
+}
+
+function deleteMiscTask(taskId, taskName) {
+    if (!confirm(`Delete task "${taskName}"?`)) {
+        return;
+    }
+    
+    let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+    miscTasks = miscTasks.filter(t => t.id !== parseInt(taskId));
+    storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+    
+    showToast(`Task "${taskName}" deleted`, 'success');
+    
+    if (tasksState.isActive) {
+        refreshCurrentView();
+    }
 }
 
 // ==================== AUTO-REFRESH ====================
