@@ -13,20 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Linux AppImage** - Fully functional 122MB portable installer
   - Self-contained with all backend dependencies
   - No installation required - just download and run
+- **Linux .deb Package** - 81MB installer for Ubuntu/Debian/Zorin
+  - Auto-installs PostgreSQL as dependency
+  - Double-click install via Software Center
+  - Creates app menu entry automatically
 - **First-run setup wizard** - 4-step wizard for initial configuration
   - Welcome screen with feature overview
   - Database configuration (external PostgreSQL)
   - Admin user creation with password strength indicator
   - Configuration summary and launch
-- **Backend lifecycle management** - Electron spawns and manages backend
+- **Backend lifecycle management** - Electron manages backend via fork()
+  - Uses Electron's bundled Node.js (no system Node required)
   - Automatic startup and shutdown
-  - Restart on crash
+  - Clean process termination on window close
   - Log capture to file
-- **System tray integration** - Minimize to tray, quick access menu
+- **Clean UI** - Hidden menu bar for theme-consistent appearance
+  - Access menu with Alt key if needed
 - **Splash screen** - Animated loading screen during startup
 - **Window state persistence** - Size and position saved across sessions
 - **Single instance lock** - Prevents multiple instances
-- **Application menu** - File, Edit, View, Help menus
 - **Production-ready paths** - Export directories use ~/.bperp-data
 
 **Files Created:**

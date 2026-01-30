@@ -489,12 +489,22 @@ npm run build:all     # All platforms
 - Size: 122 MB
 - Backend with all dependencies included
 - Frontend served from extraResources
-- Icons auto-generated from source PNG
+- No menu bar (clean, theme-consistent UI)
+
+**Linux .deb Package** - Successfully built:
+- File: `dist-installers/BPERP-1.0.0-beta.1-linux-amd64.deb`
+- Size: 81 MB
+- Auto-installs PostgreSQL and postgresql-contrib
+- Double-click install via Software Center
+- Creates menu entry automatically
 
 **Build Commands:**
 ```bash
-# Build Linux AppImage (tested, works)
+# Build Linux AppImage
 npx electron-builder --linux AppImage --publish never
+
+# Build Linux .deb (recommended for Ubuntu/Zorin)
+npx electron-builder --linux deb --publish never
 
 # Build Windows (requires Windows or Wine)
 npx electron-builder --win --publish never

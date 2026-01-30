@@ -3,11 +3,19 @@
  * Electron main process handling window management and backend lifecycle
  */
 
-const { app, BrowserWindow, ipcMain, shell, Menu, Tray, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, Tray, dialog, screen } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { fork, spawn } = require('child_process');
 const fs = require('fs');
 const Store = require('electron-store');
+
+// Linux-specific: Improve window manager integration
+if (process.platform === 'linux') {
+    // Use GTK3 for better integration with modern Linux desktops
+    app.commandLine.appendSwitch('gtk-version', '3');
+    // Disable GPU VSync errors (cosmetic, doesn't affect functionality)
+    app.commandLine.appendSwitch('disable-gpu-vsync');
+}
 
 // Initialize config store
 const store = new Store({
@@ -136,6 +144,8 @@ function createMainWindow() {
         minWidth: 1024,
         minHeight: 768,
         show: false,
+        frame: true,
+        autoHideMenuBar: true,
         icon: path.join(__dirname, 'assets', 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -143,6 +153,11 @@ function createMainWindow() {
             preload: path.join(__dirname, 'preload.js')
         }
     });
+    
+    // On Linux, ensure window respects taskbar/panel
+    if (process.platform === 'linux') {
+        mainWindow.setMaximizable(true);
+    }
 
     // Load the frontend
     const serverPort = store.get('server.port');
@@ -177,21 +192,10 @@ function createMainWindow() {
         store.set('window.maximized', false);
     });
 
-    // Handle close
-    mainWindow.on('close', (event) => {
-        if (!isQuitting) {
-            event.preventDefault();
-            mainWindow.hide();
-            
-            // Show notification that app is still running
-            if (tray) {
-                tray.displayBalloon({
-                    title: 'BPERP',
-                    content: 'Application minimized to tray. Right-click tray icon to quit.',
-                    iconType: 'info'
-                });
-            }
-        }
+    // Handle close - quit the app completely
+    mainWindow.on('close', () => {
+        isQuitting = true;
+        app.quit();
     });
 
     mainWindow.on('closed', () => {
@@ -295,10 +299,12 @@ function startBackend() {
             return;
         }
         
-        backendProcess = spawn('node', [serverPath], {
+        // Use fork() to use Electron's bundled Node.js instead of system node
+        backendProcess = fork(serverPath, [], {
             cwd: backendPath,
             env: getBackendEnv(),
-            stdio: ['pipe', 'pipe', 'pipe']
+            stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+            silent: true
         });
         
         let started = false;
@@ -424,9 +430,11 @@ function setupIpcHandlers() {
     ipcMain.handle('run-migrations', async () => {
         return new Promise((resolve) => {
             const migratePath = path.join(backendPath, 'migrations', 'migrate.js');
-            const migrate = spawn('node', [migratePath, 'up'], {
+            // Use fork() to use Electron's bundled Node.js
+            const migrate = fork(migratePath, ['up'], {
                 cwd: backendPath,
-                env: getBackendEnv()
+                env: getBackendEnv(),
+                silent: true
             });
             
             let output = '';

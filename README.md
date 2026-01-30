@@ -30,18 +30,31 @@ BPERP is available as a standalone desktop application for easy deployment.
 
 ### Download
 
-- **Linux**: `BPERP-1.0.0-beta.1-linux-x86_64.AppImage` (122 MB)
+- **Linux (.deb)**: `BPERP-1.0.0-beta.1-linux-amd64.deb` (81 MB) - Recommended for Ubuntu/Zorin/Debian
+- **Linux (AppImage)**: `BPERP-1.0.0-beta.1-linux-x86_64.AppImage` (122 MB) - Portable, no install
 - **Windows**: Coming soon
 - **macOS**: Coming soon
 
-### Running the AppImage (Linux)
+### Installing on Ubuntu/Zorin/Debian (Recommended)
+
+```bash
+sudo apt install ./BPERP-1.0.0-beta.1-linux-amd64.deb
+```
+
+Or double-click the `.deb` file to open Software Center and click Install.
+
+This automatically installs PostgreSQL if not already present.
+
+### Running the AppImage (Alternative)
 
 ```bash
 chmod +x BPERP-1.0.0-beta.1-linux-x86_64.AppImage
 ./BPERP-1.0.0-beta.1-linux-x86_64.AppImage
 ```
 
-The first time you run BPERP, a setup wizard will guide you through:
+### First Run
+
+The setup wizard guides you through:
 1. Database configuration (connect to your PostgreSQL server)
 2. Admin user creation
 3. Initial setup
