@@ -21,7 +21,43 @@ A comprehensive ERP system designed for small machine shops (1-20 employees).
 - **Backend**: Node.js + Express.js
 - **Database**: PostgreSQL
 - **Frontend**: Vanilla JavaScript (ES6 Modules) + Tailwind CSS
+- **Desktop**: Electron (cross-platform native app)
 - **Authentication**: Token-based with bcrypt password hashing
+
+## Desktop Application
+
+BPERP is available as a standalone desktop application for easy deployment.
+
+### Download
+
+- **Linux**: `BPERP-1.0.0-beta.1-linux-x86_64.AppImage` (122 MB)
+- **Windows**: Coming soon
+- **macOS**: Coming soon
+
+### Running the AppImage (Linux)
+
+```bash
+chmod +x BPERP-1.0.0-beta.1-linux-x86_64.AppImage
+./BPERP-1.0.0-beta.1-linux-x86_64.AppImage
+```
+
+The first time you run BPERP, a setup wizard will guide you through:
+1. Database configuration (connect to your PostgreSQL server)
+2. Admin user creation
+3. Initial setup
+
+### Building from Source
+
+```bash
+# Install dependencies
+npm install
+npm run backend:install
+
+# Build for your platform
+npm run build:linux   # Linux (AppImage, deb, rpm)
+npm run build:win     # Windows (requires Windows or Wine)
+npm run build:mac     # macOS (requires macOS)
+```
 
 ## Quick Start
 

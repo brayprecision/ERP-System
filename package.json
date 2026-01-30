@@ -51,12 +51,7 @@
     },
     "files": [
       "electron/**/*",
-      "backend/**/*",
       "frontend/**/*",
-      "!backend/node_modules",
-      "!backend/tests/**/*",
-      "!backend/dist/**/*",
-      "!backend/.env*",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/.bin",
@@ -67,12 +62,27 @@
         "from": "database/",
         "to": "database/",
         "filter": ["**/*.sql"]
+      },
+      {
+        "from": "backend/",
+        "to": "backend/",
+        "filter": [
+          "**/*",
+          "!tests/**",
+          "!dist/**",
+          "!.env*",
+          "!**/*.ts",
+          "!tsconfig.json"
+        ]
+      },
+      {
+        "from": "frontend/",
+        "to": "frontend/",
+        "filter": ["**/*"]
       }
     ],
     "asar": true,
-    "asarUnpack": [
-      "backend/**/*"
-    ],
+    "asarUnpack": [],
     "win": {
       "target": [
         {

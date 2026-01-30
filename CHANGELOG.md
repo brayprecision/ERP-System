@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Electron Desktop Application (Phase 4 Complete)
+- **Linux AppImage** - Fully functional 122MB portable installer
+  - Self-contained with all backend dependencies
+  - No installation required - just download and run
+- **First-run setup wizard** - 4-step wizard for initial configuration
+  - Welcome screen with feature overview
+  - Database configuration (external PostgreSQL)
+  - Admin user creation with password strength indicator
+  - Configuration summary and launch
+- **Backend lifecycle management** - Electron spawns and manages backend
+  - Automatic startup and shutdown
+  - Restart on crash
+  - Log capture to file
+- **System tray integration** - Minimize to tray, quick access menu
+- **Splash screen** - Animated loading screen during startup
+- **Window state persistence** - Size and position saved across sessions
+- **Single instance lock** - Prevents multiple instances
+- **Application menu** - File, Edit, View, Help menus
+- **Production-ready paths** - Export directories use ~/.bperp-data
+
+**Files Created:**
+- `electron/main.js` - Main process (720+ lines)
+- `electron/preload.js` - Secure IPC bridge
+- `electron/splash.html` - Loading screen
+- `electron/setup-wizard/` - Setup wizard (HTML, CSS, JS)
+- `LICENSE.txt` - Proprietary license for distribution
+
+**Backend Improvements:**
+- `POST /api/setup/init` - Create initial admin user (first-run only)
+- `GET /api/setup/status` - Check if setup is needed
+- Dynamic export directory based on environment
+
 #### Users & Permissions System
 - **User roles** - Three user levels: Administrator, Machinist, Operator
 - **Tab-level permissions** - Control access to Dashboard, Workcenter, Inventory, Sales, Tasks, Settings

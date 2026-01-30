@@ -46,9 +46,10 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const backendPath = isDev 
     ? path.join(__dirname, '..', 'backend')
     : path.join(process.resourcesPath, 'backend');
+// Frontend is served by the backend, not loaded directly in production
 const frontendPath = isDev
     ? path.join(__dirname, '..', 'frontend')
-    : path.join(process.resourcesPath, 'frontend');
+    : path.join(process.resourcesPath, 'app.asar', 'frontend');
 
 // ==================== LOGGING ====================
 const logFile = path.join(app.getPath('userData'), 'bperp.log');
@@ -492,9 +493,8 @@ function setupIpcHandlers() {
     ipcMain.handle('complete-setup', async (event, config) => {
         // Save configuration
         store.set('database', config.database);
-        store.set('firstRun', false);
         
-        log('info', 'Setup completed, configuration saved');
+        log('info', 'Setup configuration received');
         log('info', 'Database type: ' + config.database.type);
         
         // Close setup window
@@ -509,6 +509,71 @@ function setupIpcHandlers() {
         try {
             log('info', 'Starting backend server...');
             await startBackend();
+            
+            // Wait a moment for the server to be fully ready
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Create initial admin user if provided
+            if (config.admin && config.admin.username && config.admin.password) {
+                log('info', 'Creating initial admin user...');
+                const serverPort = store.get('server.port');
+                
+                try {
+                    const http = require('http');
+                    const adminData = JSON.stringify({
+                        username: config.admin.username,
+                        name: config.admin.name || config.admin.username,
+                        email: config.admin.email || null,
+                        password: config.admin.password
+                    });
+                    
+                    const result = await new Promise((resolve, reject) => {
+                        const req = http.request({
+                            hostname: 'localhost',
+                            port: serverPort,
+                            path: '/api/setup/init',
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Content-Length': Buffer.byteLength(adminData)
+                            }
+                        }, (res) => {
+                            let data = '';
+                            res.on('data', chunk => data += chunk);
+                            res.on('end', () => {
+                                try {
+                                    const json = JSON.parse(data);
+                                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                                        resolve(json);
+                                    } else {
+                                        reject(new Error(json.error || 'Failed to create admin user'));
+                                    }
+                                } catch (e) {
+                                    reject(new Error('Invalid response from server'));
+                                }
+                            });
+                        });
+                        
+                        req.on('error', reject);
+                        req.write(adminData);
+                        req.end();
+                    });
+                    
+                    log('info', 'Admin user created successfully: ' + config.admin.username);
+                } catch (adminError) {
+                    // If setup already completed (users exist), this is fine
+                    if (adminError.message.includes('already')) {
+                        log('info', 'Users already exist, skipping admin creation');
+                    } else {
+                        log('warn', 'Failed to create admin user: ' + adminError.message);
+                        // Continue anyway - user can be created manually
+                    }
+                }
+            }
+            
+            // Mark setup as complete
+            store.set('firstRun', false);
+            
             createMainWindow();
             return { success: true };
         } catch (error) {

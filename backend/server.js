@@ -175,18 +175,139 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ==================== SETUP ROUTES (First-run only) ====================
+
+const bcrypt = require('bcrypt');
+
+/**
+ * POST /api/setup/init - Initialize the application with first admin user
+ * This endpoint only works when no users exist in the database
+ */
+app.post('/api/setup/init', async (req, res) => {
+    try {
+        const { username, name, email, password } = req.body;
+        
+        // Validate required fields
+        if (!username || !name || !password) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Username, name, and password are required' 
+            });
+        }
+        
+        if (password.length < 8) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Password must be at least 8 characters' 
+            });
+        }
+        
+        // Check if any users already exist
+        const existingUsers = await pool.query('SELECT COUNT(*) FROM users');
+        const userCount = parseInt(existingUsers.rows[0].count);
+        
+        if (userCount > 0) {
+            return res.status(403).json({ 
+                success: false, 
+                error: 'Setup already completed. Users already exist in the database.' 
+            });
+        }
+        
+        // Hash password
+        const passwordHash = await bcrypt.hash(password, 12);
+        
+        // Get admin default permissions
+        let tabPermissions = {
+            dashboard: true,
+            workcenter: true,
+            inventory: true,
+            sales: true,
+            tasks: true,
+            settings: true
+        };
+        
+        try {
+            const defaultPerms = await pool.query(
+                "SELECT tab_permissions FROM role_defaults WHERE role = 'Administrator'"
+            );
+            if (defaultPerms.rows.length > 0) {
+                tabPermissions = defaultPerms.rows[0].tab_permissions;
+            }
+        } catch (e) {
+            console.log('role_defaults table may not exist yet, using default permissions');
+        }
+        
+        // Create admin user
+        const result = await pool.query(`
+            INSERT INTO users (username, name, email, password_hash, role, tab_permissions, is_active)
+            VALUES ($1, $2, $3, $4, 'Administrator', $5, TRUE)
+            RETURNING id, username, name, email, role, tab_permissions, is_active, created_at
+        `, [username, name, email || null, passwordHash, JSON.stringify(tabPermissions)]);
+        
+        console.log(`Initial admin user created: ${username}`);
+        
+        res.status(201).json({ 
+            success: true, 
+            message: 'Initial admin user created successfully',
+            user: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Setup init error:', err);
+        if (err.code === '23505') {
+            return res.status(400).json({ success: false, error: 'Username or email already exists' });
+        }
+        res.status(500).json({ success: false, error: 'Server error: ' + err.message });
+    }
+});
+
+/**
+ * GET /api/setup/status - Check if initial setup is needed
+ */
+app.get('/api/setup/status', async (req, res) => {
+    try {
+        // Check if users table exists and has any users
+        let needsSetup = true;
+        
+        try {
+            const result = await pool.query('SELECT COUNT(*) FROM users');
+            needsSetup = parseInt(result.rows[0].count) === 0;
+        } catch (e) {
+            // Table doesn't exist, definitely needs setup
+            needsSetup = true;
+        }
+        
+        res.json({ 
+            needsSetup,
+            version: '1.0.0-beta.1'
+        });
+    } catch (err) {
+        console.error('Setup status error:', err);
+        res.status(500).json({ success: false, error: 'Server error' });
+    }
+});
+
 // ==================== EXPORT ROUTES ====================
 
 // Ensure export directories exist
-const exportsDir = path.join(__dirname, '..', 'exports');
+// In production (packaged app), use a writable location outside the app bundle
+const isProduction = process.env.NODE_ENV === 'production' || __dirname.includes('.mount_') || __dirname.includes('app.asar');
+const exportsBase = isProduction 
+    ? path.join(process.env.HOME || process.env.USERPROFILE || '/tmp', '.bperp-data')
+    : path.join(__dirname, '..', 'exports');
+const exportsDir = exportsBase;
 const csvDir = path.join(exportsDir, 'csv');
 const backupsDir = path.join(exportsDir, 'backups');
 
-if (!fs.existsSync(csvDir)) {
-    fs.mkdirSync(csvDir, { recursive: true });
-}
-if (!fs.existsSync(backupsDir)) {
-    fs.mkdirSync(backupsDir, { recursive: true });
+try {
+    if (!fs.existsSync(csvDir)) {
+        fs.mkdirSync(csvDir, { recursive: true });
+    }
+    if (!fs.existsSync(backupsDir)) {
+        fs.mkdirSync(backupsDir, { recursive: true });
+    }
+    console.log(`Export directories ready: ${exportsDir}`);
+} catch (err) {
+    console.error('Warning: Could not create export directories:', err.message);
 }
 
 // Export customers to CSV
@@ -432,12 +553,21 @@ app.post('/api/backup/restore', async (req, res) => {
 app.use('/exports', express.static(path.join(__dirname, '..', 'exports')));
 
 // Serve frontend static files
-const frontendPath = path.join(__dirname, '..', 'frontend');
+// In production (packaged app), frontend is in resources/frontend
+const frontendPath = isProduction
+    ? path.join(__dirname, '..', 'frontend')  // resources/frontend when backend is in resources/backend
+    : path.join(__dirname, '..', 'frontend'); // Same relative path in dev
+console.log(`Serving frontend from: ${frontendPath}`);
 app.use(express.static(frontendPath));
 
 // Serve index.html for the root path and any non-API routes (SPA support)
 app.get('/', (req, res) => {
-    res.sendFile(path.join(frontendPath, 'index.html'));
+    const indexPath = path.join(frontendPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(500).send(`Frontend not found at: ${indexPath}`);
+    }
 });
 
 // Helper function to convert data to CSV
