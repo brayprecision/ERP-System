@@ -18,7 +18,8 @@ SYSTEM REQUIREMENTS
 -------------------
 • Windows 7/8/10/11
 • Node.js 14.0.0 or higher (download from https://nodejs.org)
-• Available port 8080 (or modify launcher if needed)
+• PostgreSQL 13 or higher (download from https://postgresql.org)
+• Available port 3000 (backend server)
 • Modern web browser (Chrome, Firefox, Edge)
 • Minimum 4GB RAM recommended
 • 500MB free disk space
@@ -59,8 +60,8 @@ USAGE OPTIONS
    • launch-bperp-gui.bat       - Windows Forms GUI launcher (RECOMMENDED)
 
 🌐 Browser Direct (if server running)
-   • Open browser to: http://localhost:8080
-   • Loading screen: http://localhost:8080/loading.html
+   • Open browser to: http://localhost:3000
+   • Loading screen: http://localhost:3000/loading.html
 
 TROUBLESHOOTING
 ---------------
@@ -70,10 +71,10 @@ TROUBLESHOOTING
    → Restart computer and try again
    → Verify installation: Open Command Prompt, type "node --version"
 
-❌ "Port 8080 is already in use"
-   → Another application is using port 8080
-   → Either close the other application or modify launcher to use different port
-   → Common conflicts: Other web servers, development tools
+❌ "Port 3000 is already in use"
+   → Another application is using port 3000
+   → Either close the other application or set PORT env variable in backend/.env
+   → Common conflicts: Other Node.js servers, development tools
 
 ❌ "Frontend directory not found"
    → Ensure launcher is in the correct BPERP root directory
@@ -87,7 +88,7 @@ TROUBLESHOOTING
 
 ❌ "Module Loading Issue" in browser
    → Do not open HTML files directly (file:// protocol)
-   → Always use the launcher or navigate to http://localhost:8080
+   → Always use the launcher or navigate to http://localhost:3000
    → Clear browser cache if needed
 
 ❌ Shortcuts not working
@@ -110,17 +111,17 @@ ADVANCED CONFIGURATION
 ----------------------
 
 Port Configuration:
-   • Edit launch-bperp-gui.ps1
-   • Change "8080" to desired port number (line with npx serve command)
-   • Update browser URL accordingly
+   • Create or edit backend/.env
+   • Add: PORT=3000 (change to desired port)
+   • Update PORT in backend/.env to match
 
-Server Options:
-   • Default: npx serve -l 8080 -s --no-clipboard
-   • Add --cors for cross-origin requests
-   • Add --debug for detailed server logging
+Database Configuration:
+   • Edit backend/.env (copy from backend/.env.example)
+   • Set DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT
+   • Default database name: airshop
 
 Firewall/Network:
-   • BPERP runs locally on http://localhost:8080
+   • BPERP runs locally on http://localhost:3000
    • No internet connection required for operation
    • Firewall may prompt on first run - allow Node.js
 

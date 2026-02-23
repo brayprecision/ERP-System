@@ -122,11 +122,11 @@ $timer.Add_Tick({
     switch ($script:step) {
         1 { $status.Text = "Checking Node.js..."; $progress.Value = 15 }
         2 { $status.Text = "Verifying requirements..."; $progress.Value = 30 }
-        3 { 
-            $status.Text = "Starting server..."
+        3 {
+            $status.Text = "Starting backend server..."
             $progress.Value = 45
             try {
-                Start-Process cmd -ArgumentList "/c cd /d `"$scriptDir\frontend`" && npx serve -l 8080 -s --no-clipboard" -WindowStyle Hidden
+                Start-Process cmd -ArgumentList "/c cd /d `"$scriptDir\backend`" && node server.js" -WindowStyle Hidden
             } catch {}
         }
         4 { $status.Text = "Loading modules..."; $progress.Value = 60 }
@@ -138,7 +138,7 @@ $timer.Add_Tick({
         }
         8 {
             $timer.Stop()
-            Start-Process "http://localhost:8080/loading.html"
+            Start-Process "http://localhost:3000/loading.html"
             Start-Sleep -Milliseconds 800
             $form.Close()
         }

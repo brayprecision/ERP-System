@@ -364,15 +364,25 @@ function stopBackend() {
             resolve();
         });
         
-        // Graceful shutdown
-        backendProcess.kill('SIGTERM');
-        
-        // Force kill after timeout
-        setTimeout(() => {
-            if (backendProcess) {
-                backendProcess.kill('SIGKILL');
+        // Graceful shutdown — Windows does not support Unix signals,
+        // so use taskkill on win32 and SIGTERM elsewhere.
+        if (process.platform === 'win32') {
+            const { execSync } = require('child_process');
+            try {
+                execSync(`taskkill /pid ${backendProcess.pid} /T /F`);
+            } catch (e) {
+                // Process may have already exited
             }
-        }, 5000);
+        } else {
+            backendProcess.kill('SIGTERM');
+
+            // Force kill after timeout
+            setTimeout(() => {
+                if (backendProcess) {
+                    backendProcess.kill('SIGKILL');
+                }
+            }, 5000);
+        }
     });
 }
 

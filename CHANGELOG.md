@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+#### Windows Launcher (`launch-bperp-gui.ps1`)
+- **Backend server now starts correctly** - Launcher previously started only a static file
+  server (`npx serve`) on port 8080, leaving the Node.js/Express backend never running and
+  all API calls failing. Now starts `node server.js` from the backend directory on port 3000,
+  which serves both the API and the frontend statically via `express.static`.
+- Browser now opens to `http://localhost:3000/loading.html` (was port 8080).
+
+#### Electron — Windows Compatibility
+- **Process termination** (`electron/main.js`) — `SIGTERM`/`SIGKILL` signals are silently
+  ignored on Windows child processes, causing orphaned backend processes after the app closed.
+  Replaced with `taskkill /pid <PID> /T /F` on win32; Unix platforms retain existing behavior.
+- **Setup wizard** (`electron/setup-wizard/`) — Wizard defaulted to "Embedded PostgreSQL" on
+  Windows, which is unimplemented. On win32 the embedded option is now hidden, external
+  PostgreSQL is selected by default with port 5432 pre-filled, and a notice with a direct
+  download link to postgresql.org is shown.
+
 ### Added
 
 #### Electron Desktop Application (Phase 4 Complete)

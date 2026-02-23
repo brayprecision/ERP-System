@@ -36,8 +36,44 @@ const loadingText = document.getElementById('loadingText');
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
+    applyPlatformDefaults();
     updateUI();
 });
+
+function applyPlatformDefaults() {
+    if (typeof window.platform === 'undefined' || window.platform.os !== 'win32') return;
+
+    // "Embedded" PostgreSQL is not implemented on Windows — hide that option
+    // and default to "Connect to Existing Database" so users aren't left stuck.
+    const embeddedOption = document.querySelector('input[name="dbType"][value="embedded"]')?.closest('.db-option');
+    if (embeddedOption) embeddedOption.style.display = 'none';
+
+    const externalRadio = document.querySelector('input[name="dbType"][value="external"]');
+    if (externalRadio) {
+        externalRadio.checked = true;
+        config.database.type = 'external';
+        // Default to the standard PostgreSQL port for Windows installs
+        config.database.port = 5432;
+        const portInput = document.getElementById('dbPort');
+        if (portInput) portInput.value = 5432;
+    }
+
+    // Show the PostgreSQL install notice and wire up the download link
+    const notice = document.getElementById('win-postgres-notice');
+    if (notice) notice.classList.remove('hidden');
+
+    const pgLink = document.getElementById('pgDownloadLink');
+    if (pgLink) {
+        pgLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.electronAPI && window.electronAPI.openExternal) {
+                window.electronAPI.openExternal('https://www.postgresql.org/download/windows/');
+            }
+        });
+    }
+
+    updateDbOptions();
+}
 
 function setupEventListeners() {
     // Navigation buttons
