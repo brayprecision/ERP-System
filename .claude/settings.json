@@ -1,7 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(powershell -Command \"Get-ChildItem ''$env:APPDATA\\\\BPERP'' -ErrorAction SilentlyContinue\")",
+      "Bash(powershell -Command:*)",
+      "Bash(cmd /c tasklist /FI \"IMAGENAME eq BPERP.exe\" /v)",
+      "Bash(cmd /c tasklist /FI \"IMAGENAME eq node.exe\" /v)",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"& { [System.IO.Directory]::GetFiles\\(''C:\\\\Users\\\\Admin\\\\AppData\\\\Roaming'', ''*'', [System.IO.SearchOption]::AllDirectories\\) | Where-Object { $_-match ''BPERP|bperp'' } }\")",
+      "Read(//c/Users/Admin/AppData/Local/**)",
+      "Bash(find:*)",
+      "Bash(node -e:*)",
+      "Bash(echo:*)",
+      "Bash(npm.cmd exec:*)",
+      "Bash(xargs:*)",
+      "Bash(powershell -NoProfile -Command:*)",
+      "Bash(cmd /c \"sc query postgresql*\")",
+      "Bash(cmd /c:*)"
     ]
   }
 }

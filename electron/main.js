@@ -7,7 +7,40 @@ const { app, BrowserWindow, ipcMain, shell, Menu, Tray, dialog, screen } = requi
 const path = require('path');
 const { fork, spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const Store = require('electron-store');
+
+// ==================== EARLY ERROR HANDLERS ====================
+// Must be registered BEFORE any initialization that could throw,
+// so crashes during startup produce a visible error instead of silent exit.
+process.on('uncaughtException', (error) => {
+    console.error('UNCAUGHT EXCEPTION:', error.message, error.stack);
+    try {
+        fs.appendFileSync(
+            path.join(os.tmpdir(), 'bperp-crash.log'),
+            `[${new Date().toISOString()}] UNCAUGHT: ${error.message}\n${error.stack}\n`
+        );
+    } catch (_) {}
+    try {
+        dialog.showErrorBox('Fatal Error', `${error.message}\n\nCrash log: ${path.join(os.tmpdir(), 'bperp-crash.log')}`);
+    } catch (_) {}
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : '';
+    console.error('UNHANDLED REJECTION:', msg);
+    try {
+        fs.appendFileSync(
+            path.join(os.tmpdir(), 'bperp-crash.log'),
+            `[${new Date().toISOString()}] REJECTION: ${msg}\n${stack}\n`
+        );
+    } catch (_) {}
+    try {
+        dialog.showErrorBox('Startup Error', `${msg}\n\nCrash log: ${path.join(os.tmpdir(), 'bperp-crash.log')}`);
+    } catch (_) {}
+});
 
 // Linux-specific: Improve window manager integration
 if (process.platform === 'linux') {
@@ -61,7 +94,9 @@ const frontendPath = isDev
 
 // ==================== LOGGING ====================
 const logFile = path.join(app.getPath('userData'), 'bperp.log');
+fs.mkdirSync(path.dirname(logFile), { recursive: true });
 const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+logStream.on('error', (err) => console.error('Log stream error:', err.message));
 
 function log(level, message, ...args) {
     const timestamp = new Date().toISOString();
@@ -736,8 +771,12 @@ app.whenReady().then(async () => {
     // Create app menu
     createAppMenu();
     
-    // Create system tray
-    createTray();
+    // Create system tray (non-fatal if icon is missing)
+    try {
+        createTray();
+    } catch (e) {
+        log('warn', 'Tray creation failed, continuing without tray: ' + e.message);
+    }
     
     // Check if first run
     const isFirstRun = store.get('firstRun');
@@ -793,12 +832,5 @@ app.on('before-quit', async () => {
     await stopBackend();
 });
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-    log('error', 'Uncaught exception:', error.message);
-    dialog.showErrorBox('Error', `An unexpected error occurred:\n\n${error.message}`);
-});
-
-process.on('unhandledRejection', (reason) => {
-    log('error', 'Unhandled rejection:', reason);
-});
+// Error handlers are registered at the top of this file (before initialization)
+// so they catch crashes that occur during module load.

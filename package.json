@@ -47,7 +47,7 @@
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist-installers",
-      "buildResources": "electron/assets"
+      "buildResources": "build"
     },
     "files": [
       "electron/**/*",
@@ -82,7 +82,7 @@
       }
     ],
     "asar": true,
-    "asarUnpack": [],
+    "asarUnpack": ["electron/assets/**/*"],
     "win": {
       "target": [
         {
@@ -90,15 +90,15 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "electron/assets/icon.ico",
+      "icon": "build/icon.ico",
       "publisherName": "Bray Precision LLC"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "electron/assets/icon.ico",
-      "uninstallerIcon": "electron/assets/icon.ico",
-      "installerHeaderIcon": "electron/assets/icon.ico",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "BPERP",
