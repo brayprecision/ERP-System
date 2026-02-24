@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Project direction** — Scrapped commercialization plan. BPERP is now internal-only for Bray Precision LLC.
+  - Removed licensing system plans (Phase 6)
+  - Removed auto-updater plans
+  - Removed legal documentation requirements (EULA, Privacy Policy)
+  - TypeScript migration, API versioning, and frontend build system are no longer priorities
+  - Focus is on stability, deployment, and fixing remaining gaps (backup, search)
+
 ### Fixed
 
 #### Windows Launcher (`launch-bperp-gui.ps1`)

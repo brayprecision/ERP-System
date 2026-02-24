@@ -1,246 +1,151 @@
-# BPERP - Business Process ERP System
+# BPERP - Manufacturing ERP System
 
-A comprehensive ERP system designed for small machine shops (1-20 employees).
+Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, workcenters, and maintenance for the shop floor.
 
-## Features
+## Status
 
-- **Inventory Management** - Materials, tooling, and miscellaneous items
-- **Sales Management** - Customers, quotes, and work orders
-- **Task Management** - Work assignments, scheduling, and tracking
-- **Workcenter Management** - Machine queues and job routing
-- **Maintenance Tracking** - Preventive and corrective maintenance
-- **User Management** - Role-based access control with three user levels:
-  - **Administrator** - Full access to all features including user management
-  - **Machinist** - Access to workcenter, inventory, and tasks
-  - **Operator** - Basic access to dashboard, workcenter, and tasks
-- **Shop Branding** - Customize logo, shop name, and tagline for white-label deployment
-- **Backup & Restore** - Full system backup with offline support
+**Version:** 1.0.0-beta.1 | **Internal Use Only**
+
+### What's Working
+- Inventory Management (Materials, Tooling, Misc items with low-stock alerts)
+- Sales Management (Customers, Contacts, Quotes with lifecycle, Work Orders with checklists)
+- Task Management (11 workflow types, assignments, history)
+- Workcenter Management (machine queues, job routing, state tracking)
+- Maintenance Tracking (preventive/corrective scheduling, runtime tracking)
+- User Management (Admin/Machinist/Operator roles, tab-level permissions)
+- Shop Branding (logo, name, tagline)
+- Data Import (CSV/Excel bulk import for all major entities)
+- Electron Desktop App (tested on Linux, Windows launcher fixed Feb 23 2026)
+
+### Known Issues
+- **Backup/Restore** only saves browser localStorage, not a real PostgreSQL dump
+- **Search** module exists but cross-module search isn't fully wired
+- **Windows installer** not yet built/tested (launcher fix applied Feb 23)
+- **macOS build** untested, missing `icon.icns`
+
+### TODO (pick up here)
+1. Build and test the Windows installer: `npx electron-builder --win --publish never`
+2. Create `backend/.env` from `backend/.env.example` with real DB credentials
+3. Run `cd backend && npm run migrate` on the target machine
+4. Import shop data via CSV import (Settings > Data Import)
+5. Fix Backup/Restore to use `pg_dump` via Electron IPC
+6. Wire up cross-module search in `frontend/js/modules/search.js`
 
 ## Tech Stack
 
-- **Backend**: Node.js + Express.js
-- **Database**: PostgreSQL
-- **Frontend**: Vanilla JavaScript (ES6 Modules) + Tailwind CSS
-- **Desktop**: Electron (cross-platform native app)
-- **Authentication**: Token-based with bcrypt password hashing
+- **Backend**: Node.js + Express.js (port 3000)
+- **Database**: PostgreSQL (40+ tables)
+- **Frontend**: Vanilla JavaScript (ES6 Modules) + Tailwind CSS (no build step)
+- **Desktop**: Electron (cross-platform)
+- **Auth**: Token-based with bcrypt password hashing
 
-## Desktop Application
-
-BPERP is available as a standalone desktop application for easy deployment.
-
-### Download
-
-- **Linux (.deb)**: `BPERP-1.0.0-beta.1-linux-amd64.deb` (81 MB) - Recommended for Ubuntu/Zorin/Debian
-- **Linux (AppImage)**: `BPERP-1.0.0-beta.1-linux-x86_64.AppImage` (122 MB) - Portable, no install
-- **Windows**: Coming soon
-- **macOS**: Coming soon
-
-### Installing on Ubuntu/Zorin/Debian (Recommended)
-
-```bash
-sudo apt install ./BPERP-1.0.0-beta.1-linux-amd64.deb
-```
-
-Or double-click the `.deb` file to open Software Center and click Install.
-
-This automatically installs PostgreSQL if not already present.
-
-### Running the AppImage (Alternative)
-
-```bash
-chmod +x BPERP-1.0.0-beta.1-linux-x86_64.AppImage
-./BPERP-1.0.0-beta.1-linux-x86_64.AppImage
-```
-
-### First Run
-
-The setup wizard guides you through:
-1. Database configuration (connect to your PostgreSQL server)
-2. Admin user creation
-3. Initial setup
-
-### Building from Source
-
-```bash
-# Install dependencies
-npm install
-npm run backend:install
-
-# Build for your platform
-npm run build:linux   # Linux (AppImage, deb, rpm)
-npm run build:win     # Windows (requires Windows or Wine)
-npm run build:mac     # macOS (requires macOS)
-```
-
-## Quick Start
+## Quick Start (Development)
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - PostgreSQL 14+
 
-### Installation
+### Setup
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ERP-System.git
-cd ERP-System
-```
-
-2. Install backend dependencies:
-```bash
+# Install dependencies
 cd backend
 npm install
-```
 
-3. Configure environment:
-```bash
-# Copy the example env file
+# Configure environment
 cp .env.example .env
+# Edit .env with your database credentials
 
-# Edit with your database credentials
-nano .env
-```
-
-4. Set up the database:
-```bash
 # Run migrations
 npm run migrate
-```
 
-5. Start the server:
-```bash
-npm start
-# Or for development with auto-reload:
+# Start dev server (auto-reload)
 npm run dev
 ```
 
-6. Open `frontend/index.html` in your browser or serve it:
+The backend serves both the API and frontend on `http://localhost:3000`.
+
+### Running the Electron App
+
 ```bash
 # From project root
-python -m http.server 8080 --directory frontend
-# Then open http://localhost:8080
+npm install
+npm start
+```
+
+### Building Installers
+
+```bash
+npm run backend:install
+npx electron-builder --win --publish never     # Windows NSIS installer
+npx electron-builder --linux deb --publish never  # Linux .deb
+npx electron-builder --linux AppImage --publish never  # Linux AppImage
 ```
 
 ## Project Structure
 
 ```
 ERP-System/
-??? backend/
-?   ??? middleware/      # Auth, validation, rate limiting
-?   ??? migrations/      # Database migrations
-?   ??? routes/          # API route handlers
-?   ??? src/             # TypeScript source files
-?   ??? tests/           # Jest test suites
-?   ??? server.js        # Express app entry point
-?   ??? package.json
-??? frontend/
-?   ??? js/
-?   ?   ??? modules/     # ES6 modules (app, common, sales, tasks, etc.)
-?   ??? index.html       # SPA entry point
-?   ??? style.css        # Custom styles (Tailwind via CDN)
-??? database/
-?   ??? *.sql            # Schema files (reference)
-??? README.md
+├── backend/
+│   ├── middleware/      # Auth, validation, rate limiting
+│   ├── migrations/      # Database migration scripts
+│   ├── routes/          # API route handlers (11 modules)
+│   ├── src/             # TypeScript source (partial migration)
+│   ├── tests/           # Jest test suites
+│   ├── server.js        # Express app entry point
+│   └── .env.example     # Environment config template
+├── frontend/
+│   ├── js/modules/      # ES6 modules (app, sales, tasks, inventory, etc.)
+│   ├── css/             # Tailwind CSS customizations
+│   └── index.html       # SPA entry point
+├── electron/
+│   ├── main.js          # Electron main process
+│   ├── preload.js       # Secure IPC bridge
+│   └── setup-wizard/    # First-run setup UI
+├── database/
+│   └── *.sql            # Schema reference files
+└── package.json         # Electron-builder config
 ```
 
-## API Documentation
+## API Endpoints
 
-### Authentication
-
-All API endpoints (except login) require authentication via Bearer token:
-
-```
-Authorization: Bearer <session_token>
-```
-
-### Key Endpoints
+All endpoints (except login) require `Authorization: Bearer <token>` header.
 
 | Endpoint | Description |
 |----------|-------------|
 | `POST /api/users/login` | Authenticate user |
 | `GET /api/customers` | List customers |
-| `GET /api/inventory/:category` | List inventory items |
+| `GET /api/inventory/:category` | List inventory items (materials/tooling/misc) |
 | `GET /api/quotes` | List quotes |
 | `GET /api/work-orders` | List work orders |
-| `GET /api/tasks` | List tasks with filtering |
+| `GET /api/tasks` | List tasks (supports filtering) |
 | `POST /api/import/preview` | Preview CSV/Excel import |
-| `POST /api/import/:entityType` | Import data |
+| `POST /api/import/:entityType` | Import data (customers, materials, tooling, etc.) |
+| `GET /api/import/template/:type` | Download CSV import template |
 
-### Data Import
-
-Import data from CSV or Excel files:
-
-```bash
-# Get import template
-curl http://localhost:3000/api/import/template/customers -o customers_template.csv
-
-# Preview import
-curl -X POST http://localhost:3000/api/import/preview \
-  -F "file=@customers.csv" \
-  -F "entityType=customers"
-
-# Execute import
-curl -X POST http://localhost:3000/api/import/customers \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@customers.csv"
-```
-
-Supported entity types: `customers`, `contacts`, `materials`, `tooling`, `workcenters`, `machines`
-
-## Development
-
-### Available Scripts
+## Common Commands
 
 ```bash
-# Backend
-npm start              # Start production server
-npm run dev            # Start with nodemon (auto-reload)
-npm test               # Run tests
-npm run test:coverage  # Run tests with coverage
-npm run migrate        # Run database migrations
-npm run migrate:down   # Rollback last migration
-npm run build          # Compile TypeScript
-npm run typecheck      # Type check without emitting
+# Backend development
+cd backend && npm run dev          # Start with auto-reload
+cd backend && npm test             # Run tests
+cd backend && npm run migrate      # Run database migrations
+cd backend && npm run migrate:status  # Check migration status
+
+# Electron app
+npm start                          # Run desktop app
+npm run dev                        # Run in dev mode
+
+# TypeScript (optional)
+cd backend && npm run typecheck    # Type check
+cd backend && npm run build        # Compile TS to dist/
 ```
 
-### TypeScript
+## Security
 
-The project is being migrated to TypeScript. New code should be written in TypeScript:
-
-```
-backend/src/           # TypeScript source
-backend/dist/          # Compiled JavaScript
-```
-
-Type definitions are available in `backend/src/types/`.
-
-### Testing
-
-Tests use Jest and Supertest:
-
-```bash
-# Run all tests
-npm test
-
-# Run with coverage
-npm run test:coverage
-
-# Run specific test file
-npm test -- tests/routes/import.test.js
-```
-
-## Security Features
-
-- **Password Hashing**: bcrypt with salt rounds
-- **Rate Limiting**: Protection against brute force attacks
-- **Input Validation**: Zod schemas for all inputs
-- **Token-based Auth**: Secure session management
-
-## License
-
-Proprietary - All rights reserved
-
-## Support
-
-For support inquiries, contact [support@example.com]
+- **Passwords**: bcrypt hashed (12 salt rounds)
+- **Rate Limiting**: 5 login attempts/15 min, 100 API requests/min
+- **Input Validation**: Zod schemas on all endpoints
+- **SQL**: Parameterized queries throughout (no injection risk)
+- **Sessions**: Token-based with configurable expiration

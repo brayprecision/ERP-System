@@ -1,43 +1,9 @@
 BPERP - Manufacturing ERP Software
 Copyright (c) 2026 Bray Precision LLC. All Rights Reserved.
 
-PROPRIETARY LICENSE AGREEMENT
+INTERNAL USE ONLY
 
-This software and associated documentation files (the "Software") are the 
-proprietary property of Bray Precision LLC ("Company") and are protected by 
-copyright law and international treaties.
-
-LICENSE GRANT
-Subject to the terms of this Agreement and payment of applicable license fees,
-Company grants you a limited, non-exclusive, non-transferable license to:
-- Install and use the Software on computers owned or controlled by you
-- Use the Software for your internal business purposes
-
-RESTRICTIONS
-You may NOT:
-- Copy, modify, or distribute the Software
-- Reverse engineer, decompile, or disassemble the Software
-- Rent, lease, lend, or sublicense the Software
-- Remove or alter any proprietary notices on the Software
-- Use the Software for any unlawful purpose
-
-TERMINATION
-This license is effective until terminated. It will terminate automatically
-if you fail to comply with any term of this Agreement. Upon termination,
-you must destroy all copies of the Software.
-
-DISCLAIMER OF WARRANTIES
-THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-
-LIMITATION OF LIABILITY
-IN NO EVENT SHALL COMPANY BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING OUT OF OR IN CONNECTION WITH
-THIS SOFTWARE.
-
-GOVERNING LAW
-This Agreement shall be governed by the laws of the jurisdiction in which
-Company is located, without regard to conflicts of law principles.
-
-For licensing inquiries, contact: support@brayprecision.com
+This software is the proprietary property of Bray Precision LLC and is
+intended solely for internal business operations. This software may not
+be copied, distributed, sold, sublicensed, or made available to any
+third party without written permission from Bray Precision LLC.
