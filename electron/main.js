@@ -92,6 +92,13 @@ const frontendPath = isDev
     ? path.join(__dirname, '..', 'frontend')
     : path.join(process.resourcesPath, 'app.asar', 'frontend');
 
+// ==================== ASSET PATHS ====================
+// In packaged builds, __dirname is inside app.asar where binary assets (icons)
+// cannot be loaded. electron-builder unpacks them to app.asar.unpacked via asarUnpack.
+const assetsPath = isDev
+    ? path.join(__dirname, 'assets')
+    : path.join(__dirname.replace('app.asar', 'app.asar.unpacked'), 'assets');
+
 // ==================== LOGGING ====================
 const logFile = path.join(app.getPath('userData'), 'bperp.log');
 fs.mkdirSync(path.dirname(logFile), { recursive: true });
@@ -181,7 +188,7 @@ function createMainWindow() {
         show: false,
         frame: true,
         autoHideMenuBar: true,
-        icon: path.join(__dirname, 'assets', 'icon.ico'),
+        icon: path.join(assetsPath, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -261,7 +268,7 @@ function saveWindowState() {
 
 // ==================== SYSTEM TRAY ====================
 function createTray() {
-    const iconPath = path.join(__dirname, 'assets', 'icon.ico');
+    const iconPath = path.join(assetsPath, 'icon.ico');
     tray = new Tray(iconPath);
     
     const contextMenu = Menu.buildFromTemplate([
@@ -809,9 +816,11 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-    // On macOS, keep app running in background
-    if (process.platform !== 'darwin') {
-        // Don't quit, keep in tray
+    // On macOS, keep app running in background (standard behavior)
+    // On other platforms, quit if main window was never created (e.g. setup wizard closed)
+    // but stay alive for tray mode once the main window has been established
+    if (process.platform !== 'darwin' && !mainWindow) {
+        app.quit();
     }
 });
 

@@ -419,7 +419,7 @@ npm run migrate:status
 
 ## Security
 
-- **Passwords**: Hashed with bcrypt (10 salt rounds)
+- **Passwords**: Hashed with bcrypt (12 salt rounds)
 - **Sessions**: Random tokens stored in `user_sessions` table
 - **Rate Limiting**: Configurable per-endpoint limits
 - **Input Validation**: Zod schemas with strict mode

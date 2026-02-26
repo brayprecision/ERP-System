@@ -15,12 +15,12 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 - User Management (Admin/Machinist/Operator roles, tab-level permissions)
 - Shop Branding (logo, name, tagline)
 - Data Import (CSV/Excel bulk import for all major entities)
-- Electron Desktop App (tested on Linux, Windows launcher fixed Feb 23 2026)
+- Electron Desktop App (tested on Linux and Windows)
 
 ### Known Issues
 - **Backup/Restore** only saves browser localStorage, not a real PostgreSQL dump
 - **Search** module exists but cross-module search isn't fully wired
-- **Windows installer** not yet built/tested (launcher fix applied Feb 23)
+- **Windows installer** not yet built/tested
 - **macOS build** untested, missing `icon.icns`
 
 ### TODO (pick up here)
@@ -91,7 +91,7 @@ ERP-System/
 │   ├── middleware/      # Auth, validation, rate limiting
 │   ├── migrations/      # Database migration scripts
 │   ├── routes/          # API route handlers (11 modules)
-│   ├── src/             # TypeScript source (partial migration)
+│   ├── src/             # TypeScript types (reference only, not actively migrating)
 │   ├── tests/           # Jest test suites
 │   ├── server.js        # Express app entry point
 │   └── .env.example     # Environment config template

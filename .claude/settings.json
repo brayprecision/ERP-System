@@ -15,7 +15,12 @@
       "Bash(xargs:*)",
       "Bash(powershell -NoProfile -Command:*)",
       "Bash(cmd /c \"sc query postgresql*\")",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "Read(//c/Users/Admin/AppData/Roaming/**)",
+      "Bash(taskkill:*)",
+      "Bash(npx electron-builder:*)",
+      "Bash(xxd:*)",
+      "Bash(# The Windows convert command is NOT ImageMagick - it''s a disk utility # Check if we have npm packages that can help which npx && echo \"\"npx available\"\" # Check for sharp or png-to-ico npm list -g)"
     ]
   }
 }
