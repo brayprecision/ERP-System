@@ -1,16 +1,37 @@
 # BPERP Internal Roadmap
 
-> **Last Updated**: February 23, 2026
-> **Status**: Internal-only — commercialization plan scrapped
+> **Last Updated**: February 26, 2026
+> **Status**: Internal-only | Windows & Linux | Network Database
 > **Owner**: Bray Precision LLC
 
 ---
 
 ## Decision Log
 
-**Feb 23, 2026** — Decided to scrap the commercial product plan. BPERP will be used
-internally at Bray Precision only. All licensing, legal, auto-updater, and multi-tenant
-work is permanently dropped.
+**Feb 26, 2026** — Finalized internal deployment model. All workstations connect to a shared
+network PostgreSQL database. User profiles load from the database so new devices require zero
+manual configuration beyond entering the DB connection. macOS support dropped. Auto-refresh
+added as a goal so workcenter displays always show current data.
+
+**Feb 23, 2026** — Scrapped commercial product plan. BPERP is internal-only for Bray Precision.
+All licensing, legal, auto-updater, and multi-tenant work permanently dropped.
+
+---
+
+## Deployment Model
+
+All workstations (Windows and Linux) run the Electron desktop app. Each app connects to a
+single shared PostgreSQL server on the local network. There is no local database. User
+accounts, permissions, and appearance settings are stored in PostgreSQL and loaded on login.
+Setting up a new device means installing the app and pointing it at the network database.
+
+```
+Workstations (Windows/Linux)
+    ↓ connect to
+Shared PostgreSQL Server (network host)
+    ↓ serves
+All data: users, inventory, sales, tasks, workcenters, maintenance
+```
 
 ---
 
@@ -26,7 +47,7 @@ work is permanently dropped.
 ### Phase 2: Architecture — COMPLETE
 - [x] All routes migrated from in-memory to PostgreSQL
 - [x] Database migration system (`backend/migrations/migrate.js`)
-- [x] TypeScript foundation (types, middleware converted)
+- [x] TypeScript foundation (types, middleware converted — not actively migrating)
 - [x] Shared middleware directory
 
 ### Phase 3: Data Import & Testing — COMPLETE
@@ -49,7 +70,7 @@ work is permanently dropped.
 
 ---
 
-## What's Left (Internal Use)
+## What's Left
 
 ### Priority 1 — Deploy
 
@@ -57,19 +78,27 @@ work is permanently dropped.
 |------|--------|-------|
 | Build Windows installer | NOT DONE | `npx electron-builder --win --publish never` |
 | Test Windows installer end-to-end | NOT DONE | Setup wizard, backend start, all modules |
-| Create production `.env` | NOT DONE | Copy from `backend/.env.example` |
+| Create production `.env` | NOT DONE | Copy from `backend/.env.example`, use network DB host |
 | Run migrations on production DB | NOT DONE | `cd backend && npm run migrate` |
 | Import existing shop data | NOT DONE | Use CSV import (Settings > Data Import) |
 
-### Priority 2 — Fix Known Gaps
+### Priority 2 — Network & Multi-Device
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Auto-refresh data on workstations | NOT DONE | Polling or WebSocket so workcenter displays stay current |
+| User profiles load from DB on login | PARTIAL | Appearance settings and permissions already in DB; verify new device experience |
+| Setup wizard: network DB only | NOT DONE | Remove embedded/SQLite options, focus on entering network host/port/credentials |
+| Test multi-device workflow | NOT DONE | Two machines, same DB, verify data syncs |
+
+### Priority 3 — Fix Known Gaps
 
 | Task | Status | Files |
 |------|--------|-------|
 | Backup/Restore: use `pg_dump` | NOT DONE | `electron/main.js`, `frontend/js/modules/common.js` |
 | Wire up cross-module search | NOT DONE | `frontend/js/modules/search.js`, `frontend/js/app.js` |
-| Test macOS build (if needed) | NOT DONE | Needs `icon.icns` from `electron/assets/generate-icons.sh` |
 
-### Priority 3 — Polish (As Time Allows)
+### Priority 4 — Polish (As Time Allows)
 
 | Task | Notes |
 |------|-------|
@@ -81,7 +110,7 @@ work is permanently dropped.
 
 ## Permanently Dropped
 
-These items were from the commercialization plan and are no longer relevant:
+These items are no longer relevant:
 
 - ~~License key system (generation, validation, tiers)~~
 - ~~Auto-updater for maintenance subscribers~~
@@ -92,7 +121,9 @@ These items were from the commercialization plan and are no longer relevant:
 - ~~E2E tests (Playwright)~~
 - ~~Service layer / dependency injection~~
 - ~~Frontend code splitting / minification~~
-- ~~User manual / installation guide for customers~~
+- ~~User manual / installation guide for external customers~~
+- ~~macOS support~~
+- ~~Commercial distribution / resale~~
 
 ---
 
@@ -105,7 +136,7 @@ Express Backend (backend/server.js on localhost:3000)
     ├── Routes: customers, inventory, tasks, users, workcenters, maintenance, etc.
     ├── Middleware: auth, rate limiting, validation
     ├── Migrations: schema versioning
-    └── Database: PostgreSQL
+    └── Database: PostgreSQL (network host — shared by all workstations)
         ↓ Serves static
 Vanilla Frontend (frontend/index.html + ES6 modules)
     ├── Modules: inventory, sales, tasks, users, storage, search, maintenance

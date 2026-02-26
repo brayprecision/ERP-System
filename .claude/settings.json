@@ -20,7 +20,11 @@
       "Bash(taskkill:*)",
       "Bash(npx electron-builder:*)",
       "Bash(xxd:*)",
-      "Bash(# The Windows convert command is NOT ImageMagick - it''s a disk utility # Check if we have npm packages that can help which npx && echo \"\"npx available\"\" # Check for sharp or png-to-ico npm list -g)"
+      "Bash(# The Windows convert command is NOT ImageMagick - it''s a disk utility # Check if we have npm packages that can help which npx && echo \"\"npx available\"\" # Check for sharp or png-to-ico npm list -g)",
+      "Bash(wc -l /c/Users/Admin/Documents/GitHub/ERP-System/database/*.sql)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Documents-GitHub-ERP-System\\memory"
     ]
   }
 }

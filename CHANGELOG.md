@@ -8,11 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **Project direction** — Scrapped commercialization plan. BPERP is now internal-only for Bray Precision LLC.
-  - Removed licensing system plans (Phase 6)
-  - Removed auto-updater plans
-  - Removed legal documentation requirements (EULA, Privacy Policy)
-  - TypeScript migration, API versioning, and frontend build system are no longer priorities
+- **Project direction** — BPERP is internal-only for Bray Precision LLC.
+  - Windows & Linux only (macOS dropped)
+  - All workstations share a single network PostgreSQL database
+  - User profiles load from the database — no manual setup on new devices
+  - Auto-refresh so workcenter displays always show current data
+  - Clean, simple installer for easy multi-device deployment
   - Focus is on stability, deployment, and fixing remaining gaps (backup, search)
 
 ### Fixed
@@ -94,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `role_defaults` table for default permissions per role
   - `user_activity_log` table for audit trail
 
-#### Shop Branding (White-Label Support)
+#### Shop Branding
 - **Customizable shop identity** via Settings > Shop Branding
   - Shop name (displayed in sidebar and browser tab)
   - Tagline (short description)
@@ -177,7 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `README.md` with setup instructions
 - Created `backend/README.md` with API documentation
 - Created `.env.example` with all configuration options
-- Updated `COMMERCIALIZATION-PLAN.md` with progress tracking
+- Updated project documentation
 
 ### Changed
 - Enhanced CORS configuration in `server.js`

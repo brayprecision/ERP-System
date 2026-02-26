@@ -4,7 +4,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 
 ## Status
 
-**Version:** 1.0.0-beta.1 | **Internal Use Only**
+**Version:** 1.0.0-beta.1 | **Internal Use Only** | **Windows & Linux**
 
 ### What's Working
 - Inventory Management (Materials, Tooling, Misc items with low-stock alerts)
@@ -15,13 +15,11 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 - User Management (Admin/Machinist/Operator roles, tab-level permissions)
 - Shop Branding (logo, name, tagline)
 - Data Import (CSV/Excel bulk import for all major entities)
-- Electron Desktop App (tested on Linux and Windows)
+- Electron Desktop App (Windows & Linux)
 
 ### Known Issues
 - **Backup/Restore** only saves browser localStorage, not a real PostgreSQL dump
 - **Search** module exists but cross-module search isn't fully wired
-- **Windows installer** not yet built/tested
-- **macOS build** untested, missing `icon.icns`
 
 ### TODO (pick up here)
 1. Build and test the Windows installer: `npx electron-builder --win --publish never`
@@ -30,13 +28,39 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 4. Import shop data via CSV import (Settings > Data Import)
 5. Fix Backup/Restore to use `pg_dump` via Electron IPC
 6. Wire up cross-module search in `frontend/js/modules/search.js`
+7. Implement auto-refresh so workcenter displays show current data
+8. Ensure user profiles (appearance, permissions) load from database on login — no manual setup on new devices
+
+## Architecture
+
+### Network Database Model
+All workstations connect to a single shared PostgreSQL server on the local network. There is no local database — every device pulls from the same source of truth. When a new device is set up, the installer only needs the network database connection details. User profiles, permissions, and appearance settings are stored in the database and loaded automatically on login.
+
+```
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  Workstation  │   │  Workstation  │   │  Workstation  │
+│  (Windows)    │   │  (Linux)      │   │  (Windows)    │
+│  Electron App │   │  Electron App │   │  Electron App │
+└──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+       │                  │                  │
+       └──────────┬───────┴──────────────────┘
+                  │
+         ┌────────▼────────┐
+         │  PostgreSQL DB   │
+         │  (Network Host)  │
+         │  All shared data │
+         └─────────────────┘
+```
+
+### Auto-Update
+The app should auto-refresh data so each workcenter always displays current information. When one user creates a work order or updates inventory, other workstations reflect the change without manual refresh.
 
 ## Tech Stack
 
 - **Backend**: Node.js + Express.js (port 3000)
-- **Database**: PostgreSQL (40+ tables)
+- **Database**: PostgreSQL (40+ tables, shared across all devices on the network)
 - **Frontend**: Vanilla JavaScript (ES6 Modules) + Tailwind CSS (no build step)
-- **Desktop**: Electron (cross-platform)
+- **Desktop**: Electron (Windows & Linux only)
 - **Auth**: Token-based with bcrypt password hashing
 
 ## Quick Start (Development)
@@ -44,7 +68,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL 14+
+- PostgreSQL 14+ (accessible on the network)
 
 ### Setup
 
@@ -55,7 +79,7 @@ npm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your network database credentials
 
 # Run migrations
 npm run migrate
@@ -78,8 +102,8 @@ npm start
 
 ```bash
 npm run backend:install
-npx electron-builder --win --publish never     # Windows NSIS installer
-npx electron-builder --linux deb --publish never  # Linux .deb
+npx electron-builder --win --publish never        # Windows NSIS installer
+npx electron-builder --linux deb --publish never   # Linux .deb
 npx electron-builder --linux AppImage --publish never  # Linux AppImage
 ```
 
@@ -91,7 +115,6 @@ ERP-System/
 │   ├── middleware/      # Auth, validation, rate limiting
 │   ├── migrations/      # Database migration scripts
 │   ├── routes/          # API route handlers (11 modules)
-│   ├── src/             # TypeScript types (reference only, not actively migrating)
 │   ├── tests/           # Jest test suites
 │   ├── server.js        # Express app entry point
 │   └── .env.example     # Environment config template
@@ -107,6 +130,14 @@ ERP-System/
 │   └── *.sql            # Schema reference files
 └── package.json         # Electron-builder config
 ```
+
+## New Device Setup
+
+1. Install BPERP using the Windows or Linux installer
+2. On first launch, the setup wizard asks for the network database connection details
+3. The app connects to the shared PostgreSQL server, runs any pending migrations
+4. User logs in — their profile, permissions, and appearance settings load automatically from the database
+5. No manual configuration needed beyond the database connection
 
 ## API Endpoints
 
@@ -136,10 +167,6 @@ cd backend && npm run migrate:status  # Check migration status
 # Electron app
 npm start                          # Run desktop app
 npm run dev                        # Run in dev mode
-
-# TypeScript (optional)
-cd backend && npm run typecheck    # Type check
-cd backend && npm run build        # Compile TS to dist/
 ```
 
 ## Security

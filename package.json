@@ -2,7 +2,7 @@
   "name": "bperp",
   "productName": "BPERP - Manufacturing ERP",
   "version": "1.0.0-beta.1",
-  "description": "Manufacturing ERP for small machine shops - Inventory, Quotes, Work Orders, Tasks, and Maintenance",
+  "description": "Internal manufacturing ERP for Bray Precision LLC - Inventory, Quotes, Work Orders, Tasks, and Maintenance",
   "main": "electron/main.js",
   "author": {
     "name": "Bray Precision LLC",
@@ -21,9 +21,7 @@
     "dev:backend": "cd backend && npm run dev",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder -mwl",
     "pack": "electron-builder --dir",
     "postinstall": "electron-builder install-app-deps",
     "clean": "rm -rf dist dist-installers",
@@ -106,35 +104,6 @@
       "perMachine": false,
       "allowElevation": true,
       "runAfterFinish": true
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        }
-      ],
-      "icon": "electron/assets/icon.icns",
-      "category": "public.app-category.business",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "darkModeSupport": true
-    },
-    "dmg": {
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ],
-      "iconSize": 100,
-      "title": "${productName} ${version}"
     },
     "linux": {
       "target": [

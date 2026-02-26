@@ -2,14 +2,16 @@
 
 ## Context
 
-The setup wizard has several UX problems making it painful for internal deployment across workstations:
+All workstations (Windows & Linux) connect to a single shared PostgreSQL server on the network.
+Setup needs to be fast and foolproof — install the app, enter the DB connection, log in. User
+profiles, permissions, and appearance settings load automatically from the database.
+
+The setup wizard has several UX problems making it painful for deployment across workstations:
 
 1. **Username with space causes lock-up**: User typed "John Smith" as username → alert rejected it → after dismissing the alert, input fields become unresponsive. Root cause: `alert()` in Electron steals focus and doesn't reliably return it. Also, form inputs use `change` events (fire on blur) not `input` events, so config state can be stale.
 2. **DB connection test error is confusing**: Error just shows raw PostgreSQL message, no guidance.
-3. **Too many steps / unnecessary options**: Welcome screen is filler. Embedded PostgreSQL and SQLite options don't work on Windows. For internal central-server deployment, the DB type choice is unnecessary.
+3. **Too many steps / unnecessary options**: Welcome screen is filler. Embedded PostgreSQL and SQLite options don't work. For the network database model, the DB type choice is unnecessary — it's always external PostgreSQL.
 4. **Validation happens too late**: All errors shown via `alert()` only when clicking Next, no inline feedback.
-
-**Deployment scenario**: All workstations connect to one central PostgreSQL server. Setup needs to be fast and foolproof.
 
 ---
 
@@ -31,9 +33,7 @@ Update `totalSteps = 3`, progress bar HTML (remove Welcome circle), step-content
 
 ### 2. Remove non-functional DB type options
 
-On Windows, Embedded is already hidden and SQLite isn't implemented. Remove the radio button selector entirely on Windows — go straight to the connection form. Keep a brief header explaining what's needed.
-
-For non-Windows: keep Embedded option only if it works. Since it doesn't, remove all three radio options entirely (all platforms) and just show the external connection form directly.
+Remove all DB type radio options (Embedded, SQLite, External) on all platforms. The app always connects to an external PostgreSQL server on the network. Just show the connection form directly with a brief header explaining what's needed.
 
 ### 3. Replace all `alert()` with inline error messages
 

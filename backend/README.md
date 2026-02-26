@@ -1,13 +1,13 @@
 # BPERP Backend
 
-Express.js API server for the BPERP ERP system.
+Express.js API server for the BPERP ERP system. All workstations share a single PostgreSQL database on the network.
 
 ## Setup
 
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL 14+
+- PostgreSQL 14+ (on the network — all devices connect to the same database)
 
 ### Installation
 
@@ -20,8 +20,8 @@ npm install
 Create a `.env` file:
 
 ```env
-# Database
-DB_HOST=localhost
+# Database (network host — shared by all workstations)
+DB_HOST=192.168.1.x
 DB_PORT=5432
 DB_NAME=bperp
 DB_USER=postgres
@@ -106,11 +106,8 @@ backend/
 │   ├── users.js
 │   ├── workcenters.js
 │   └── workorders.js
-├── src/                 # TypeScript source
-│   ├── types/           # Type definitions
-│   ├── middleware/      # Typed middleware
-│   └── routes/          # Typed routes
-├── dist/                # Compiled TypeScript output
+├── src/                 # TypeScript types (reference only)
+│   └── types/           # Type definitions
 ├── tests/
 │   ├── setup.js         # Jest setup
 │   ├── helpers/         # Test utilities
@@ -243,57 +240,9 @@ router.post('/login', validateBody(schemas.login), handler);
 router.post('/customers', validateBody(schemas.customer), handler);
 ```
 
-## TypeScript
+## TypeScript (Reference Only)
 
-### Type Definitions
-
-All entity types are defined in `src/types/index.ts`:
-
-```typescript
-import { User, Task, Customer, Material, WorkOrder } from './src/types';
-```
-
-Database row types (snake_case) are in `src/types/database.ts`:
-
-```typescript
-import { TaskRow, CustomerRow, snakeToCamel } from './src/types/database';
-```
-
-### Writing New Routes in TypeScript
-
-See `src/routes/tasks.ts` for a complete example:
-
-```typescript
-import { Router, Request, Response } from 'express';
-import { Pool } from 'pg';
-import { Task, ApiResponse } from '../types';
-
-export default function createRouter(pool: Pool): Router {
-    const router = Router();
-    
-    router.get('/:id', async (
-        req: Request<{ id: string }>,
-        res: Response<ApiResponse<Task>>
-    ) => {
-        // Handler implementation
-    });
-    
-    return router;
-}
-```
-
-### Building
-
-```bash
-# Compile TypeScript to dist/
-npm run build
-
-# Type check without emitting
-npm run typecheck
-
-# Watch mode
-npm run build:watch
-```
+Type definitions exist in `src/types/` for reference but TypeScript migration is not a priority. All active routes are JavaScript.
 
 ## Testing
 
