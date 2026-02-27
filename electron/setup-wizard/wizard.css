@@ -157,37 +157,6 @@ body {
     margin-bottom: 25px;
 }
 
-/* Features Grid */
-.features-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-    margin-bottom: 25px;
-}
-
-.feature {
-    background: var(--background);
-    padding: 15px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-}
-
-.feature-icon {
-    font-size: 24px;
-    display: block;
-    margin-bottom: 8px;
-}
-
-.feature h3 {
-    font-size: 14px;
-    margin-bottom: 4px;
-}
-
-.feature p {
-    font-size: 12px;
-    color: var(--text-muted);
-}
-
 /* Info Box */
 .info-box {
     background: rgba(59, 130, 246, 0.1);
@@ -195,6 +164,7 @@ body {
     border-radius: 8px;
     padding: 15px;
     font-size: 14px;
+    margin-top: 20px;
 }
 
 .info-box.warning {
@@ -211,68 +181,11 @@ body {
     margin-bottom: 4px;
 }
 
-/* Database Options */
-.db-options {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 20px;
-}
-
-.db-option {
-    cursor: pointer;
-}
-
-.db-option input {
-    display: none;
-}
-
-.option-content {
-    background: var(--background);
-    border: 2px solid var(--border);
-    border-radius: 8px;
-    padding: 15px;
-    transition: all 0.2s ease;
-}
-
-.db-option:hover .option-content {
-    border-color: var(--primary);
-}
-
-.db-option.selected .option-content,
-.db-option input:checked + .option-content {
-    border-color: var(--primary);
-    background: rgba(255, 107, 53, 0.1);
-}
-
-.option-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
-}
-
-.option-icon {
-    font-size: 20px;
-}
-
-.option-content p {
+.info-box code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1px 5px;
+    border-radius: 3px;
     font-size: 13px;
-    color: var(--text-muted);
-    margin-left: 30px;
-}
-
-.badge {
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    text-transform: uppercase;
-    font-weight: 600;
-}
-
-.badge.recommended {
-    background: var(--success);
-    color: white;
 }
 
 /* Database Config Form */
@@ -280,17 +193,23 @@ body {
     background: var(--background);
     border-radius: 8px;
     padding: 20px;
-    margin-top: 20px;
     border: 1px solid var(--border);
 }
 
-.db-config.hidden {
-    display: none;
+/* Path input with Browse button */
+.path-input-row {
+    display: flex;
+    gap: 8px;
 }
 
-.db-config h3 {
-    font-size: 14px;
-    margin-bottom: 15px;
+.path-input-row input {
+    flex: 1;
+}
+
+.btn-sm {
+    padding: 10px 14px;
+    font-size: 13px;
+    white-space: nowrap;
 }
 
 /* Form Elements */
@@ -304,6 +223,7 @@ body {
 .form-group {
     display: flex;
     flex-direction: column;
+    margin-bottom: 5px;
 }
 
 .form-group.full-width {
@@ -335,10 +255,21 @@ body {
     color: var(--text-muted);
 }
 
+.form-group input.error {
+    border-color: var(--error);
+}
+
 .form-group .hint {
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 4px;
+}
+
+.form-group .error-message {
+    color: var(--error);
+    font-size: 11px;
+    margin-top: 4px;
+    min-height: 0;
 }
 
 .form-section {

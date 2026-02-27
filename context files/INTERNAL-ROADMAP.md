@@ -1,16 +1,19 @@
 # BPERP Internal Roadmap
 
-> **Last Updated**: February 26, 2026
-> **Status**: Internal-only | Windows & Linux | Network Database
+> **Last Updated**: February 27, 2026
+> **Status**: Internal-only | Windows & Linux | SQLite on NAS
 > **Owner**: Bray Precision LLC
 
 ---
 
 ## Decision Log
 
-**Feb 26, 2026** — Finalized internal deployment model. All workstations connect to a shared
-network PostgreSQL database. User profiles load from the database so new devices require zero
-manual configuration beyond entering the DB connection. macOS support dropped. Auto-refresh
+**Feb 27, 2026** — Switched from PostgreSQL to SQLite on NAS. A single SQLite database file
+lives on the shop's NAS (network-attached storage). All workstations read/write the same file
+over the network share. Eliminates the need to install and maintain a PostgreSQL server.
+Setup wizard now asks for the NAS path instead of PostgreSQL connection details.
+
+**Feb 26, 2026** — Finalized internal deployment model. macOS support dropped. Auto-refresh
 added as a goal so workcenter displays always show current data.
 
 **Feb 23, 2026** — Scrapped commercial product plan. BPERP is internal-only for Bray Precision.
@@ -20,18 +23,25 @@ All licensing, legal, auto-updater, and multi-tenant work permanently dropped.
 
 ## Deployment Model
 
-All workstations (Windows and Linux) run the Electron desktop app. Each app connects to a
-single shared PostgreSQL server on the local network. There is no local database. User
-accounts, permissions, and appearance settings are stored in PostgreSQL and loaded on login.
-Setting up a new device means installing the app and pointing it at the network database.
+All workstations (Windows and Linux) run the Electron desktop app. Each app reads and writes
+a single shared SQLite database file stored on the shop's NAS. There is no database server to
+install or maintain. User accounts, permissions, and appearance settings are stored in the
+SQLite database and loaded on login. Setting up a new device means installing the app and
+pointing it at the NAS database path (e.g. `\\NAS\bperp\bperp.db` or `/mnt/nas/bperp/bperp.db`).
 
 ```
 Workstations (Windows/Linux)
-    ↓ connect to
-Shared PostgreSQL Server (network host)
-    ↓ serves
+    ↓ read/write
+SQLite Database File on NAS (shared network storage)
+    ↓ contains
 All data: users, inventory, sales, tasks, workcenters, maintenance
 ```
+
+**Important considerations for SQLite on NAS:**
+- SQLite supports multiple concurrent readers but only one writer at a time
+- WAL (Write-Ahead Logging) mode improves concurrent access but may not work over all network filesystems
+- The app should use appropriate busy timeouts and retry logic for write contention
+- Backups are simple: copy the `.db` file (while no writes are active)
 
 ---
 
@@ -44,9 +54,9 @@ All data: users, inventory, sales, tasks, workcenters, maintenance
 - [x] Input validation with Zod (`backend/middleware/validation.js`)
 - [x] Demo mode password bypass removed
 
-### Phase 2: Architecture — COMPLETE
-- [x] All routes migrated from in-memory to PostgreSQL
-- [x] Database migration system (`backend/migrations/migrate.js`)
+### Phase 2: Architecture — COMPLETE (needs rework for SQLite)
+- [x] All routes migrated from in-memory to PostgreSQL (must be converted to SQLite)
+- [x] Database migration system (`backend/migrations/migrate.js`) (must be adapted for SQLite)
 - [x] TypeScript foundation (types, middleware converted — not actively migrating)
 - [x] Shared middleware directory
 
@@ -72,33 +82,42 @@ All data: users, inventory, sales, tasks, workcenters, maintenance
 
 ## What's Left
 
-### Priority 1 — Deploy
+### Priority 1 — SQLite Migration
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Replace `pg` with `better-sqlite3` in backend | NOT DONE | Swap connection pool for SQLite file handle |
+| Convert all SQL queries from PostgreSQL to SQLite | NOT DONE | `$1` params → `?`, remove PG-specific syntax (RETURNING, etc.) |
+| Adapt migration system for SQLite | NOT DONE | `backend/migrations/migrate.js` — use SQLite DDL |
+| Rewrite initial migration for SQLite schema | NOT DONE | `backend/migrations/scripts/` |
+| Add busy timeout and retry logic for write contention | NOT DONE | SQLite allows one writer at a time |
+| Update setup wizard to ask for NAS path | NOT DONE | Browse for folder / enter UNC path instead of PG credentials |
+| Update `.env.example` for SQLite config | NOT DONE | `DB_PATH` instead of PG host/port/user/password |
+
+### Priority 2 — Deploy
 
 | Task | Status | Notes |
 |------|--------|-------|
 | Build Windows installer | NOT DONE | `npx electron-builder --win --publish never` |
 | Test Windows installer end-to-end | NOT DONE | Setup wizard, backend start, all modules |
-| Create production `.env` | NOT DONE | Copy from `backend/.env.example`, use network DB host |
-| Run migrations on production DB | NOT DONE | `cd backend && npm run migrate` |
 | Import existing shop data | NOT DONE | Use CSV import (Settings > Data Import) |
+| Test multi-device workflow | NOT DONE | Two machines, same NAS DB file, verify data syncs |
 
-### Priority 2 — Network & Multi-Device
+### Priority 3 — Network & Multi-Device
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Auto-refresh data on workstations | NOT DONE | Polling or WebSocket so workcenter displays stay current |
-| User profiles load from DB on login | PARTIAL | Appearance settings and permissions already in DB; verify new device experience |
-| Setup wizard: network DB only | NOT DONE | Remove embedded/SQLite options, focus on entering network host/port/credentials |
-| Test multi-device workflow | NOT DONE | Two machines, same DB, verify data syncs |
+| Auto-refresh data on workstations | NOT DONE | Polling so workcenter displays stay current |
+| User profiles load from DB on login | PARTIAL | Verify new device experience with SQLite on NAS |
 
-### Priority 3 — Fix Known Gaps
+### Priority 4 — Fix Known Gaps
 
 | Task | Status | Files |
 |------|--------|-------|
-| Backup/Restore: use `pg_dump` | NOT DONE | `electron/main.js`, `frontend/js/modules/common.js` |
+| Backup/Restore: copy SQLite file | NOT DONE | Simple file copy instead of pg_dump |
 | Wire up cross-module search | NOT DONE | `frontend/js/modules/search.js`, `frontend/js/app.js` |
 
-### Priority 4 — Polish (As Time Allows)
+### Priority 5 — Polish (As Time Allows)
 
 | Task | Notes |
 |------|-------|
@@ -124,6 +143,7 @@ These items are no longer relevant:
 - ~~User manual / installation guide for external customers~~
 - ~~macOS support~~
 - ~~Commercial distribution / resale~~
+- ~~PostgreSQL as database~~ (replaced by SQLite on NAS, Feb 27)
 
 ---
 
@@ -136,7 +156,7 @@ Express Backend (backend/server.js on localhost:3000)
     ├── Routes: customers, inventory, tasks, users, workcenters, maintenance, etc.
     ├── Middleware: auth, rate limiting, validation
     ├── Migrations: schema versioning
-    └── Database: PostgreSQL (network host — shared by all workstations)
+    └── Database: SQLite file on NAS (shared by all workstations)
         ↓ Serves static
 Vanilla Frontend (frontend/index.html + ES6 modules)
     ├── Modules: inventory, sales, tasks, users, storage, search, maintenance
@@ -167,7 +187,7 @@ cd backend && npm run dev          # Start backend with auto-reload
 npm start                          # Run Electron app
 
 # Database
-cd backend && npm run migrate      # Run migrations
+cd backend && npm run migrate      # Run migrations (needs SQLite adaptation)
 cd backend && npm run migrate:status  # Check status
 
 # Testing
