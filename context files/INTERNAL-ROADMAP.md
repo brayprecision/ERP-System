@@ -86,19 +86,20 @@ All data: users, inventory, sales, tasks, workcenters, maintenance
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Replace `pg` with `better-sqlite3` in backend | NOT DONE | Swap connection pool for SQLite file handle |
-| Convert all SQL queries from PostgreSQL to SQLite | NOT DONE | `$1` params → `?`, remove PG-specific syntax (RETURNING, etc.) |
-| Adapt migration system for SQLite | NOT DONE | `backend/migrations/migrate.js` — use SQLite DDL |
-| Rewrite initial migration for SQLite schema | NOT DONE | `backend/migrations/scripts/` |
-| Add busy timeout and retry logic for write contention | NOT DONE | SQLite allows one writer at a time |
-| Update setup wizard to ask for NAS path | NOT DONE | Browse for folder / enter UNC path instead of PG credentials |
-| Update `.env.example` for SQLite config | NOT DONE | `DB_PATH` instead of PG host/port/user/password |
+| Replace `pg` with `better-sqlite3` in backend | DONE | `backend/db.js` wrapper with PG-compatible interface |
+| Convert all SQL queries from PostgreSQL to SQLite | DONE | `db.js` translates $N params, ILIKE, NOW(), RETURNING, etc. |
+| Adapt migration system for SQLite | DONE | `backend/migrations/migrate.js` updated for SQLite |
+| Rewrite initial migration for SQLite schema | DONE | `backend/migrations/scripts/` |
+| Add busy timeout and retry logic for write contention | DONE | WAL mode + 5000ms busy_timeout in `db.js` |
+| Update setup wizard to ask for NAS path | DONE | Browse for folder / enter path instead of PG credentials |
+| Update `.env.example` for SQLite config | DONE | `DB_PATH` instead of PG host/port/user/password |
+| Clean up obsolete PG/macOS files | DONE | Removed database/*.sql, backend/src/, shell scripts, pg dep |
 
 ### Priority 2 — Deploy
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Build Windows installer | NOT DONE | `npx electron-builder --win --publish never` |
+| Build Windows installer | IN PROGRESS | Builds but native modules (`better-sqlite3`, `bcrypt`) need `electron-rebuild --version 28.3.3` in `backend/` before packaging |
 | Test Windows installer end-to-end | NOT DONE | Setup wizard, backend start, all modules |
 | Import existing shop data | NOT DONE | Use CSV import (Settings > Data Import) |
 | Test multi-device workflow | NOT DONE | Two machines, same NAS DB file, verify data syncs |
@@ -170,12 +171,12 @@ Vanilla Frontend (frontend/index.html + ES6 modules)
 | Backend entry | `backend/server.js` |
 | API routes | `backend/routes/*.js` |
 | Middleware | `backend/middleware/*.js` |
-| Type definitions | `backend/src/types/index.ts` |
+| DB wrapper | `backend/db.js` |
 | Frontend entry | `frontend/js/app.js` |
 | Frontend modules | `frontend/js/modules/*.js` |
 | Electron main | `electron/main.js` |
 | Setup wizard | `electron/setup-wizard/` |
-| Database schemas | `database/*.sql` |
+| Migrations | `backend/migrations/scripts/` |
 | Build config | `package.json` (build section) |
 | Env config | `backend/.env.example` |
 

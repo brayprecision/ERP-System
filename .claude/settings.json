@@ -29,7 +29,9 @@
       "Bash(timeout 8 node server.js)",
       "Bash(node migrations/migrate.js status)",
       "Bash(timeout 10 node server.js)",
-      "Bash(grep -l \"\\\\.ts\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\middleware\"* \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\routes\"*)"
+      "Bash(grep -l \"\\\\.ts\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\middleware\"* \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\routes\"*)",
+      "Bash(magick --version)",
+      "Bash(npx electron-rebuild --version 28.3.3 --module-dir .)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Documents-GitHub-ERP-System\\memory"

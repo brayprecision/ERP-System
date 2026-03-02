@@ -1,52 +1,48 @@
 /**
  * Test Database Helper
- * Provides a test database pool and utilities for testing
+ * Provides a test database connection and utilities for testing
+ * Uses the same db.js wrapper as the main app for consistency
  */
 
-const { Pool } = require('pg');
+const path = require('path');
+const { initDb, getDb, closeDb, pool } = require('../../db');
 
-let pool;
+let initialized = false;
 
 /**
- * Get or create test database pool
+ * Get or initialize test database
  */
 function getPool() {
-    if (!pool) {
-        pool = new Pool({
-            user: process.env.DB_USER || 'postgres',
-            host: process.env.DB_HOST || 'localhost',
-            database: process.env.DB_NAME || 'airshop_test',
-            password: process.env.DB_PASSWORD || 'password',
-            port: process.env.DB_PORT || 5432,
-        });
+    if (!initialized) {
+        const dbPath = process.env.DB_PATH || path.join(__dirname, '../../bperp_test.db');
+        initDb(dbPath);
+        initialized = true;
     }
     return pool;
 }
 
 /**
- * Close database pool
+ * Close database connection
  */
 async function closePool() {
-    if (pool) {
-        await pool.end();
-        pool = null;
+    if (initialized) {
+        closeDb();
+        initialized = false;
     }
 }
 
 /**
  * Clear test data from specified tables
- * @param {string[]} tables - Array of table names to clear
+ * @param {string|string[]} tables - Table name(s) to clear
  */
 async function clearTables(tables) {
     const testPool = getPool();
-    // Handle both array and spread arguments
     const tableList = Array.isArray(tables) ? tables : [tables];
     for (const table of tableList) {
         try {
-            await testPool.query(`DELETE FROM ${table}`);
+            testPool.query(`DELETE FROM ${table}`);
         } catch (err) {
-            // Table might not exist in test DB, that's ok
-            if (!err.message.includes('does not exist')) {
+            if (!err.message.includes('no such table')) {
                 console.warn(`Warning clearing ${table}:`, err.message);
             }
         }
@@ -61,8 +57,8 @@ async function insertFixture(table, data) {
     const keys = Object.keys(data);
     const values = Object.values(data);
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-    
-    const result = await testPool.query(
+
+    const result = testPool.query(
         `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) RETURNING *`,
         values
     );
@@ -75,7 +71,7 @@ async function insertFixture(table, data) {
 async function createTestUser(userData = {}) {
     const bcrypt = require('bcrypt');
     const testPool = getPool();
-    
+
     const defaultUser = {
         username: 'testuser',
         name: 'Test User',
@@ -83,17 +79,17 @@ async function createTestUser(userData = {}) {
         password: 'testpassword123',
         role: 'Operator'
     };
-    
+
     const user = { ...defaultUser, ...userData };
     const passwordHash = await bcrypt.hash(user.password, 10);
-    
-    const result = await testPool.query(`
+
+    const result = testPool.query(`
         INSERT INTO users (username, name, email, password_hash, role, is_active)
-        VALUES ($1, $2, $3, $4, $5, TRUE)
+        VALUES ($1, $2, $3, $4, $5, 1)
         ON CONFLICT (username) DO UPDATE SET name = EXCLUDED.name
         RETURNING *
     `, [user.username, user.name, user.email, passwordHash, user.role]);
-    
+
     return { ...result.rows[0], plainPassword: user.password };
 }
 
@@ -103,15 +99,15 @@ async function createTestUser(userData = {}) {
 async function createTestSession(userId) {
     const crypto = require('crypto');
     const testPool = getPool();
-    
+
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    
-    await testPool.query(`
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    testPool.query(`
         INSERT INTO user_sessions (user_id, token, expires_at)
         VALUES ($1, $2, $3)
     `, [userId, token, expiresAt]);
-    
+
     return token;
 }
 

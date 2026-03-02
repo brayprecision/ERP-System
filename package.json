@@ -31,8 +31,7 @@
     "setup": "npm install && npm run backend:install"
   },
   "dependencies": {
-    "electron-store": "^8.2.0",
-    "pg": "^8.11.3"
+    "electron-store": "^8.2.0"
   },
   "devDependencies": {
     "electron": "^28.1.0",
@@ -56,11 +55,6 @@
       "!**/*.map"
     ],
     "extraResources": [
-      {
-        "from": "database/",
-        "to": "database/",
-        "filter": ["**/*.sql"]
-      },
       {
         "from": "backend/",
         "to": "backend/",
@@ -143,9 +137,7 @@
         "xdg-utils",
         "libatspi2.0-0",
         "libuuid1",
-        "libsecret-1-0",
-        "postgresql",
-        "postgresql-contrib"
+        "libsecret-1-0"
       ],
       "priority": "optional",
       "compression": "xz"

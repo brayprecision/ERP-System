@@ -80,9 +80,18 @@ let isQuitting = false;
 
 // Paths
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-const backendPath = isDev 
+const backendPath = isDev
     ? path.join(__dirname, '..', 'backend')
     : path.join(process.resourcesPath, 'backend');
+
+// In packaged builds, native modules live in backend/node_modules inside extraResources.
+// Add that path so require('better-sqlite3') resolves correctly from main process code.
+if (!isDev) {
+    const backendNodeModules = path.join(backendPath, 'node_modules');
+    if (!module.paths.includes(backendNodeModules)) {
+        module.paths.unshift(backendNodeModules);
+    }
+}
 // Frontend is served by the backend, not loaded directly in production
 const frontendPath = isDev
     ? path.join(__dirname, '..', 'frontend')

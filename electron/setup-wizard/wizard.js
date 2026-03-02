@@ -192,10 +192,10 @@ async function browsePath() {
     if (window.electronAPI && window.electronAPI.browseDatabasePath) {
         try {
             const result = await window.electronAPI.browseDatabasePath();
-            if (result) {
+            if (result && !result.canceled) {
                 const pathInput = document.getElementById('dbPath');
-                pathInput.value = result;
-                config.database.path = result;
+                pathInput.value = result.path;
+                config.database.path = result.path;
                 pathTested = false;
                 clearFieldError('dbPath');
                 updateConnectionStatusReset();
