@@ -2,7 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const { pool, initDb } = require('./db');
 const fs = require('fs');
 const path = require('path');
 
@@ -29,23 +29,8 @@ app.use(express.json({ limit: '10mb' })); // Limit request body size
 app.use('/api/', apiLimiter);
 
 // Database Connection Configuration
-const pool = new Pool({
-    user: process.env.DB_USER || 'postgres',
-    host: process.env.DB_HOST || 'localhost',
-    database: process.env.DB_NAME || 'airshop',
-    password: process.env.DB_PASSWORD || 'password',
-    port: process.env.DB_PORT || 5432,
-});
-
-// Test database connection
-pool.connect((err, client, release) => {
-    if (err) {
-        console.error('Error connecting to database:', err.stack);
-    } else {
-        console.log('Connected to PostgreSQL database');
-        release();
-    }
-});
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'bperp.db');
+initDb(dbPath);
 
 // Import routes
 const inventoryRoutes = require('./routes/inventory')(pool);
@@ -54,7 +39,7 @@ const quoteRoutes = require('./routes/quotes')(pool);
 const workOrderRoutes = require('./routes/workorders')(pool);
 const usersRoutes = require('./routes/users')(pool);
 
-// Tasks module routes (now using PostgreSQL)
+// Tasks module routes
 const tasksRoutes = require('./routes/tasks')(pool);
 const workcentersRoutes = require('./routes/workcenters')(pool);
 const machinesRoutes = require('./routes/machines')(pool);
@@ -73,7 +58,7 @@ app.use('/api/quotes', quoteRoutes);
 app.use('/api/work-orders', workOrderRoutes);
 app.use('/api/users', usersRoutes);
 
-// Tasks module routes (now using PostgreSQL)
+// Tasks module routes
 app.use('/api/tasks', tasksRoutes);
 app.use('/api/workcenters', workcentersRoutes);
 app.use('/api/machines', machinesRoutes);
@@ -253,7 +238,7 @@ app.post('/api/setup/init', async (req, res) => {
         });
     } catch (err) {
         console.error('Setup init error:', err);
-        if (err.code === '23505') {
+        if (err.code === '23505' || err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err.message && err.message.includes('UNIQUE constraint failed'))) {
             return res.status(400).json({ success: false, error: 'Username or email already exists' });
         }
         res.status(500).json({ success: false, error: 'Server error: ' + err.message });

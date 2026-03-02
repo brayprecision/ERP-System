@@ -18,23 +18,23 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 - Electron Desktop App (Windows & Linux)
 
 ### Known Issues
-- **Backup/Restore** only saves browser localStorage, not a real PostgreSQL dump
+- **Backup/Restore** only saves browser localStorage, not a real database backup (should be a simple file copy of the SQLite DB)
 - **Search** module exists but cross-module search isn't fully wired
 
 ### TODO (pick up here)
 1. Build and test the Windows installer: `npx electron-builder --win --publish never`
-2. Create `backend/.env` from `backend/.env.example` with real DB credentials
+2. Create `backend/.env` from `backend/.env.example` with `DB_PATH` pointing to the NAS
 3. Run `cd backend && npm run migrate` on the target machine
 4. Import shop data via CSV import (Settings > Data Import)
-5. Fix Backup/Restore to use `pg_dump` via Electron IPC
+5. Fix Backup/Restore to copy the SQLite DB file via Electron IPC
 6. Wire up cross-module search in `frontend/js/modules/search.js`
 7. Implement auto-refresh so workcenter displays show current data
 8. Ensure user profiles (appearance, permissions) load from database on login — no manual setup on new devices
 
 ## Architecture
 
-### Network Database Model
-All workstations connect to a single shared PostgreSQL server on the local network. There is no local database — every device pulls from the same source of truth. When a new device is set up, the installer only needs the network database connection details. User profiles, permissions, and appearance settings are stored in the database and loaded automatically on login.
+### Shared SQLite on NAS
+All workstations share a single SQLite database file hosted on the shop's NAS. There is no database server to install or maintain — just a file on a network share. When a new device is set up, the installer only needs the NAS database path. User profiles, permissions, and appearance settings are stored in the database and loaded automatically on login.
 
 ```
 ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
@@ -46,9 +46,9 @@ All workstations connect to a single shared PostgreSQL server on the local netwo
        └──────────┬───────┴──────────────────┘
                   │
          ┌────────▼────────┐
-         │  PostgreSQL DB   │
-         │  (Network Host)  │
-         │  All shared data │
+         │   NAS / Share    │
+         │   bperp.db       │
+         │  (SQLite file)   │
          └─────────────────┘
 ```
 
@@ -58,7 +58,7 @@ The app should auto-refresh data so each workcenter always displays current info
 ## Tech Stack
 
 - **Backend**: Node.js + Express.js (port 3000)
-- **Database**: PostgreSQL (40+ tables, shared across all devices on the network)
+- **Database**: SQLite via `better-sqlite3` (single `.db` file on NAS, shared across all devices)
 - **Frontend**: Vanilla JavaScript (ES6 Modules) + Tailwind CSS (no build step)
 - **Desktop**: Electron (Windows & Linux only)
 - **Auth**: Token-based with bcrypt password hashing
@@ -68,7 +68,6 @@ The app should auto-refresh data so each workcenter always displays current info
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL 14+ (accessible on the network)
 
 ### Setup
 
@@ -79,7 +78,7 @@ npm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your network database credentials
+# Edit .env — set DB_PATH to the SQLite database location
 
 # Run migrations
 npm run migrate
@@ -112,32 +111,31 @@ npx electron-builder --linux AppImage --publish never  # Linux AppImage
 ```
 ERP-System/
 ├── backend/
-│   ├── middleware/      # Auth, validation, rate limiting
-│   ├── migrations/      # Database migration scripts
-│   ├── routes/          # API route handlers (11 modules)
-│   ├── tests/           # Jest test suites
-│   ├── server.js        # Express app entry point
-│   └── .env.example     # Environment config template
+│   ├── db.js            # SQLite wrapper (PostgreSQL-compatible interface)
+│   ├── middleware/       # Auth, validation, rate limiting
+│   ├── migrations/       # Database migration scripts (SQLite)
+│   ├── routes/           # API route handlers (11 modules)
+│   ├── tests/            # Jest test suites
+│   ├── server.js         # Express app entry point
+│   └── .env.example      # Environment config template
 ├── frontend/
-│   ├── js/modules/      # ES6 modules (app, sales, tasks, inventory, etc.)
-│   ├── css/             # Tailwind CSS customizations
-│   └── index.html       # SPA entry point
+│   ├── js/modules/       # ES6 modules (app, sales, tasks, inventory, etc.)
+│   ├── css/              # Tailwind CSS customizations
+│   └── index.html        # SPA entry point
 ├── electron/
-│   ├── main.js          # Electron main process
-│   ├── preload.js       # Secure IPC bridge
-│   └── setup-wizard/    # First-run setup UI
-├── database/
-│   └── *.sql            # Schema reference files
-└── package.json         # Electron-builder config
+│   ├── main.js           # Electron main process
+│   ├── preload.js        # Secure IPC bridge
+│   └── setup-wizard/     # First-run setup UI
+└── package.json          # Electron-builder config
 ```
 
 ## New Device Setup
 
 1. Install BPERP using the Windows or Linux installer
-2. On first launch, the setup wizard asks for the network database connection details
-3. The app connects to the shared PostgreSQL server, runs any pending migrations
+2. On first launch, the setup wizard asks for the NAS database path
+3. The app opens the shared SQLite database and runs any pending migrations
 4. User logs in — their profile, permissions, and appearance settings load automatically from the database
-5. No manual configuration needed beyond the database connection
+5. No manual configuration needed beyond the database path
 
 ## API Endpoints
 

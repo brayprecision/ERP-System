@@ -23,7 +23,13 @@
       "Bash(# The Windows convert command is NOT ImageMagick - it''s a disk utility # Check if we have npm packages that can help which npx && echo \"\"npx available\"\" # Check for sharp or png-to-ico npm list -g)",
       "Bash(wc -l /c/Users/Admin/Documents/GitHub/ERP-System/database/*.sql)",
       "Bash(wc -l /c/Users/Admin/Documents/GitHub/ERP-System/frontend/js/modules/*.js)",
-      "Bash(wc -l /c/Users/Admin/Documents/GitHub/ERP-System/backend/routes/*.js)"
+      "Bash(wc -l /c/Users/Admin/Documents/GitHub/ERP-System/backend/routes/*.js)",
+      "Bash(wc -l backend/routes/*.js)",
+      "Bash(node migrations/migrate.js up)",
+      "Bash(timeout 8 node server.js)",
+      "Bash(node migrations/migrate.js status)",
+      "Bash(timeout 10 node server.js)",
+      "Bash(grep -l \"\\\\.ts\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\middleware\"* \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\routes\"*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Documents-GitHub-ERP-System\\memory"

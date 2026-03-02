@@ -1,13 +1,12 @@
 # BPERP Backend
 
-Express.js API server for the BPERP ERP system. All workstations share a single PostgreSQL database on the network.
+Express.js API server for the BPERP ERP system. All workstations share a single SQLite database file on the NAS.
 
 ## Setup
 
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL 14+ (on the network — all devices connect to the same database)
 
 ### Installation
 
@@ -20,12 +19,9 @@ npm install
 Create a `.env` file:
 
 ```env
-# Database (network host — shared by all workstations)
-DB_HOST=192.168.1.x
-DB_PORT=5432
-DB_NAME=bperp
-DB_USER=postgres
-DB_PASSWORD=your_password
+# Database — path to the shared SQLite file on the NAS
+# All workstations point to the same file
+DB_PATH=//NAS/share/bperp.db
 
 # Server
 PORT=3000
@@ -34,6 +30,8 @@ NODE_ENV=development
 # Session
 SESSION_TIMEOUT_HOURS=24
 ```
+
+If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend directory (useful for local development).
 
 ### Database Setup
 
@@ -106,8 +104,7 @@ backend/
 │   ├── users.js
 │   ├── workcenters.js
 │   └── workorders.js
-├── src/                 # TypeScript types (reference only)
-│   └── types/           # Type definitions
+├── db.js                # SQLite wrapper (PostgreSQL-compatible query interface)
 ├── tests/
 │   ├── setup.js         # Jest setup
 │   ├── helpers/         # Test utilities
@@ -240,10 +237,6 @@ router.post('/login', validateBody(schemas.login), handler);
 router.post('/customers', validateBody(schemas.customer), handler);
 ```
 
-## TypeScript (Reference Only)
-
-Type definitions exist in `src/types/` for reference but TypeScript migration is not a priority. All active routes are JavaScript.
-
 ## Testing
 
 ### Test Types
@@ -251,12 +244,11 @@ Type definitions exist in `src/types/` for reference but TypeScript migration is
 **Unit Tests (No Database Required)**
 - Validation schema tests
 - Import helper function tests
-- Can run without PostgreSQL
 
-**Integration Tests (Database Required)**  
+**Integration Tests (Database Required)**
 - API endpoint tests
 - Authentication flow tests
-- Requires running PostgreSQL with test database
+- Uses a temporary SQLite database (no external setup needed)
 
 ### Running Tests
 
@@ -264,7 +256,7 @@ Type definitions exist in `src/types/` for reference but TypeScript migration is
 # Unit tests only (no database needed)
 npm test -- tests/middleware/validation.test.js tests/unit/
 
-# All tests (requires database)
+# All tests
 npm test
 
 # With coverage
@@ -279,17 +271,9 @@ npm test -- tests/routes/import.test.js
 
 ### Test Database Setup
 
-For integration tests, create a test database:
-
-```sql
-CREATE DATABASE bperp_test;
-```
-
 Configure `.env.test`:
 ```env
-DB_NAME=bperp_test
-DB_USER=postgres
-DB_PASSWORD=your_password
+DB_PATH=./bperp_test.db
 ```
 
 Run migrations on test database:
@@ -340,13 +324,15 @@ This creates a file like `migrations/scripts/20260129_123456_add_new_feature.js`
 
 ```javascript
 module.exports = {
-    up: async (pool) => {
-        await pool.query(`
-            ALTER TABLE customers ADD COLUMN new_field VARCHAR(100);
+    up(client) {
+        client.query(`
+            ALTER TABLE customers ADD COLUMN new_field TEXT;
         `);
     },
-    down: async (pool) => {
-        await pool.query(`
+    down(client) {
+        // SQLite doesn't support DROP COLUMN before 3.35.0
+        // For older versions, recreate the table without the column
+        client.query(`
             ALTER TABLE customers DROP COLUMN new_field;
         `);
     }

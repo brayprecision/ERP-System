@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * BPERP Database Migration System
- * 
+ * BPERP Database Migration System (SQLite)
+ *
  * Usage:
  *   node migrations/migrate.js up      - Run all pending migrations
  *   node migrations/migrate.js down    - Rollback last migration
@@ -10,17 +10,12 @@
  */
 
 require('dotenv').config();
-const { Pool } = require('pg');
+const { pool, initDb, closeDb } = require('../db');
 const fs = require('fs');
 const path = require('path');
 
-const pool = new Pool({
-    user: process.env.DB_USER || 'postgres',
-    host: process.env.DB_HOST || 'localhost',
-    database: process.env.DB_NAME || 'airshop',
-    password: process.env.DB_PASSWORD || 'password',
-    port: process.env.DB_PORT || 5432,
-});
+const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'bperp.db');
+initDb(dbPath);
 
 const MIGRATIONS_DIR = path.join(__dirname, 'scripts');
 
@@ -32,12 +27,12 @@ if (!fs.existsSync(MIGRATIONS_DIR)) {
 /**
  * Create migrations tracking table if it doesn't exist
  */
-async function ensureMigrationsTable() {
-    await pool.query(`
+function ensureMigrationsTable() {
+    pool.query(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL UNIQUE,
-            executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            executed_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     `);
 }
@@ -45,8 +40,8 @@ async function ensureMigrationsTable() {
 /**
  * Get list of executed migrations from database
  */
-async function getExecutedMigrations() {
-    const result = await pool.query(
+function getExecutedMigrations() {
+    const result = pool.query(
         'SELECT name FROM schema_migrations ORDER BY id'
     );
     return result.rows.map(r => r.name);
@@ -67,112 +62,108 @@ function getMigrationFiles() {
 /**
  * Run pending migrations
  */
-async function runUp() {
-    await ensureMigrationsTable();
-    
-    const executed = await getExecutedMigrations();
+function runUp() {
+    ensureMigrationsTable();
+
+    const executed = getExecutedMigrations();
     const files = getMigrationFiles();
     const pending = files.filter(f => !executed.includes(f));
-    
+
     if (pending.length === 0) {
         console.log('No pending migrations.');
         return;
     }
-    
+
     console.log(`Running ${pending.length} migration(s)...`);
-    
+
     for (const file of pending) {
         console.log(`  Running: ${file}`);
         const migration = require(path.join(MIGRATIONS_DIR, file));
-        
-        const client = await pool.connect();
+
+        const client = pool.connect();
         try {
-            await client.query('BEGIN');
-            await migration.up(client);
-            await client.query(
-                'INSERT INTO schema_migrations (name) VALUES ($1)',
+            client.query('BEGIN');
+            migration.up(client);
+            client.query(
+                'INSERT INTO schema_migrations (name) VALUES (?)',
                 [file]
             );
-            await client.query('COMMIT');
+            client.query('COMMIT');
             console.log(`  Completed: ${file}`);
         } catch (err) {
-            await client.query('ROLLBACK');
+            client.query('ROLLBACK');
             console.error(`  Failed: ${file}`);
             console.error(`  Error: ${err.message}`);
             throw err;
-        } finally {
-            client.release();
         }
     }
-    
+
     console.log('All migrations completed.');
 }
 
 /**
  * Rollback last migration
  */
-async function runDown() {
-    await ensureMigrationsTable();
-    
-    const executed = await getExecutedMigrations();
-    
+function runDown() {
+    ensureMigrationsTable();
+
+    const executed = getExecutedMigrations();
+
     if (executed.length === 0) {
         console.log('No migrations to rollback.');
         return;
     }
-    
+
     const lastMigration = executed[executed.length - 1];
     console.log(`Rolling back: ${lastMigration}`);
-    
+
     const migration = require(path.join(MIGRATIONS_DIR, lastMigration));
-    
+
     if (!migration.down) {
         console.error('This migration does not support rollback.');
         return;
     }
-    
-    const client = await pool.connect();
+
+    const client = pool.connect();
     try {
-        await client.query('BEGIN');
-        await migration.down(client);
-        await client.query(
-            'DELETE FROM schema_migrations WHERE name = $1',
+        client.query('BEGIN');
+        migration.down(client);
+        client.query(
+            'DELETE FROM schema_migrations WHERE name = ?',
             [lastMigration]
         );
-        await client.query('COMMIT');
+        client.query('COMMIT');
         console.log(`Rolled back: ${lastMigration}`);
     } catch (err) {
-        await client.query('ROLLBACK');
+        client.query('ROLLBACK');
         console.error(`Failed to rollback: ${lastMigration}`);
         console.error(`Error: ${err.message}`);
         throw err;
-    } finally {
-        client.release();
     }
 }
 
 /**
  * Show migration status
  */
-async function showStatus() {
-    await ensureMigrationsTable();
-    
-    const executed = await getExecutedMigrations();
+function showStatus() {
+    ensureMigrationsTable();
+
+    const executed = getExecutedMigrations();
     const files = getMigrationFiles();
-    
+
     console.log('\nMigration Status:');
     console.log('=================\n');
-    
+
     if (files.length === 0) {
         console.log('No migration files found.');
         return;
     }
-    
+
     for (const file of files) {
         const status = executed.includes(file) ? '✓ executed' : '○ pending';
         console.log(`  ${status}  ${file}`);
     }
-    
+
     const pending = files.filter(f => !executed.includes(f));
     console.log(`\nTotal: ${files.length} | Executed: ${executed.length} | Pending: ${pending.length}`);
 }
@@ -185,15 +176,15 @@ function createMigration(name) {
         console.error('Please provide a migration name.');
         process.exit(1);
     }
-    
+
     const timestamp = new Date().toISOString()
         .replace(/[-:]/g, '')
         .replace('T', '_')
         .substring(0, 15);
-    
+
     const filename = `${timestamp}_${name.toLowerCase().replace(/\s+/g, '_')}.js`;
     const filepath = path.join(MIGRATIONS_DIR, filename);
-    
+
     const template = `/**
  * Migration: ${name}
  * Created: ${new Date().toISOString()}
@@ -202,48 +193,48 @@ function createMigration(name) {
 module.exports = {
     /**
      * Run the migration
-     * @param {import('pg').PoolClient} client
+     * @param {Object} client - Database client with query() method
      */
-    async up(client) {
+    up(client) {
         // Add your migration SQL here
-        // await client.query(\`
-        //     CREATE TABLE example (
-        //         id SERIAL PRIMARY KEY,
-        //         name VARCHAR(100) NOT NULL
+        // client.query(\`
+        //     CREATE TABLE IF NOT EXISTS example (
+        //         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        //         name TEXT NOT NULL
         //     )
         // \`);
     },
 
     /**
      * Rollback the migration (optional but recommended)
-     * @param {import('pg').PoolClient} client
+     * @param {Object} client - Database client with query() method
      */
-    async down(client) {
+    down(client) {
         // Add your rollback SQL here
-        // await client.query('DROP TABLE IF EXISTS example');
+        // client.query('DROP TABLE IF EXISTS example');
     }
 };
 `;
-    
+
     fs.writeFileSync(filepath, template);
     console.log(`Created: ${filepath}`);
 }
 
 // Main
-async function main() {
+function main() {
     const command = process.argv[2];
     const arg = process.argv[3];
-    
+
     try {
         switch (command) {
             case 'up':
-                await runUp();
+                runUp();
                 break;
             case 'down':
-                await runDown();
+                runDown();
                 break;
             case 'status':
-                await showStatus();
+                showStatus();
                 break;
             case 'create':
                 createMigration(arg);
@@ -261,7 +252,7 @@ async function main() {
         console.error('Migration failed:', err.message);
         process.exit(1);
     } finally {
-        await pool.end();
+        closeDb();
     }
 }
 

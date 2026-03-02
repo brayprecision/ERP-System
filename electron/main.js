@@ -56,12 +56,8 @@ const store = new Store({
     defaults: {
         firstRun: true,
         database: {
-            type: 'embedded', // 'embedded', 'external', 'sqlite'
-            host: 'localhost',
-            port: 5433,
-            name: 'bperp',
-            user: 'bperp',
-            password: ''
+            type: 'sqlite',
+            path: ''
         },
         window: {
             width: 1280,
@@ -315,16 +311,12 @@ function createTray() {
 // ==================== BACKEND MANAGEMENT ====================
 function getBackendEnv() {
     const dbConfig = store.get('database');
-    
+
     return {
         ...process.env,
         NODE_ENV: isDev ? 'development' : 'production',
         PORT: store.get('server.port'),
-        DB_HOST: dbConfig.host,
-        DB_PORT: dbConfig.port.toString(),
-        DB_NAME: dbConfig.name,
-        DB_USER: dbConfig.user,
-        DB_PASSWORD: dbConfig.password
+        DB_PATH: dbConfig.path || ''
     };
 }
 
@@ -451,30 +443,81 @@ function setupIpcHandlers() {
         return true;
     });
     
-    // Database
+    // Database - SQLite path testing
     ipcMain.handle('test-db-connection', async (event, config) => {
-        log('info', 'Testing database connection...');
-        log('info', `Host: ${config.host}, Port: ${config.port}, DB: ${config.name}, User: ${config.user}`);
-        
+        const dbPath = config.path || config;
+        log('info', 'Testing database path: ' + dbPath);
+
         try {
-            const { Client } = require('pg');
-            const client = new Client({
-                host: config.host,
-                port: config.port,
-                database: config.name || 'postgres',
-                user: config.user,
-                password: config.password,
-                connectionTimeoutMillis: 5000
-            });
-            
-            await client.connect();
-            log('info', 'Database connected, testing query...');
-            await client.query('SELECT 1');
-            await client.end();
-            log('info', 'Database connection successful');
+            const Database = require('better-sqlite3');
+            const dir = require('path').dirname(dbPath);
+
+            // Ensure parent directory exists
+            if (!fs.existsSync(dir)) {
+                return { success: false, error: `Directory does not exist: ${dir}` };
+            }
+
+            // Test opening the database
+            const testDb = new Database(dbPath);
+            testDb.pragma('journal_mode = WAL');
+            testDb.exec('SELECT 1');
+            testDb.close();
+
+            log('info', 'Database path test successful');
             return { success: true };
         } catch (error) {
-            log('error', 'Database connection failed: ' + error.message);
+            log('error', 'Database path test failed: ' + error.message);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // Browse for database path (NAS folder)
+    ipcMain.handle('browse-database-path', async () => {
+        const result = await dialog.showOpenDialog({
+            title: 'Select Database Location',
+            properties: ['openDirectory'],
+            buttonLabel: 'Select Folder'
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+            return { canceled: true, path: '' };
+        }
+
+        const selectedDir = result.filePaths[0];
+        const dbPath = path.join(selectedDir, 'bperp.db');
+        return { canceled: false, path: dbPath };
+    });
+
+    // Test database path accessibility
+    ipcMain.handle('test-database-path', async (event, dbPath) => {
+        log('info', 'Testing database path: ' + dbPath);
+
+        try {
+            const dir = path.dirname(dbPath);
+
+            // Check directory exists
+            if (!fs.existsSync(dir)) {
+                return { success: false, error: `Directory does not exist: ${dir}` };
+            }
+
+            // Check directory is writable
+            try {
+                fs.accessSync(dir, fs.constants.W_OK);
+            } catch (e) {
+                return { success: false, error: `Directory is not writable: ${dir}` };
+            }
+
+            // Try opening/creating the database
+            const Database = require('better-sqlite3');
+            const testDb = new Database(dbPath);
+            testDb.pragma('journal_mode = WAL');
+            testDb.exec('SELECT 1');
+            testDb.close();
+
+            log('info', 'Database path test successful');
+            return { success: true };
+        } catch (error) {
+            log('error', 'Database path test failed: ' + error.message);
             return { success: false, error: error.message };
         }
     });
@@ -651,7 +694,7 @@ function setupIpcHandlers() {
             // Show error dialog
             dialog.showErrorBox(
                 'Startup Error',
-                `Failed to start BPERP:\n\n${error.message}\n\nThis usually means the database is not accessible.\n\nPlease ensure PostgreSQL is running and your connection settings are correct.`
+                `Failed to start BPERP:\n\n${error.message}\n\nThis usually means the database file is not accessible.\n\nPlease ensure the NAS path is reachable and your database path is correct.`
             );
             
             // Show setup wizard again

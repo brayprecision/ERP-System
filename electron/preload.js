@@ -38,19 +38,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setConfigValue: (key, value) => ipcRenderer.invoke('set-config-value', key, value),
     
     // ==================== DATABASE ====================
-    
+
     /**
-     * Test database connection
-     * @param {Object} config - Database configuration
-     * @param {string} config.host - Database host
-     * @param {number} config.port - Database port
-     * @param {string} config.name - Database name
-     * @param {string} config.user - Database user
-     * @param {string} config.password - Database password
+     * Test database connection (SQLite path)
+     * @param {Object|string} config - Database path or config object with .path
      * @returns {Promise<{success: boolean, error?: string}>} Connection result
      */
     testConnection: (config) => ipcRenderer.invoke('test-db-connection', config),
-    
+
+    /**
+     * Browse for database folder (opens native dialog)
+     * @returns {Promise<{canceled: boolean, path: string}>} Selected path
+     */
+    browseDatabasePath: () => ipcRenderer.invoke('browse-database-path'),
+
+    /**
+     * Test database path accessibility and write permissions
+     * @param {string} dbPath - Full path to the database file
+     * @returns {Promise<{success: boolean, error?: string}>} Test result
+     */
+    testDatabasePath: (dbPath) => ipcRenderer.invoke('test-database-path', dbPath),
+
     /**
      * Run database migrations
      * @returns {Promise<{success: boolean, output: string}>} Migration result
