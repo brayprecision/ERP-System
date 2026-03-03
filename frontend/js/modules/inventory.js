@@ -57,6 +57,21 @@ function getDemoMiscItems() {
     ];
 }
 
+function getDemoProducts() {
+    return [
+        { id: 1, name: 'Widget Assembly A', partNumber: 'WGT-A-001', category: 'Assemblies', quantityOnHand: 10, reorderPoint: 5, supplier: 'Internal', unitPrice: 125.00, bom: [] },
+        { id: 2, name: 'Fixture Kit B', partNumber: 'FIX-B-002', category: 'Kits', quantityOnHand: 3, reorderPoint: 2, supplier: 'Internal', unitPrice: 89.50, bom: [] }
+    ];
+}
+
+function getDemoParts() {
+    return [
+        { id: 1, name: 'Bracket - Steel', partNumber: 'BRK-ST-01', category: 'Hardware', source: 'purchased', quantityOnHand: 50, reorderPoint: 20, supplier: 'Fastenal', unitPrice: 4.25 },
+        { id: 2, name: 'Shaft - 1/2" x 6"', partNumber: 'SFT-050-6', category: 'Components', source: 'manufactured', quantityOnHand: 25, reorderPoint: 10, supplier: 'Internal', unitPrice: 12.00 },
+        { id: 3, name: 'Bushing - Bronze', partNumber: 'BSH-BZ-01', category: 'Hardware', source: 'purchased', quantityOnHand: 30, reorderPoint: 15, supplier: 'McMaster-Carr', unitPrice: 8.50 }
+    ];
+}
+
 // ==================== DATA ACCESS ====================
 export function getMaterials() {
     let data = storage.get(STORAGE_KEYS.MATERIALS);
@@ -81,6 +96,24 @@ export function getMiscItems() {
     if (!data) {
         data = getDemoMiscItems();
         storage.set(STORAGE_KEYS.MISC_ITEMS, data);
+    }
+    return data;
+}
+
+export function getProducts() {
+    let data = storage.get(STORAGE_KEYS.PRODUCTS);
+    if (!data) {
+        data = getDemoProducts();
+        storage.set(STORAGE_KEYS.PRODUCTS, data);
+    }
+    return data;
+}
+
+export function getParts() {
+    let data = storage.get(STORAGE_KEYS.PARTS);
+    if (!data) {
+        data = getDemoParts();
+        storage.set(STORAGE_KEYS.PARTS, data);
     }
     return data;
 }
@@ -298,6 +331,8 @@ function refreshCurrentView() {
         case 'materials': loadMaterialInventory(); break;
         case 'tooling': loadToolingInventory(); break;
         case 'misc': loadMiscInventory(); break;
+        case 'products': loadProductInventory(); break;
+        case 'parts': loadPartsInventory(); break;
     }
 }
 
@@ -338,10 +373,42 @@ export function loadMiscInventory() {
     }, 'loadMiscInventory');
 }
 
+export function loadProductInventory() {
+    inventoryState.currentView = 'products';
+    showLoadingSpinner();
+    
+    safeExecute(() => {
+        const products = getProducts();
+        renderInventoryTable(products, 'Products');
+    }, () => {
+        showToast('Error loading products', 'error');
+    }, 'loadProductInventory');
+}
+
+export function loadPartsInventory() {
+    inventoryState.currentView = 'parts';
+    showLoadingSpinner();
+    
+    safeExecute(() => {
+        const parts = getParts();
+        renderInventoryTable(parts, 'Parts');
+    }, () => {
+        showToast('Error loading parts', 'error');
+    }, 'loadPartsInventory');
+}
+
 // ==================== CRUD OPERATIONS ====================
 export function showAddInventoryModal(type) {
     // Capitalize and singularize the type for display
     const displayType = type.charAt(0).toUpperCase() + type.slice(1).replace(/s$/, '');
+    const sourceField = type === 'parts' ? `
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Source</label>
+                        <select name="source" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                            <option value="purchased">Purchased</option>
+                            <option value="manufactured">Manufactured</option>
+                        </select>
+                    </div>` : '';
     
     const content = `
         <div class="p-6">
@@ -369,6 +436,7 @@ export function showAddInventoryModal(type) {
                         <label class="block text-sm text-gray-400 mb-1">Category</label>
                         <input type="text" name="category" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
+                    ${sourceField}
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Supplier</label>
                         <input type="text" name="supplier" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
@@ -417,11 +485,16 @@ function addInventoryItem(type, data) {
         'materials': STORAGE_KEYS.MATERIALS,
         'tooling': STORAGE_KEYS.TOOLING,
         'miscellaneous': STORAGE_KEYS.MISC_ITEMS,
-        'misc': STORAGE_KEYS.MISC_ITEMS
+        'misc': STORAGE_KEYS.MISC_ITEMS,
+        'products': STORAGE_KEYS.PRODUCTS,
+        'parts': STORAGE_KEYS.PARTS
     };
     
     const key = keyMap[type];
     if (!key) return;
+    
+    if (type === 'products') data.bom = data.bom || [];
+    if (type === 'parts') data.source = data.source || 'purchased';
     
     storage.addItem(key, data);
     closeModal('inventoryModal');
@@ -435,7 +508,9 @@ export function editInventoryItem(type, id) {
         'materials': STORAGE_KEYS.MATERIALS,
         'tooling': STORAGE_KEYS.TOOLING,
         'miscellaneous': STORAGE_KEYS.MISC_ITEMS,
-        'misc': STORAGE_KEYS.MISC_ITEMS
+        'misc': STORAGE_KEYS.MISC_ITEMS,
+        'products': STORAGE_KEYS.PRODUCTS,
+        'parts': STORAGE_KEYS.PARTS
     };
     
     const key = keyMap[type];
@@ -448,6 +523,20 @@ export function editInventoryItem(type, id) {
         return;
     }
     
+    if (type === 'products') {
+        showEditProductModal(item, key);
+        return;
+    }
+    
+    if (type === 'parts') {
+        showEditPartModal(item, key);
+        return;
+    }
+    
+    showEditInventoryModalGeneric(item, key, type);
+}
+
+function showEditInventoryModalGeneric(item, key, type) {
     const content = `
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
@@ -522,13 +611,293 @@ export function editInventoryItem(type, id) {
     });
 }
 
+function showEditPartModal(item, key) {
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-edit mr-2 text-blue-400"></i>Edit Part
+                </h3>
+                <button onclick="BPERP.common.closeModal('inventoryModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="inventoryForm" class="space-y-4">
+                <input type="hidden" name="id" value="${item.id}">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Name *</label>
+                        <input type="text" name="name" required value="${(item.name || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Part Number</label>
+                        <input type="text" name="partNumber" value="${(item.partNumber || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Category</label>
+                        <input type="text" name="category" value="${(item.category || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Source</label>
+                        <select name="source" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                            <option value="purchased" ${(item.source || 'purchased') === 'purchased' ? 'selected' : ''}>Purchased</option>
+                            <option value="manufactured" ${(item.source || 'purchased') === 'manufactured' ? 'selected' : ''}>Manufactured</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Supplier</label>
+                        <input type="text" name="supplier" value="${(item.supplier || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Quantity</label>
+                        <input type="number" name="quantityOnHand" min="0" value="${item.quantityOnHand || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Reorder Point</label>
+                        <input type="number" name="reorderPoint" min="0" value="${item.reorderPoint || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Unit Price</label>
+                        <input type="number" name="unitPrice" min="0" step="0.01" value="${item.unitPrice || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('inventoryModal')" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
+                    <button type="submit" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    `;
+    createModal('inventoryModal', content, { width: 'w-full max-w-lg' });
+    document.getElementById('inventoryForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData);
+        data.id = parseInt(data.id);
+        data.quantityOnHand = parseInt(data.quantityOnHand) || 0;
+        data.reorderPoint = parseInt(data.reorderPoint) || 0;
+        data.unitPrice = parseFloat(data.unitPrice) || 0;
+        data.source = data.source || 'purchased';
+        storage.updateItem(key, data.id, data);
+        closeModal('inventoryModal');
+        showToast('Part updated successfully', 'success');
+        searchCache.clear();
+        refreshCurrentView();
+    });
+}
+
+function showEditProductModal(item, key) {
+    const bom = item.bom || [];
+    const bomRows = bom.map(b => `
+        <tr data-part-id="${b.partId}">
+            <td class="px-3 py-2 text-sm text-white">${(b.partName || '').replace(/</g, '&lt;')}</td>
+            <td class="px-3 py-2 text-sm text-gray-400">${(b.partNumber || '-').replace(/</g, '&lt;')}</td>
+            <td class="px-3 py-2 text-sm text-white">${b.quantityPerAssembly}</td>
+            <td class="px-3 py-2">
+                <button type="button" data-action="remove-bom-part" data-part-id="${b.partId}" class="text-red-400 hover:text-red-300" title="Remove">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-edit mr-2 text-blue-400"></i>Edit Product
+                </h3>
+                <button onclick="BPERP.common.closeModal('inventoryModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="inventoryForm" class="space-y-4">
+                <input type="hidden" name="id" value="${item.id}">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Name *</label>
+                        <input type="text" name="name" required value="${(item.name || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Part Number</label>
+                        <input type="text" name="partNumber" value="${(item.partNumber || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Category</label>
+                        <input type="text" name="category" value="${(item.category || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Supplier</label>
+                        <input type="text" name="supplier" value="${(item.supplier || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Quantity</label>
+                        <input type="number" name="quantityOnHand" min="0" value="${item.quantityOnHand || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Reorder Point</label>
+                        <input type="number" name="reorderPoint" min="0" value="${item.reorderPoint || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Unit Price</label>
+                        <input type="number" name="unitPrice" min="0" step="0.01" value="${item.unitPrice || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-sm text-gray-400">Bill of Materials</label>
+                        <button type="button" id="addBomPartBtn" class="text-sm text-emerald-400 hover:text-emerald-300">
+                            <i class="fa-solid fa-plus mr-1"></i>Add Part
+                        </button>
+                    </div>
+                    <div class="rounded-lg border border-gray-600 overflow-hidden" style="background: var(--color-dark-bg);">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-gray-600">
+                                    <th class="px-3 py-2 text-left text-gray-400">Part</th>
+                                    <th class="px-3 py-2 text-left text-gray-400">Part #</th>
+                                    <th class="px-3 py-2 text-left text-gray-400">Qty/Assembly</th>
+                                    <th class="px-3 py-2 w-10"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="productBomTableBody">
+                                ${bomRows || '<tr><td colspan="4" class="px-3 py-4 text-center text-gray-500">No parts in BOM</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('inventoryModal')" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
+                    <button type="submit" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    `;
+    createModal('inventoryModal', content, { width: 'w-full max-w-2xl' });
+    
+    const bomData = [...bom];
+    
+    function renderBomTable() {
+        const tbody = document.getElementById('productBomTableBody');
+        if (!tbody) return;
+        if (bomData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="px-3 py-4 text-center text-gray-500">No parts in BOM</td></tr>';
+            return;
+        }
+        tbody.innerHTML = bomData.map(b => `
+            <tr data-part-id="${b.partId}">
+                <td class="px-3 py-2 text-sm text-white">${(b.partName || '').replace(/</g, '&lt;')}</td>
+                <td class="px-3 py-2 text-sm text-gray-400">${(b.partNumber || '-').replace(/</g, '&lt;')}</td>
+                <td class="px-3 py-2 text-sm text-white">${b.quantityPerAssembly}</td>
+                <td class="px-3 py-2">
+                    <button type="button" data-action="remove-bom-part" data-part-id="${b.partId}" class="text-red-400 hover:text-red-300" title="Remove">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+        tbody.querySelectorAll('[data-action="remove-bom-part"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const partId = parseInt(btn.dataset.partId);
+                const idx = bomData.findIndex(b => b.partId === partId);
+                if (idx >= 0) bomData.splice(idx, 1);
+                renderBomTable();
+            });
+        });
+    }
+    
+    document.getElementById('addBomPartBtn')?.addEventListener('click', () => {
+        const parts = getParts();
+        const usedIds = new Set(bomData.map(b => b.partId));
+        const available = parts.filter(p => !usedIds.has(p.id));
+        if (available.length === 0) {
+            showToast('No more parts available to add', 'info');
+            return;
+        }
+        const options = available.map(p => 
+            `<option value="${p.id}" data-name="${(p.name || '').replace(/"/g, '&quot;')}" data-pn="${(p.partNumber || '').replace(/"/g, '&quot;')}">${(p.name || '').replace(/</g, '&lt;')} (${(p.partNumber || '-').replace(/</g, '&lt;')})</option>`
+        ).join('');
+        const addContent = `
+            <div class="p-4">
+                <h4 class="text-white font-medium mb-3">Add Part to BOM</h4>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Part</label>
+                        <select id="bomPartSelect" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                            ${options}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Quantity per Assembly</label>
+                        <input type="number" id="bomPartQty" min="0.001" step="0.01" value="1" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-4">
+                    <button type="button" id="bomPartCancel" class="flex-1 bg-gray-600 text-white px-3 py-2 rounded hover:bg-gray-500">Cancel</button>
+                    <button type="button" id="bomPartAdd" class="flex-1 bg-emerald-600 text-white px-3 py-2 rounded hover:bg-emerald-700">Add</button>
+                </div>
+            </div>
+        `;
+        createModal('bomAddModal', addContent, { width: 'w-full max-w-md' });
+        document.getElementById('bomPartAdd')?.addEventListener('click', () => {
+            const select = document.getElementById('bomPartSelect');
+            const qty = parseFloat(document.getElementById('bomPartQty')?.value) || 1;
+            if (!select) return;
+            const opt = select.options[select.selectedIndex];
+            const partId = parseInt(select.value);
+            const partName = opt?.dataset.name || opt?.textContent || '';
+            const partNumber = opt?.dataset.pn || '';
+            bomData.push({ partId, partName, partNumber, quantityPerAssembly: qty });
+            closeModal('bomAddModal');
+            renderBomTable();
+        });
+        document.getElementById('bomPartCancel')?.addEventListener('click', () => closeModal('bomAddModal'));
+    });
+    
+    tbody?.querySelectorAll('[data-action="remove-bom-part"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const partId = parseInt(btn.dataset.partId);
+            const idx = bomData.findIndex(b => b.partId === partId);
+            if (idx >= 0) bomData.splice(idx, 1);
+            renderBomTable();
+        });
+    });
+    
+    document.getElementById('inventoryForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData);
+        data.id = parseInt(data.id);
+        data.quantityOnHand = parseInt(data.quantityOnHand) || 0;
+        data.reorderPoint = parseInt(data.reorderPoint) || 0;
+        data.unitPrice = parseFloat(data.unitPrice) || 0;
+        data.bom = bomData;
+        storage.updateItem(key, data.id, data);
+        closeModal('inventoryModal');
+        showToast('Product updated successfully', 'success');
+        searchCache.clear();
+        refreshCurrentView();
+    });
+}
+
 export function deleteInventoryItem(type, id, name) {
     showDeleteConfirm(name, type, id, () => {
         const keyMap = {
             'materials': STORAGE_KEYS.MATERIALS,
             'tooling': STORAGE_KEYS.TOOLING,
             'miscellaneous': STORAGE_KEYS.MISC_ITEMS,
-            'misc': STORAGE_KEYS.MISC_ITEMS
+            'misc': STORAGE_KEYS.MISC_ITEMS,
+            'products': STORAGE_KEYS.PRODUCTS,
+            'parts': STORAGE_KEYS.PARTS
         };
         
         const key = keyMap[type];
@@ -546,7 +915,9 @@ export async function exportInventory(type) {
         'materials': '/export/inventory/materials',
         'tooling': '/export/inventory/tooling',
         'miscellaneous': '/export/inventory/misc',
-        'misc': '/export/inventory/misc'
+        'misc': '/export/inventory/misc',
+        'products': '/export/inventory/products',
+        'parts': '/export/inventory/parts'
     };
 
     const endpoint = endpointMap[type];

@@ -294,8 +294,9 @@ describe('User Routes', () => {
                 .set('Authorization', `Bearer ${token}`);
 
             expect(response.status).toBe(200);
-            expect(response.body.valid).toBe(true);
-            expect(response.body.user).toBeDefined();
+            expect(response.body.success).toBe(true);
+            expect(response.body.data.valid).toBe(true);
+            expect(response.body.data.user).toBeDefined();
         });
 
         it('should return valid=false for invalid token', async () => {
@@ -304,8 +305,9 @@ describe('User Routes', () => {
                 .set('Authorization', 'Bearer invalidtoken');
 
             expect(response.status).toBe(200);
-            expect(response.body.valid).toBe(false);
-            expect(response.body.user).toBeNull();
+            expect(response.body.success).toBe(true);
+            expect(response.body.data.valid).toBe(false);
+            expect(response.body.data.user).toBeNull();
         });
 
         it('should return valid=false for no token', async () => {
@@ -313,7 +315,8 @@ describe('User Routes', () => {
                 .get('/api/users/validate');
 
             expect(response.status).toBe(200);
-            expect(response.body.valid).toBe(false);
+            expect(response.body.success).toBe(true);
+            expect(response.body.data.valid).toBe(false);
         });
     });
 
@@ -335,8 +338,9 @@ describe('User Routes', () => {
                 .set('Authorization', `Bearer ${token}`);
 
             expect(response.status).toBe(200);
-            expect(Array.isArray(response.body)).toBe(true);
-            expect(response.body.length).toBeGreaterThanOrEqual(3); // admin + 2 users
+            expect(response.body.success).toBe(true);
+            expect(Array.isArray(response.body.data)).toBe(true);
+            expect(response.body.data.length).toBeGreaterThanOrEqual(3); // admin + 2 users
         });
 
         it('should reject non-admin users', async () => {
@@ -376,9 +380,9 @@ describe('User Routes', () => {
 
             expect(response.status).toBe(201);
             expect(response.body.success).toBe(true);
-            expect(response.body.user).toBeDefined();
-            expect(response.body.user.username).toBe('newuser');
-            expect(response.body.user.role).toBe('Operator');
+            expect(response.body.data).toBeDefined();
+            expect(response.body.data.username).toBe('newuser');
+            expect(response.body.data.role).toBe('Operator');
         });
 
         it('should reject duplicate username', async () => {
@@ -463,8 +467,8 @@ describe('User Routes', () => {
 
             expect(response.status).toBe(200);
             expect(response.body.success).toBe(true);
-            expect(response.body.user.name).toBe('Updated Name');
-            expect(response.body.user.email).toBe('updated@example.com');
+            expect(response.body.data.name).toBe('Updated Name');
+            expect(response.body.data.email).toBe('updated@example.com');
         });
 
         it('should allow admin to update any user', async () => {
@@ -487,7 +491,7 @@ describe('User Routes', () => {
                 });
 
             expect(response.status).toBe(200);
-            expect(response.body.user.name).toBe('Admin Updated');
+            expect(response.body.data.name).toBe('Admin Updated');
         });
 
         it('should prevent user from updating another user', async () => {
@@ -617,7 +621,7 @@ describe('User Routes', () => {
                 });
 
             expect(response.status).toBe(200);
-            expect(response.body.user.tab_permissions.inventory).toBe(true);
+            expect(response.body.data.tab_permissions.inventory).toBe(true);
         });
 
         it('should reject non-admin updating permissions', async () => {

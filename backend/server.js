@@ -32,6 +32,9 @@ app.use('/api/', apiLimiter);
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'bperp.db');
 initDb(dbPath);
 
+// Auth middleware for protected routes (must be after initDb)
+const { requireAuth } = require('./middleware/auth')(pool);
+
 // Import routes
 const inventoryRoutes = require('./routes/inventory')(pool);
 const customerRoutes = require('./routes/customers')(pool);
@@ -69,7 +72,7 @@ app.use('/api/orders', ordersRoutes);
 app.use('/api/import', importRoutes);
 
 // 1. Get Quote Stats (For the "Quotes in March" card)
-app.get('/api/quotes/stats', async (req, res) => {
+app.get('/api/quotes/stats', requireAuth, async (req, res) => {
     try {
         // Run three queries in parallel to count statuses
         const won = await pool.query("SELECT COUNT(*) FROM quotes WHERE status = 'Won'");
@@ -78,10 +81,13 @@ app.get('/api/quotes/stats', async (req, res) => {
         const revenue = await pool.query("SELECT SUM(total_amount) FROM quotes WHERE status = 'Won'");
 
         res.json({
-            won: parseInt(won.rows[0].count),
-            lost: parseInt(lost.rows[0].count),
-            sent: parseInt(sent.rows[0].count),
-            revenue: parseFloat(revenue.rows[0].sum || 0)
+            success: true,
+            data: {
+                won: parseInt(won.rows[0].count),
+                lost: parseInt(lost.rows[0].count),
+                sent: parseInt(sent.rows[0].count),
+                revenue: parseFloat(revenue.rows[0].sum || 0)
+            }
         });
     } catch (err) {
         console.error(err.message);
@@ -90,7 +96,7 @@ app.get('/api/quotes/stats', async (req, res) => {
 });
 
 // 2. Get Win Rate (For the "Win Rate" card)
-app.get('/api/quotes/win-rate', async (req, res) => {
+app.get('/api/quotes/win-rate', requireAuth, async (req, res) => {
     try {
         const total = await pool.query("SELECT COUNT(*) FROM quotes");
         const won = await pool.query("SELECT COUNT(*) FROM quotes WHERE status = 'Won'");
@@ -101,7 +107,7 @@ app.get('/api/quotes/win-rate', async (req, res) => {
         // Avoid division by zero
         const rate = totalCount === 0 ? 0 : Math.round((wonCount / totalCount) * 100);
 
-        res.json({ winRate: rate });
+        res.json({ success: true, data: { winRate: rate } });
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ success: false, error: "Server Error" });
@@ -109,7 +115,7 @@ app.get('/api/quotes/win-rate', async (req, res) => {
 });
 
 // 3. Get Inventory Alerts (For the "Inventory Alerts" card)
-app.get('/api/inventory/alerts', async (req, res) => {
+app.get('/api/inventory/alerts', requireAuth, async (req, res) => {
     try {
         // Fetch items where stock is below minimum from all inventory tables
         const alerts = [];
@@ -132,6 +138,22 @@ app.get('/api/inventory/alerts', async (req, res) => {
         );
         alerts.push(...misc.rows);
         
+        // Check products (if table exists)
+        try {
+            const products = await pool.query(
+                "SELECT id, name, qty_on_hand, minimum_qty, 'product' as category FROM products WHERE qty_on_hand <= minimum_qty ORDER BY (qty_on_hand::float / NULLIF(minimum_qty, 0)) ASC LIMIT 5"
+            );
+            alerts.push(...products.rows);
+        } catch (e) { /* products table may not exist yet */ }
+        
+        // Check parts (if table exists)
+        try {
+            const parts = await pool.query(
+                "SELECT id, name, qty_on_hand, minimum_qty, 'part' as category FROM parts WHERE qty_on_hand <= minimum_qty ORDER BY (qty_on_hand::float / NULLIF(minimum_qty, 0)) ASC LIMIT 5"
+            );
+            alerts.push(...parts.rows);
+        } catch (e) { /* parts table may not exist yet */ }
+        
         // Sort all alerts by urgency and limit to 5
         alerts.sort((a, b) => {
             const ratioA = a.minimum_qty > 0 ? a.qty_on_hand / a.minimum_qty : 999;
@@ -148,7 +170,7 @@ app.get('/api/inventory/alerts', async (req, res) => {
             category: alert.category
         }));
         
-        res.json(formattedAlerts);
+        res.json({ success: true, data: formattedAlerts });
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ success: false, error: "Server Error" });
@@ -262,8 +284,11 @@ app.get('/api/setup/status', async (req, res) => {
         }
         
         res.json({ 
-            needsSetup,
-            version: '1.0.0-beta.1'
+            success: true,
+            data: { 
+                needsSetup,
+                version: '1.0.0-beta.1'
+            }
         });
     } catch (err) {
         console.error('Setup status error:', err);
@@ -296,7 +321,7 @@ try {
 }
 
 // Export customers to CSV
-app.get('/api/export/customers', exportLimiter, async (req, res) => {
+app.get('/api/export/customers', requireAuth, exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM customers ORDER BY name');
         const headers = ['id', 'name', 'address', 'phone', 'terms', 'openWOCount'];
@@ -321,7 +346,7 @@ app.get('/api/export/customers', exportLimiter, async (req, res) => {
 });
 
 // Export quotes to CSV
-app.get('/api/export/quotes', exportLimiter, async (req, res) => {
+app.get('/api/export/quotes', requireAuth, exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM quotes ORDER BY quote_number');
         const headers = ['id', 'quote_number', 'customer_id', 'customer_name', 'part_number', 'description', 'quantity', 'status', 'requested_date', 'due_date', 'total_amount', 'sent_at'];
@@ -346,7 +371,7 @@ app.get('/api/export/quotes', exportLimiter, async (req, res) => {
 });
 
 // Export work orders to CSV
-app.get('/api/export/work-orders', exportLimiter, async (req, res) => {
+app.get('/api/export/work-orders', requireAuth, exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM work_orders ORDER BY wo_number');
         const headers = ['id', 'wo_number', 'customer_id', 'customer_name', 'due_date', 'status', 'notes', 'completion_percentage'];
@@ -371,7 +396,7 @@ app.get('/api/export/work-orders', exportLimiter, async (req, res) => {
 });
 
 // Export inventory (materials) to CSV
-app.get('/api/export/inventory/materials', exportLimiter, async (req, res) => {
+app.get('/api/export/inventory/materials', requireAuth, exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM materials ORDER BY name');
         const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
@@ -396,7 +421,7 @@ app.get('/api/export/inventory/materials', exportLimiter, async (req, res) => {
 });
 
 // Export inventory (tooling) to CSV
-app.get('/api/export/inventory/tooling', exportLimiter, async (req, res) => {
+app.get('/api/export/inventory/tooling', requireAuth, exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM tooling ORDER BY name');
         const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
@@ -421,7 +446,7 @@ app.get('/api/export/inventory/tooling', exportLimiter, async (req, res) => {
 });
 
 // Export inventory (misc items) to CSV
-app.get('/api/export/inventory/misc', exportLimiter, async (req, res) => {
+app.get('/api/export/inventory/misc', requireAuth, exportLimiter, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM misc_items ORDER BY name');
         const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
@@ -445,8 +470,58 @@ app.get('/api/export/inventory/misc', exportLimiter, async (req, res) => {
     }
 });
 
+// Export inventory (products) to CSV
+app.get('/api/export/inventory/products', requireAuth, exportLimiter, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM products ORDER BY name');
+        const headers = ['id', 'name', 'part_number', 'category', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `products_inventory_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Products inventory exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export products error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
+// Export inventory (parts) to CSV
+app.get('/api/export/inventory/parts', requireAuth, exportLimiter, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM parts ORDER BY name');
+        const headers = ['id', 'name', 'part_number', 'category', 'source', 'qty_on_hand', 'minimum_qty', 'supplier', 'unit_price', 'last_ordered'];
+        const csvData = convertToCSV(result.rows, headers);
+
+        const filename = `parts_inventory_${new Date().toISOString().split('T')[0]}.csv`;
+        const filepath = path.join(csvDir, filename);
+
+        fs.writeFileSync(filepath, csvData, 'utf8');
+
+        res.json({
+            success: true,
+            message: 'Parts inventory exported successfully',
+            filename: filename,
+            filepath: filepath,
+            downloadUrl: `/exports/csv/${filename}`
+        });
+    } catch (err) {
+        console.error('Export parts error:', err);
+        res.status(500).json({ success: false, error: 'Export failed' });
+    }
+});
+
 // Create backup
-app.post('/api/backup/create', exportLimiter, async (req, res) => {
+app.post('/api/backup/create', requireAuth, exportLimiter, async (req, res) => {
     try {
         // Get localStorage data passed from frontend (if available)
         const localStorageData = req.body.localStorage || {};
@@ -521,7 +596,7 @@ app.post('/api/backup/create', exportLimiter, async (req, res) => {
 });
 
 // Restore from backup
-app.post('/api/backup/restore', async (req, res) => {
+app.post('/api/backup/restore', requireAuth, async (req, res) => {
     try {
         // This would require file upload handling - for now return not implemented
         res.status(501).json({
@@ -543,17 +618,21 @@ const frontendPath = isProduction
     ? path.join(__dirname, '..', 'frontend')  // resources/frontend when backend is in resources/backend
     : path.join(__dirname, '..', 'frontend'); // Same relative path in dev
 console.log(`Serving frontend from: ${frontendPath}`);
-app.use(express.static(frontendPath));
 
-// Serve index.html for the root path and any non-API routes (SPA support)
-app.get('/', (req, res) => {
+// Serve index.html with no-cache to prevent stale UI (Products/Parts tabs, etc.)
+const serveIndexWithNoCache = (req, res) => {
     const indexPath = path.join(frontendPath, 'index.html');
     if (fs.existsSync(indexPath)) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.sendFile(indexPath);
     } else {
         res.status(500).send(`Frontend not found at: ${indexPath}`);
     }
-});
+};
+app.get('/', serveIndexWithNoCache);
+app.get('/index.html', serveIndexWithNoCache);
+
+app.use(express.static(frontendPath));
 
 // Helper function to convert data to CSV
 function convertToCSV(data, headers) {

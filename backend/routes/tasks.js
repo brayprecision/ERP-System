@@ -5,6 +5,8 @@ const express = require('express');
 
 module.exports = function(pool) {
     const router = express.Router();
+    const { requireAuth } = require('../middleware/auth')(pool);
+    router.use(requireAuth);
 
     // Helper: Calculate task stats from database
     async function calculateStats() {

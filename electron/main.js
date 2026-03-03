@@ -206,9 +206,9 @@ function createMainWindow() {
         mainWindow.setMaximizable(true);
     }
 
-    // Load the frontend
+    // Load the frontend (cache-bust query param forces fresh fetch, avoids stale UI e.g. missing Products/Parts tabs)
     const serverPort = store.get('server.port');
-    mainWindow.loadURL(`http://localhost:${serverPort}`);
+    mainWindow.loadURL(`http://localhost:${serverPort}/?nocache=${Date.now()}`);
 
     // Show window when ready
     mainWindow.once('ready-to-show', () => {

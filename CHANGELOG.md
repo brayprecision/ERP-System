@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Products and Parts Inventory
+- **Products tab** — Finished assemblies for sale; full CRUD with inventory tracking
+- **Parts tab** — Individual components with purchased/manufactured source; full CRUD
+- **Product BOM** — Bill of Materials links parts to products (qty per assembly); BOM editor in product edit modal
+- **Schema for future** — `parts.source`, `part_materials` table for Kanban and manufactured-parts BOM explosion
+- **Backend** — CRUD API, BOM routes, validation, export, import for products and parts
+- **Cache fix** — Cache-Control no-cache for index.html; Electron loadURL cache-bust to prevent stale UI
+
+#### Priority 1 — Windows Installer Build
+- **@electron/rebuild integration** — `npm run build:win` and `npm run build:linux` now run `electron-rebuild -f -w better-sqlite3,bcrypt -m backend -v 28.3.3` before packaging, so native modules are built for Electron 28's Node runtime (fixes NODE_MODULE_VERSION 137 vs 119 mismatch)
+- **Deployment docs** — README updated with build commands and end-to-end testing checklist
+
 ### Changed
 - **Project direction** — BPERP is internal-only for Bray Precision LLC.
   - Windows & Linux only (macOS dropped)

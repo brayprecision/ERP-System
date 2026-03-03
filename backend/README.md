@@ -157,11 +157,24 @@ GET    /api/customers/:id/contacts  # Get customer contacts
 ### Inventory
 
 ```
-GET    /api/inventory/:category     # List items (material/tooling/misc)
-GET    /api/inventory/:category/:id # Get item
-POST   /api/inventory/:category     # Create item
-PUT    /api/inventory/:category/:id # Update item
-DELETE /api/inventory/:category/:id # Soft delete item
+GET    /api/inventory/products      # List products
+GET    /api/inventory/products/:id  # Get product
+POST   /api/inventory/products      # Create product
+PUT    /api/inventory/products/:id  # Update product
+DELETE /api/inventory/products/:id  # Delete product
+GET    /api/inventory/products/:id/bom    # Get product BOM
+POST   /api/inventory/products/:id/bom   # Add part to BOM
+DELETE /api/inventory/products/:id/bom/:partId  # Remove part from BOM
+
+GET    /api/inventory/parts         # List parts
+GET    /api/inventory/parts/:id     # Get part
+POST   /api/inventory/parts         # Create part
+PUT    /api/inventory/parts/:id     # Update part
+DELETE /api/inventory/parts/:id     # Delete part
+
+GET    /api/inventory/materials     # List materials
+GET    /api/inventory/tooling      # List tooling
+GET    /api/inventory/misc         # List misc items
 ```
 
 ### Tasks
@@ -188,6 +201,8 @@ POST /api/import/preview                # Preview import with validation
 POST /api/import/customers              # Import customers
 POST /api/import/materials              # Import materials
 POST /api/import/tooling                # Import tooling
+POST /api/import/products               # Import products
+POST /api/import/parts                 # Import parts
 POST /api/import/workcenters            # Import workcenters
 POST /api/import/machines               # Import machines
 ```

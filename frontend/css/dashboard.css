@@ -166,6 +166,31 @@
     --gradient-accent: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
 }
 
+/* Midnight Theme (Deep Blue) */
+[data-theme="midnight"] {
+    --color-dark-bg: #050810;
+    --color-card-bg: #0a1020;
+    --color-card-bg-lighter: #0f1830;
+    --color-accent-primary: #3b82f6;
+    --color-accent-primary-hover: #60a5fa;
+    --color-accent-secondary: #0ea5e9;
+    --color-accent-tertiary: #818cf8;
+    --color-border: #1e3a5f;
+    --color-border-accent: #3b82f6;
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #94a3b8;
+    --color-text-muted: #64748b;
+    --color-glow: rgba(59, 130, 246, 0.4);
+    --color-glow-secondary: rgba(14, 165, 233, 0.3);
+    --color-success: #22c55e;
+    --color-warning: #eab308;
+    --color-error: #ef4444;
+    --color-info: #0ea5e9;
+    --gradient-card: linear-gradient(135deg, #0a1020 0%, #0f1835 100%);
+    --gradient-header: linear-gradient(90deg, #0a1020 0%, #1e3a5f 50%, #0a1020 100%);
+    --gradient-accent: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
 /* ==================== BASE STYLES ==================== */
 * {
     scrollbar-width: thin;

@@ -1,8 +1,9 @@
 // Inventory API Routes for BPERP
 const express = require('express');
 const router = express.Router();
+const { validateBody, schemas } = require('../middleware/validation');
 
-// Validation middleware using Zod-like validation (pure JS implementation for backend)
+// Validation helpers (kept for tool/misc - Zod used for materials)
 const validateMaterial = (data) => {
     const errors = [];
     
@@ -103,6 +104,40 @@ const validateMisc = (data) => {
     return { isValid: errors.length === 0, errors };
 };
 
+const validateProduct = (data) => {
+    const errors = [];
+    if (!data.name || data.name.trim().length === 0) {
+        errors.push({ field: 'name', message: 'Name is required' });
+    }
+    if (data.qtyOnHand === undefined || data.qtyOnHand < 0) {
+        errors.push({ field: 'qtyOnHand', message: 'Quantity must be a non-negative number' });
+    }
+    if (data.minimumQty === undefined || data.minimumQty < 0) {
+        errors.push({ field: 'minimumQty', message: 'Minimum quantity must be a non-negative number' });
+    }
+    if (data.unitPrice === undefined || data.unitPrice < 0) {
+        errors.push({ field: 'unitPrice', message: 'Unit price must be a non-negative number' });
+    }
+    return { isValid: errors.length === 0, errors };
+};
+
+const validatePart = (data) => {
+    const errors = [];
+    if (!data.name || data.name.trim().length === 0) {
+        errors.push({ field: 'name', message: 'Name is required' });
+    }
+    if (data.qtyOnHand === undefined || data.qtyOnHand < 0) {
+        errors.push({ field: 'qtyOnHand', message: 'Quantity must be a non-negative number' });
+    }
+    if (data.minimumQty === undefined || data.minimumQty < 0) {
+        errors.push({ field: 'minimumQty', message: 'Minimum quantity must be a non-negative number' });
+    }
+    if (data.unitPrice === undefined || data.unitPrice < 0) {
+        errors.push({ field: 'unitPrice', message: 'Unit price must be a non-negative number' });
+    }
+    return { isValid: errors.length === 0, errors };
+};
+
 // Helper function to calculate urgency status
 const calculateUrgency = (qtyOnHand, minimumQty) => {
     const ratio = minimumQty > 0 ? qtyOnHand / minimumQty : qtyOnHand > 0 ? 999 : 0;
@@ -139,6 +174,9 @@ const sendSuccess = (res, data, message = null) => {
 };
 
 module.exports = (pool) => {
+    const { requireAuth } = require('../middleware/auth')(pool);
+    router.use(requireAuth);
+
     // ==================== MATERIALS ====================
     
     // GET all materials with filtering, sorting, and pagination
@@ -292,14 +330,9 @@ module.exports = (pool) => {
     });
     
     // POST create new material
-    router.post('/materials', async (req, res) => {
+    router.post('/materials', validateBody(schemas.material), async (req, res) => {
         try {
-            const validation = validateMaterial(req.body);
-            if (!validation.isValid) {
-                return sendError(res, 400, 'Validation failed', validation.errors);
-            }
-            
-            const { name, materialType, materialShape, qtyOnHand, lengthUnit, unitPrice, supplier, minimumQty, reorderLink } = req.body;
+            const { name, materialType, materialShape, qtyOnHand, lengthUnit, unitPrice, supplier, minimumQty, reorderLink } = req.validatedBody;
             
             const result = await pool.query(
                 `INSERT INTO materials (name, material_type, material_shape, qty_on_hand, length_unit, unit_price, supplier, minimum_qty, reorder_link, created_at, updated_at)
@@ -871,6 +904,342 @@ module.exports = (pool) => {
         } catch (err) {
             console.error('Error deleting misc item:', err);
             sendError(res, 500, 'Failed to delete misc item');
+        }
+    });
+    
+    // ==================== PRODUCTS ====================
+    
+    const mapProductRow = (row) => {
+        const urgency = calculateUrgency(row.qty_on_hand, row.minimum_qty);
+        return {
+            id: row.id,
+            name: row.name,
+            partNumber: row.part_number,
+            category: row.category,
+            description: row.description,
+            qtyOnHand: row.qty_on_hand,
+            minimumQty: row.minimum_qty,
+            unit: row.unit,
+            supplier: row.supplier,
+            unitPrice: parseFloat(row.unit_price || 0),
+            location: row.location,
+            reorderLink: row.reorder_link,
+            urgencyStatus: urgency.status,
+            urgencyScore: urgency.score,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
+    };
+    
+    router.get('/products', async (req, res) => {
+        try {
+            const { search, status, page = 1, limit = 50, sortField = 'name', sortOrder = 'asc' } = req.query;
+            let query = 'SELECT * FROM products WHERE 1=1';
+            const params = [];
+            let paramIndex = 1;
+            if (search) {
+                query += ` AND (name ILIKE $${paramIndex} OR part_number ILIKE $${paramIndex} OR category ILIKE $${paramIndex} OR supplier ILIKE $${paramIndex})`;
+                params.push(`%${search}%`);
+                paramIndex++;
+            }
+            const countResult = await pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);
+            const total = parseInt(countResult.rows[0].count);
+            const sortFieldMap = { name: 'name', qtyOnHand: 'qty_on_hand', minimumQty: 'minimum_qty', price: 'unit_price', supplier: 'supplier', createdAt: 'created_at' };
+            const dbSortField = sortFieldMap[sortField] || 'name';
+            const dbSortOrder = sortOrder === 'desc' ? 'DESC' : 'ASC';
+            query += ` ORDER BY ${dbSortField} ${dbSortOrder}`;
+            const offset = (parseInt(page) - 1) * parseInt(limit);
+            query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+            params.push(parseInt(limit), offset);
+            const result = await pool.query(query, params);
+            let products = result.rows.map(mapProductRow);
+            if (status) products = products.filter(p => p.urgencyStatus === status);
+            res.json({
+                success: true,
+                data: products,
+                pagination: { page: parseInt(page), limit: parseInt(limit), total: status ? products.length : total, totalPages: Math.ceil((status ? products.length : total) / parseInt(limit)) }
+            });
+        } catch (err) {
+            console.error('Error fetching products:', err);
+            sendError(res, 500, 'Failed to fetch products');
+        }
+    });
+    
+    router.get('/products/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+            if (result.rows.length === 0) return sendError(res, 404, 'Product not found');
+            sendSuccess(res, mapProductRow(result.rows[0]));
+        } catch (err) {
+            console.error('Error fetching product:', err);
+            sendError(res, 500, 'Failed to fetch product');
+        }
+    });
+    
+    router.post('/products', validateBody(schemas.product), async (req, res) => {
+        try {
+            const { name, partNumber, category, description, qtyOnHand, minimumQty, unit, supplier, unitPrice, location, reorderLink, notes } = req.validatedBody;
+            const result = await pool.query(
+                `INSERT INTO products (name, part_number, category, description, qty_on_hand, minimum_qty, unit, supplier, unit_price, location, reorder_link, notes, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+                 RETURNING *`,
+                [name, partNumber || null, category || null, description || null, qtyOnHand, minimumQty, unit || 'EA', supplier || null, unitPrice, location || null, reorderLink || null, notes || null]
+            );
+            const row = result.rows[0];
+            sendSuccess(res, mapProductRow(row), 'Product created successfully');
+        } catch (err) {
+            console.error('Error creating product:', err);
+            sendError(res, 500, 'Failed to create product');
+        }
+    });
+    
+    router.put('/products/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const existing = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+            if (existing.rows.length === 0) return sendError(res, 404, 'Product not found');
+            const cur = existing.rows[0];
+            const data = {
+                name: req.body.name ?? cur.name,
+                partNumber: req.body.partNumber ?? cur.part_number,
+                category: req.body.category ?? cur.category,
+                description: req.body.description ?? cur.description,
+                qtyOnHand: req.body.qtyOnHand ?? cur.qty_on_hand,
+                minimumQty: req.body.minimumQty ?? cur.minimum_qty,
+                unit: req.body.unit ?? cur.unit,
+                supplier: req.body.supplier ?? cur.supplier,
+                unitPrice: req.body.unitPrice ?? parseFloat(cur.unit_price),
+                location: req.body.location ?? cur.location,
+                reorderLink: req.body.reorderLink ?? cur.reorder_link,
+                notes: req.body.notes ?? cur.notes
+            };
+            const validation = validateProduct(data);
+            if (!validation.isValid) return sendError(res, 400, 'Validation failed', validation.errors);
+            await pool.query(
+                `UPDATE products SET name = $1, part_number = $2, category = $3, description = $4, qty_on_hand = $5, minimum_qty = $6, unit = $7, supplier = $8, unit_price = $9, location = $10, reorder_link = $11, notes = $12, updated_at = NOW() WHERE id = $13`,
+                [data.name, data.partNumber, data.category, data.description, data.qtyOnHand, data.minimumQty, data.unit, data.supplier, data.unitPrice, data.location, data.reorderLink, data.notes, id]
+            );
+            const updated = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+            sendSuccess(res, mapProductRow(updated.rows[0]), 'Product updated successfully');
+        } catch (err) {
+            console.error('Error updating product:', err);
+            sendError(res, 500, 'Failed to update product');
+        }
+    });
+    
+    router.delete('/products/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING *', [id]);
+            if (result.rows.length === 0) return sendError(res, 404, 'Product not found');
+            sendSuccess(res, { id }, 'Product deleted successfully');
+        } catch (err) {
+            console.error('Error deleting product:', err);
+            sendError(res, 500, 'Failed to delete product');
+        }
+    });
+    
+    // Product BOM
+    router.get('/products/:id/bom', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const prodCheck = await pool.query('SELECT id FROM products WHERE id = $1', [id]);
+            if (prodCheck.rows.length === 0) return sendError(res, 404, 'Product not found');
+            const result = await pool.query(
+                `SELECT pb.id, pb.part_id, pb.quantity_per_assembly, p.name as part_name, p.part_number as part_number
+                 FROM product_bom pb JOIN parts p ON pb.part_id = p.id WHERE pb.product_id = $1 ORDER BY p.name`,
+                [id]
+            );
+            const bom = result.rows.map(r => ({
+                id: r.id,
+                partId: r.part_id,
+                partName: r.part_name,
+                partNumber: r.part_number,
+                quantityPerAssembly: parseFloat(r.quantity_per_assembly)
+            }));
+            sendSuccess(res, bom);
+        } catch (err) {
+            console.error('Error fetching product BOM:', err);
+            sendError(res, 500, 'Failed to fetch product BOM');
+        }
+    });
+    
+    router.post('/products/:id/bom', validateBody(schemas.productBom), async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { partId, quantityPerAssembly } = req.validatedBody;
+            const prodCheck = await pool.query('SELECT id FROM products WHERE id = $1', [id]);
+            if (prodCheck.rows.length === 0) return sendError(res, 404, 'Product not found');
+            const partCheck = await pool.query('SELECT id FROM parts WHERE id = $1', [partId]);
+            if (partCheck.rows.length === 0) return sendError(res, 404, 'Part not found');
+            await pool.query(
+                `INSERT INTO product_bom (product_id, part_id, quantity_per_assembly, updated_at) VALUES ($1, $2, $3, NOW())
+                 ON CONFLICT(product_id, part_id) DO UPDATE SET quantity_per_assembly = $3, updated_at = NOW()`,
+                [id, partId, quantityPerAssembly]
+            );
+            const result = await pool.query(
+                `SELECT pb.id, pb.part_id, pb.quantity_per_assembly, p.name as part_name, p.part_number as part_number
+                 FROM product_bom pb JOIN parts p ON pb.part_id = p.id WHERE pb.product_id = $1 AND pb.part_id = $2`,
+                [id, partId]
+            );
+            const row = result.rows[0];
+            sendSuccess(res, { id: row.id, partId: row.part_id, partName: row.part_name, partNumber: row.part_number, quantityPerAssembly: parseFloat(row.quantity_per_assembly) }, 'BOM line added');
+        } catch (err) {
+            console.error('Error adding BOM line:', err);
+            sendError(res, 500, 'Failed to add BOM line');
+        }
+    });
+    
+    router.delete('/products/:id/bom/:partId', async (req, res) => {
+        try {
+            const { id, partId } = req.params;
+            const result = await pool.query('DELETE FROM product_bom WHERE product_id = $1 AND part_id = $2 RETURNING *', [id, partId]);
+            if (result.rows.length === 0) return sendError(res, 404, 'BOM line not found');
+            sendSuccess(res, {}, 'BOM line removed');
+        } catch (err) {
+            console.error('Error removing BOM line:', err);
+            sendError(res, 500, 'Failed to remove BOM line');
+        }
+    });
+    
+    // ==================== PARTS ====================
+    
+    const mapPartRow = (row) => {
+        const urgency = calculateUrgency(row.qty_on_hand, row.minimum_qty);
+        return {
+            id: row.id,
+            name: row.name,
+            partNumber: row.part_number,
+            category: row.category,
+            source: row.source || 'purchased',
+            description: row.description,
+            qtyOnHand: row.qty_on_hand,
+            minimumQty: row.minimum_qty,
+            unit: row.unit,
+            supplier: row.supplier,
+            unitPrice: parseFloat(row.unit_price || 0),
+            location: row.location,
+            reorderLink: row.reorder_link,
+            urgencyStatus: urgency.status,
+            urgencyScore: urgency.score,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
+    };
+    
+    router.get('/parts', async (req, res) => {
+        try {
+            const { search, status, source, page = 1, limit = 50, sortField = 'name', sortOrder = 'asc' } = req.query;
+            let query = 'SELECT * FROM parts WHERE 1=1';
+            const params = [];
+            let paramIndex = 1;
+            if (search) {
+                query += ` AND (name ILIKE $${paramIndex} OR part_number ILIKE $${paramIndex} OR category ILIKE $${paramIndex} OR supplier ILIKE $${paramIndex})`;
+                params.push(`%${search}%`);
+                paramIndex++;
+            }
+            if (source) {
+                query += ` AND source = $${paramIndex}`;
+                params.push(source);
+                paramIndex++;
+            }
+            const countResult = await pool.query(query.replace('SELECT *', 'SELECT COUNT(*)'), params);
+            const total = parseInt(countResult.rows[0].count);
+            const sortFieldMap = { name: 'name', qtyOnHand: 'qty_on_hand', minimumQty: 'minimum_qty', price: 'unit_price', supplier: 'supplier', createdAt: 'created_at', source: 'source' };
+            const dbSortField = sortFieldMap[sortField] || 'name';
+            const dbSortOrder = sortOrder === 'desc' ? 'DESC' : 'ASC';
+            query += ` ORDER BY ${dbSortField} ${dbSortOrder}`;
+            const offset = (parseInt(page) - 1) * parseInt(limit);
+            query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+            params.push(parseInt(limit), offset);
+            const result = await pool.query(query, params);
+            let parts = result.rows.map(mapPartRow);
+            if (status) parts = parts.filter(p => p.urgencyStatus === status);
+            res.json({
+                success: true,
+                data: parts,
+                pagination: { page: parseInt(page), limit: parseInt(limit), total: status ? parts.length : total, totalPages: Math.ceil((status ? parts.length : total) / parseInt(limit)) }
+            });
+        } catch (err) {
+            console.error('Error fetching parts:', err);
+            sendError(res, 500, 'Failed to fetch parts');
+        }
+    });
+    
+    router.get('/parts/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await pool.query('SELECT * FROM parts WHERE id = $1', [id]);
+            if (result.rows.length === 0) return sendError(res, 404, 'Part not found');
+            sendSuccess(res, mapPartRow(result.rows[0]));
+        } catch (err) {
+            console.error('Error fetching part:', err);
+            sendError(res, 500, 'Failed to fetch part');
+        }
+    });
+    
+    router.post('/parts', validateBody(schemas.part), async (req, res) => {
+        try {
+            const { name, partNumber, category, source, description, qtyOnHand, minimumQty, unit, supplier, unitPrice, location, reorderLink, notes } = req.validatedBody;
+            const result = await pool.query(
+                `INSERT INTO parts (name, part_number, category, source, description, qty_on_hand, minimum_qty, unit, supplier, unit_price, location, reorder_link, notes, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+                 RETURNING *`,
+                [name, partNumber || null, category || null, source || 'purchased', description || null, qtyOnHand, minimumQty, unit || 'EA', supplier || null, unitPrice, location || null, reorderLink || null, notes || null]
+            );
+            const row = result.rows[0];
+            sendSuccess(res, mapPartRow(row), 'Part created successfully');
+        } catch (err) {
+            console.error('Error creating part:', err);
+            sendError(res, 500, 'Failed to create part');
+        }
+    });
+    
+    router.put('/parts/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const existing = await pool.query('SELECT * FROM parts WHERE id = $1', [id]);
+            if (existing.rows.length === 0) return sendError(res, 404, 'Part not found');
+            const cur = existing.rows[0];
+            const data = {
+                name: req.body.name ?? cur.name,
+                partNumber: req.body.partNumber ?? cur.part_number,
+                category: req.body.category ?? cur.category,
+                source: req.body.source ?? cur.source,
+                description: req.body.description ?? cur.description,
+                qtyOnHand: req.body.qtyOnHand ?? cur.qty_on_hand,
+                minimumQty: req.body.minimumQty ?? cur.minimum_qty,
+                unit: req.body.unit ?? cur.unit,
+                supplier: req.body.supplier ?? cur.supplier,
+                unitPrice: req.body.unitPrice ?? parseFloat(cur.unit_price),
+                location: req.body.location ?? cur.location,
+                reorderLink: req.body.reorderLink ?? cur.reorder_link,
+                notes: req.body.notes ?? cur.notes
+            };
+            const validation = validatePart(data);
+            if (!validation.isValid) return sendError(res, 400, 'Validation failed', validation.errors);
+            await pool.query(
+                `UPDATE parts SET name = $1, part_number = $2, category = $3, source = $4, description = $5, qty_on_hand = $6, minimum_qty = $7, unit = $8, supplier = $9, unit_price = $10, location = $11, reorder_link = $12, notes = $13, updated_at = NOW() WHERE id = $14`,
+                [data.name, data.partNumber, data.category, data.source, data.description, data.qtyOnHand, data.minimumQty, data.unit, data.supplier, data.unitPrice, data.location, data.reorderLink, data.notes, id]
+            );
+            const updated = await pool.query('SELECT * FROM parts WHERE id = $1', [id]);
+            sendSuccess(res, mapPartRow(updated.rows[0]), 'Part updated successfully');
+        } catch (err) {
+            console.error('Error updating part:', err);
+            sendError(res, 500, 'Failed to update part');
+        }
+    });
+    
+    router.delete('/parts/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const result = await pool.query('DELETE FROM parts WHERE id = $1 RETURNING *', [id]);
+            if (result.rows.length === 0) return sendError(res, 404, 'Part not found');
+            sendSuccess(res, { id }, 'Part deleted successfully');
+        } catch (err) {
+            console.error('Error deleting part:', err);
+            sendError(res, 500, 'Failed to delete part');
         }
     });
     

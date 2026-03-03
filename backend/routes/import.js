@@ -10,6 +10,8 @@ const XLSX = require('xlsx');
 
 module.exports = function(pool) {
     const router = express.Router();
+    const { requireAuth } = require('../middleware/auth')(pool);
+    router.use(requireAuth);
 
     // Configure multer for file uploads (in-memory storage)
     const upload = multer({
@@ -90,6 +92,37 @@ module.exports = function(pool) {
                 unit_price: ['unitprice', 'price', 'cost'],
                 location: ['location', 'bin', 'crib'],
                 condition: ['condition', 'status', 'state']
+            }
+        },
+        products: {
+            required: ['name'],
+            fields: {
+                name: ['name', 'productname', 'itemname', 'description'],
+                part_number: ['partnumber', 'partno', 'sku', 'itemnumber', 'pn'],
+                category: ['category', 'type', 'group'],
+                description: ['description', 'desc', 'notes'],
+                qty_on_hand: ['qtyonhand', 'quantity', 'qty', 'stock', 'onhand', 'instock'],
+                minimum_qty: ['minimumqty', 'minqty', 'reorderpoint', 'minstock'],
+                unit: ['unit', 'uom', 'unitofmeasure'],
+                supplier: ['supplier', 'vendor', 'manufacturer'],
+                unit_price: ['unitprice', 'price', 'cost', 'unitcost'],
+                location: ['location', 'bin', 'shelf', 'warehouse']
+            }
+        },
+        parts: {
+            required: ['name'],
+            fields: {
+                name: ['name', 'partname', 'itemname', 'description'],
+                part_number: ['partnumber', 'partno', 'sku', 'itemnumber', 'pn'],
+                category: ['category', 'type', 'group'],
+                source: ['source', 'sourcetype', 'type', 'purchased', 'manufactured'],
+                description: ['description', 'desc', 'notes'],
+                qty_on_hand: ['qtyonhand', 'quantity', 'qty', 'stock', 'onhand', 'instock'],
+                minimum_qty: ['minimumqty', 'minqty', 'reorderpoint', 'minstock'],
+                unit: ['unit', 'uom', 'unitofmeasure'],
+                supplier: ['supplier', 'vendor', 'manufacturer'],
+                unit_price: ['unitprice', 'price', 'cost', 'unitcost'],
+                location: ['location', 'bin', 'shelf', 'warehouse']
             }
         },
         workcenters: {
@@ -493,6 +526,132 @@ module.exports = function(pool) {
             });
         } catch (error) {
             console.error('Import tooling error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    /**
+     * POST /api/import/products
+     * Import products from CSV/Excel
+     */
+    router.post('/products', upload.single('file'), async (req, res) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ success: false, error: 'No file uploaded' });
+            }
+
+            const data = parseFile(req.file.buffer, req.file.originalname);
+            const { mappedData } = mapColumns(data, 'products');
+            const { validRows, errors } = validateData(mappedData, 'products');
+
+            if (validRows.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No valid rows to import',
+                    validationErrors: errors
+                });
+            }
+
+            const imported = [];
+            const importErrors = [];
+
+            for (const row of validRows) {
+                try {
+                    const result = await pool.query(`
+                        INSERT INTO products (name, part_number, category, description, qty_on_hand, minimum_qty, unit, supplier, unit_price, location)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        RETURNING id, name, part_number
+                    `, [
+                        row.name, row.part_number, row.category, row.description,
+                        row.qty_on_hand || 0, row.minimum_qty || 0, row.unit || 'EA',
+                        row.supplier, row.unit_price || 0, row.location
+                    ]);
+
+                    imported.push(result.rows[0]);
+                } catch (err) {
+                    importErrors.push({ row: row._rowNumber, error: err.message });
+                }
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    imported: imported.length,
+                    validationErrors: errors.length,
+                    importErrors: importErrors.length,
+                    details: {
+                        importedRecords: imported.slice(0, 20),
+                        validationErrors: errors.slice(0, 10),
+                        importErrors: importErrors.slice(0, 10)
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Import products error:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    /**
+     * POST /api/import/parts
+     * Import parts from CSV/Excel
+     */
+    router.post('/parts', upload.single('file'), async (req, res) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ success: false, error: 'No file uploaded' });
+            }
+
+            const data = parseFile(req.file.buffer, req.file.originalname);
+            const { mappedData } = mapColumns(data, 'parts');
+            const { validRows, errors } = validateData(mappedData, 'parts');
+
+            if (validRows.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No valid rows to import',
+                    validationErrors: errors
+                });
+            }
+
+            const imported = [];
+            const importErrors = [];
+
+            for (const row of validRows) {
+                try {
+                    const source = (row.source || 'purchased').toLowerCase();
+                    const validSource = ['purchased', 'manufactured'].includes(source) ? source : 'purchased';
+                    const result = await pool.query(`
+                        INSERT INTO parts (name, part_number, category, source, description, qty_on_hand, minimum_qty, unit, supplier, unit_price, location)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                        RETURNING id, name, part_number
+                    `, [
+                        row.name, row.part_number, row.category, validSource, row.description,
+                        row.qty_on_hand || 0, row.minimum_qty || 0, row.unit || 'EA',
+                        row.supplier, row.unit_price || 0, row.location
+                    ]);
+
+                    imported.push(result.rows[0]);
+                } catch (err) {
+                    importErrors.push({ row: row._rowNumber, error: err.message });
+                }
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    imported: imported.length,
+                    validationErrors: errors.length,
+                    importErrors: importErrors.length,
+                    details: {
+                        importedRecords: imported.slice(0, 20),
+                        validationErrors: errors.slice(0, 10),
+                        importErrors: importErrors.slice(0, 10)
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Import parts error:', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });

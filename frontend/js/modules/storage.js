@@ -18,6 +18,8 @@ export const STORAGE_KEYS = {
     MATERIALS: 'bperp_materials',
     TOOLING: 'bperp_tooling',
     MISC_ITEMS: 'bperp_misc_items',
+    PRODUCTS: 'bperp_products',
+    PARTS: 'bperp_parts',
     MISC_TASKS: 'bperp_misc_tasks',
     USER_PREFERENCES: 'bperp_user_preferences',
     CACHED_SEARCH: 'bperp_cached_search',

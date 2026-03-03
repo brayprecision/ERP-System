@@ -1,8 +1,9 @@
 // Customers API Routes for BPERP Sales Module
 const express = require('express');
 const router = express.Router();
+const { validateBody, schemas } = require('../middleware/validation');
 
-// Validation helpers
+// Validation helpers (kept for contact validation within customer create)
 const validateCustomer = (data, isUpdate = false) => {
     const errors = [];
     
@@ -83,6 +84,9 @@ const transformContact = (row) => ({
 });
 
 module.exports = (pool) => {
+    const { requireAuth } = require('../middleware/auth')(pool);
+    router.use(requireAuth);
+
     // ==================== CUSTOMERS ====================
     
     // GET all customers with optional filters
@@ -270,18 +274,13 @@ module.exports = (pool) => {
     });
     
     // POST create new customer
-    router.post('/', async (req, res) => {
+    router.post('/', validateBody(schemas.customer), async (req, res) => {
         try {
-            const validation = validateCustomer(req.body);
-            if (!validation.isValid) {
-                return sendError(res, 400, 'Validation failed', validation.errors);
-            }
-            
-            const { 
-                name, addressLine1, addressLine2, city, state, zipCode, 
+            const {
+                name, addressLine1, addressLine2, city, state, zipCode,
                 country, phone, fax, website, defaultTerms, taxId, notes,
                 contacts 
-            } = req.body;
+            } = req.validatedBody;
             
             // Insert customer
             const customerResult = await pool.query(`
@@ -300,15 +299,12 @@ module.exports = (pool) => {
             if (contacts && contacts.length > 0) {
                 customer.contacts = [];
                 for (const contact of contacts) {
-                    const contactValidation = validateContact(contact);
-                    if (contactValidation.isValid) {
                         const contactResult = await pool.query(`
                             INSERT INTO contacts (customer_id, name, role, email, phone, mobile, is_primary)
                             VALUES ($1, $2, $3, $4, $5, $6, $7)
                             RETURNING *
-                        `, [customer.id, contact.name, contact.role, contact.email, contact.phone, contact.mobile, contact.isPrimary || false]);
+                        `, [customer.id, contact.name, contact.role || null, contact.email || null, contact.phone || null, contact.mobile || null, contact.isPrimary || false]);
                         customer.contacts.push(transformContact(contactResult.rows[0]));
-                    }
                 }
             }
             
@@ -411,9 +407,10 @@ module.exports = (pool) => {
     });
     
     // POST add contact to customer
-    router.post('/:customerId/contacts', async (req, res) => {
+    router.post('/:customerId/contacts', validateBody(schemas.contact), async (req, res) => {
         try {
             const { customerId } = req.params;
+            const { name, role, email, phone, mobile, isPrimary, notes } = req.validatedBody;
             
             // Check customer exists
             const customerCheck = await pool.query('SELECT id FROM customers WHERE id = $1 AND deleted_at IS NULL', [customerId]);
@@ -421,12 +418,6 @@ module.exports = (pool) => {
                 return sendError(res, 404, 'Customer not found');
             }
             
-            const validation = validateContact(req.body);
-            if (!validation.isValid) {
-                return sendError(res, 400, 'Validation failed', validation.errors);
-            }
-            
-            const { name, role, email, phone, mobile, isPrimary, notes } = req.body;
             
             // If setting as primary, unset other primary contacts
             if (isPrimary) {

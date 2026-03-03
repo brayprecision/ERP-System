@@ -12,6 +12,8 @@ function getModuleData() {
         materials: [],
         tools: [],
         misc: [],
+        products: [],
+        parts: [],
         customers: [],
         quotes: [],
         workOrders: []
@@ -24,6 +26,8 @@ function getModuleData() {
             data.materials = window.BPERP.inventory.getMaterials?.() || storage.get(STORAGE_KEYS.MATERIALS) || [];
             data.tools = window.BPERP.inventory.getTooling?.() || storage.get(STORAGE_KEYS.TOOLING) || [];
             data.misc = window.BPERP.inventory.getMiscItems?.() || storage.get(STORAGE_KEYS.MISC_ITEMS) || [];
+            data.products = window.BPERP.inventory.getProducts?.() || storage.get(STORAGE_KEYS.PRODUCTS) || [];
+            data.parts = window.BPERP.inventory.getParts?.() || storage.get(STORAGE_KEYS.PARTS) || [];
         } catch (e) {
             console.warn('Could not get inventory data:', e);
         }
@@ -31,6 +35,8 @@ function getModuleData() {
         data.materials = storage.get(STORAGE_KEYS.MATERIALS) || [];
         data.tools = storage.get(STORAGE_KEYS.TOOLING) || [];
         data.misc = storage.get(STORAGE_KEYS.MISC_ITEMS) || [];
+        data.products = storage.get(STORAGE_KEYS.PRODUCTS) || [];
+        data.parts = storage.get(STORAGE_KEYS.PARTS) || [];
     }
     
     // Get from sales module if available
@@ -76,6 +82,8 @@ export function performGlobalSearch(query) {
         materials: [],
         tools: [],
         misc: [],
+        products: [],
+        parts: [],
         customers: [],
         quotes: [],
         workOrders: []
@@ -123,6 +131,37 @@ export function performGlobalSearch(query) {
         
         if (searchFields.some(field => field.toLowerCase().includes(searchTerm))) {
             results.misc.push(item);
+        }
+    });
+    
+    // Search in products
+    allData.products.forEach(product => {
+        const searchFields = [
+            product.name,
+            product.partNumber,
+            product.category,
+            product.supplier,
+            product.id?.toString()
+        ].filter(Boolean);
+        
+        if (searchFields.some(field => field.toLowerCase().includes(searchTerm))) {
+            results.products.push(product);
+        }
+    });
+    
+    // Search in parts
+    allData.parts.forEach(part => {
+        const searchFields = [
+            part.name,
+            part.partNumber,
+            part.category,
+            part.supplier,
+            part.source,
+            part.id?.toString()
+        ].filter(Boolean);
+        
+        if (searchFields.some(field => field.toLowerCase().includes(searchTerm))) {
+            results.parts.push(part);
         }
     });
     
@@ -174,7 +213,8 @@ export function performGlobalSearch(query) {
 
 // ==================== DISPLAY RESULTS ====================
 function displaySearchResults(query, results) {
-    const totalResults = results.materials.length + results.tools.length + results.misc.length + 
+    const totalResults = results.materials.length + results.tools.length + results.misc.length +
+                        results.products.length + results.parts.length +
                         results.customers.length + results.quotes.length + results.workOrders.length;
     
     if (totalResults === 0) {
@@ -200,6 +240,16 @@ function displaySearchResults(query, results) {
     // Misc items section
     if (results.misc.length > 0) {
         content += renderMiscResults(results.misc);
+    }
+    
+    // Products section
+    if (results.products.length > 0) {
+        content += renderProductResults(results.products);
+    }
+    
+    // Parts section
+    if (results.parts.length > 0) {
+        content += renderPartResults(results.parts);
     }
     
     // Customers section
@@ -331,6 +381,62 @@ function renderMiscResults(misc) {
     return html;
 }
 
+function renderProductResults(products) {
+    let html = `
+        <div class="bg-gray-800 p-4 rounded-lg">
+            <h4 class="text-accentGreen font-medium mb-3 text-sm">
+                <i class="fa-solid fa-cube mr-2"></i>Products (${products.length})
+            </h4>
+            <div class="space-y-2">
+    `;
+    
+    products.forEach(product => {
+        const qty = product.quantityOnHand || product.qtyOnHand || 0;
+        html += `
+            <div class="flex justify-between items-center p-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors">
+                <div class="flex-1">
+                    <p class="text-gray-300"><strong>${product.name}</strong></p>
+                    <p class="text-xs text-gray-500">${product.category || 'Product'} • ${product.partNumber || ''} • Stock: ${qty}</p>
+                </div>
+                <button onclick="BPERP.search.goToProduct('${product.id}')" class="text-blue-400 hover:text-blue-300 px-3 py-1 bg-blue-600/20 rounded text-xs">
+                    <i class="fa-solid fa-arrow-right mr-1"></i>View
+                </button>
+            </div>
+        `;
+    });
+    
+    html += `</div></div>`;
+    return html;
+}
+
+function renderPartResults(parts) {
+    let html = `
+        <div class="bg-gray-800 p-4 rounded-lg">
+            <h4 class="text-accentGreen font-medium mb-3 text-sm">
+                <i class="fa-solid fa-puzzle-piece mr-2"></i>Parts (${parts.length})
+            </h4>
+            <div class="space-y-2">
+    `;
+    
+    parts.forEach(part => {
+        const qty = part.quantityOnHand || part.qtyOnHand || 0;
+        html += `
+            <div class="flex justify-between items-center p-2 bg-gray-700 rounded hover:bg-gray-600 transition-colors">
+                <div class="flex-1">
+                    <p class="text-gray-300"><strong>${part.name}</strong></p>
+                    <p class="text-xs text-gray-500">${part.category || 'Part'} • ${part.source || 'purchased'} • Stock: ${qty}</p>
+                </div>
+                <button onclick="BPERP.search.goToPart('${part.id}')" class="text-blue-400 hover:text-blue-300 px-3 py-1 bg-blue-600/20 rounded text-xs">
+                    <i class="fa-solid fa-arrow-right mr-1"></i>View
+                </button>
+            </div>
+        `;
+    });
+    
+    html += `</div></div>`;
+    return html;
+}
+
 function renderCustomerResults(customers) {
     let html = `
         <div class="bg-gray-800 p-4 rounded-lg">
@@ -435,6 +541,22 @@ export function goToMisc(miscId) {
     window.BPERP?.navigate?.('inventory-misc');
     highlightItem(miscId);
     showToast('Item located in Miscellaneous Inventory', 'success');
+}
+
+export function goToProduct(productId) {
+    console.log('BPERP: Navigating to product:', productId);
+    window.BPERP?.common?.closeModal('searchResultsModal');
+    window.BPERP?.navigate?.('inventory-products');
+    highlightItem(productId);
+    showToast('Product located in Products Inventory', 'success');
+}
+
+export function goToPart(partId) {
+    console.log('BPERP: Navigating to part:', partId);
+    window.BPERP?.common?.closeModal('searchResultsModal');
+    window.BPERP?.navigate?.('inventory-parts');
+    highlightItem(partId);
+    showToast('Part located in Parts Inventory', 'success');
 }
 
 export function goToCustomer(customerId) {

@@ -5,7 +5,8 @@
 
 // ==================== CONFIGURATION ====================
 const CONFIG = {
-    API_BASE: window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api',
+    // Use current origin so API works regardless of port (e.g. Electron with custom server.port)
+    API_BASE: `${window.location.origin}/api`,
     ENABLE_OFFLINE_MODE: true,
     CACHE_TTL: 5 * 60 * 1000, // 5 minutes
     AUTO_REFRESH_INTERVAL: 30000 // 30 seconds
@@ -112,6 +113,8 @@ const routes = {
     'inventory-materials': () => modules.inventory?.loadMaterialInventory(),
     'inventory-tooling': () => modules.inventory?.loadToolingInventory(),
     'inventory-misc': () => modules.inventory?.loadMiscInventory(),
+    'inventory-products': () => modules.inventory?.loadProductInventory(),
+    'inventory-parts': () => modules.inventory?.loadPartsInventory(),
     
     // Workcenter
     'workcenter-wip': () => modules.sales?.loadWIPView(),

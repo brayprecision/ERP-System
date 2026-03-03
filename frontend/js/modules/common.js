@@ -414,7 +414,9 @@ export async function exportToCSV(data, filename, headers, endpoint) {
 
         if (endpoint) {
             // Use server-side export
-            response = await fetch(`${window.API_BASE}${endpoint}`);
+            const authToken = localStorage.getItem('bperp_auth_token');
+            const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+            response = await fetch(`${window.API_BASE}${endpoint}`, { headers });
             if (!response.ok) {
                 throw new Error(`Export failed: ${response.statusText}`);
             }
@@ -526,11 +528,14 @@ export async function createBackup() {
     
     try {
         // Try API first (includes database data)
+        const authToken = localStorage.getItem('bperp_auth_token');
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        };
         const response = await fetch(`${window.API_BASE}/backup/create`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers,
             body: JSON.stringify({ localStorage: localStorageData })
         });
 

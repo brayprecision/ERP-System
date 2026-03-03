@@ -20,8 +20,9 @@
     "dev": "NODE_ENV=development electron .",
     "dev:backend": "cd backend && npm run dev",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux",
+    "rebuild:backend": "electron-rebuild -f -w better-sqlite3,bcrypt -m backend -v 28.3.3",
+    "build:win": "npm run backend:install && npm run rebuild:backend && electron-builder --win",
+    "build:linux": "npm run backend:install && npm run rebuild:backend && electron-builder --linux",
     "pack": "electron-builder --dir",
     "postinstall": "electron-builder install-app-deps",
     "clean": "rm -rf dist dist-installers",
@@ -35,7 +36,8 @@
   },
   "devDependencies": {
     "electron": "^28.1.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "@electron/rebuild": "^4.0.3"
   },
   "build": {
     "appId": "com.brayprecision.bperp",

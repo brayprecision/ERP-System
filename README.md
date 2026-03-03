@@ -7,7 +7,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 **Version:** 1.0.0-beta.1 | **Internal Use Only** | **Windows & Linux**
 
 ### What's Working
-- Inventory Management (Materials, Tooling, Misc items with low-stock alerts)
+- Inventory Management (Products, Parts, Materials, Tooling, Misc items with low-stock alerts; Product BOM for assemblies)
 - Sales Management (Customers, Contacts, Quotes with lifecycle, Work Orders with checklists)
 - Task Management (11 workflow types, assignments, history)
 - Workcenter Management (machine queues, job routing, state tracking)
@@ -22,7 +22,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 - **Search** module exists but cross-module search isn't fully wired
 
 ### TODO (pick up here)
-1. Build and test the Windows installer: `npx electron-builder --win --publish never`
+1. Test the Windows installer end-to-end: run `dist-installers\BPERP-1.0.0-beta.1-win-x64.exe` (use `npm run build:win` to rebuild)
 2. Create `backend/.env` from `backend/.env.example` with `DB_PATH` pointing to the NAS
 3. Run `cd backend && npm run migrate` on the target machine
 4. Import shop data via CSV import (Settings > Data Import)
@@ -99,12 +99,14 @@ npm start
 
 ### Building Installers
 
+`build:win` and `build:linux` automatically install backend deps and rebuild native modules for Electron:
+
 ```bash
-npm run backend:install
-npx electron-builder --win --publish never        # Windows NSIS installer
-npx electron-builder --linux deb --publish never   # Linux .deb
-npx electron-builder --linux AppImage --publish never  # Linux AppImage
+npm run build:win        # Windows NSIS installer → dist-installers/BPERP-*-win-x64.exe
+npm run build:linux     # Linux .deb + AppImage + rpm
 ```
+
+Output: `dist-installers/` (installer + unpacked app for testing).
 
 ## Project Structure
 
@@ -132,10 +134,19 @@ ERP-System/
 ## New Device Setup
 
 1. Install BPERP using the Windows or Linux installer
-2. On first launch, the setup wizard asks for the NAS database path
-3. The app opens the shared SQLite database and runs any pending migrations
-4. User logs in — their profile, permissions, and appearance settings load automatically from the database
-5. No manual configuration needed beyond the database path
+2. On first launch, the setup wizard asks for the NAS database path (or local path for testing)
+3. Create the admin user and password
+4. The app opens the shared SQLite database and runs any pending migrations
+5. User logs in — their profile, permissions, and appearance settings load automatically from the database
+6. No manual configuration needed beyond the database path
+
+## End-to-End Testing (Installer)
+
+1. Run the installer: `dist-installers\BPERP-1.0.0-beta.1-win-x64.exe`
+2. Complete setup wizard: choose a local DB path (e.g. `C:\temp\bperp.db`) for testing
+3. Create admin user and launch
+4. Verify: login, dashboard, inventory, sales, tasks, workcenter, settings
+5. Import sample data via Settings > Data Import
 
 ## API Endpoints
 
@@ -145,12 +156,12 @@ All endpoints (except login) require `Authorization: Bearer <token>` header.
 |----------|-------------|
 | `POST /api/users/login` | Authenticate user |
 | `GET /api/customers` | List customers |
-| `GET /api/inventory/:category` | List inventory items (materials/tooling/misc) |
+| `GET /api/inventory/:category` | List inventory items (products/parts/materials/tooling/misc) |
 | `GET /api/quotes` | List quotes |
 | `GET /api/work-orders` | List work orders |
 | `GET /api/tasks` | List tasks (supports filtering) |
 | `POST /api/import/preview` | Preview CSV/Excel import |
-| `POST /api/import/:entityType` | Import data (customers, materials, tooling, etc.) |
+| `POST /api/import/:entityType` | Import data (customers, materials, tooling, products, parts, etc.) |
 | `GET /api/import/template/:type` | Download CSV import template |
 
 ## Common Commands
@@ -165,6 +176,10 @@ cd backend && npm run migrate:status  # Check migration status
 # Electron app
 npm start                          # Run desktop app
 npm run dev                        # Run in dev mode
+
+# Build installers (rebuilds native modules automatically)
+npm run build:win                  # Windows
+npm run build:linux                # Linux
 ```
 
 ## Security

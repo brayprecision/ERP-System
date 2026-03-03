@@ -3,8 +3,9 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
+const { validateBody, schemas } = require('../middleware/validation');
 
-// Validation helpers
+// Validation helpers (kept for quote item validation in loop)
 const validateQuote = (data, isUpdate = false) => {
     const errors = [];
     
@@ -129,6 +130,9 @@ const transformDocument = (row) => ({
 });
 
 module.exports = (pool) => {
+    const { requireAuth } = require('../middleware/auth')(pool);
+    router.use(requireAuth);
+
     // ==================== QUOTES ====================
     
     // GET all quotes with filters
@@ -324,19 +328,14 @@ module.exports = (pool) => {
     });
     
     // POST create new quote
-    router.post('/', async (req, res) => {
+    router.post('/', validateBody(schemas.quote), async (req, res) => {
         try {
-            const validation = validateQuote(req.body);
-            if (!validation.isValid) {
-                return sendError(res, 400, 'Validation failed', validation.errors);
-            }
-            
             const quoteNumber = await generateQuoteNumber(pool);
             
             const {
                 customerId, contactId, priority, rfqNumber, rfqReceivedDate,
                 quoteDueDate, validUntil, notes, internalNotes, items
-            } = req.body;
+            } = req.validatedBody;
             
             // Insert quote
             const quoteResult = await pool.query(`
@@ -357,8 +356,6 @@ module.exports = (pool) => {
                 let subtotal = 0;
                 for (let i = 0; i < items.length; i++) {
                     const item = items[i];
-                    const itemValidation = validateQuoteItem(item);
-                    if (itemValidation.isValid) {
                         const extendedPrice = (item.quantity * item.unitPrice) + (item.setupCost || 0);
                         subtotal += extendedPrice;
                         
@@ -374,7 +371,6 @@ module.exports = (pool) => {
                             item.unitPrice, item.setupCost || 0, extendedPrice, item.leadTimeDays, item.notes
                         ]);
                         quote.items.push(transformQuoteItem(itemResult.rows[0]));
-                    }
                 }
                 
                 // Update totals
@@ -646,14 +642,9 @@ module.exports = (pool) => {
     // ==================== QUOTE ITEMS ====================
     
     // POST add item to quote
-    router.post('/:quoteId/items', async (req, res) => {
+    router.post('/:quoteId/items', validateBody(schemas.quoteItem), async (req, res) => {
         try {
             const { quoteId } = req.params;
-            
-            const validation = validateQuoteItem(req.body);
-            if (!validation.isValid) {
-                return sendError(res, 400, 'Validation failed', validation.errors);
-            }
             
             // Get next line number
             const lineResult = await pool.query(
@@ -662,7 +653,7 @@ module.exports = (pool) => {
             );
             const lineNumber = lineResult.rows[0].next_line;
             
-            const { partNumber, revision, description, quantity, unit, material, materialCost, unitPrice, setupCost, leadTimeDays, notes } = req.body;
+            const { partNumber, revision, description, quantity, unit, material, materialCost, unitPrice, setupCost, leadTimeDays, notes } = req.validatedBody;
             const extendedPrice = (quantity * unitPrice) + (setupCost || 0);
             
             const result = await pool.query(`

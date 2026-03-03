@@ -225,11 +225,14 @@ module.exports = function(pool) {
             const user = await authMiddleware.getUserFromToken(token);
             
             res.json({ 
-                valid: !!user, 
-                user: user || null 
+                success: true,
+                data: { 
+                    valid: !!user, 
+                    user: user || null 
+                }
             });
         } catch (err) {
-            res.json({ valid: false, user: null });
+            res.json({ success: true, data: { valid: false, user: null } });
         }
     });
 
@@ -247,7 +250,7 @@ module.exports = function(pool) {
                 ORDER BY name
             `);
             
-            res.json(result.rows);
+            res.json({ success: true, data: result.rows });
         } catch (err) {
             console.error('Get users error:', err);
             res.status(500).json({ success: false, error: 'Server error' });
@@ -260,7 +263,7 @@ module.exports = function(pool) {
     router.get('/roles/defaults', async (req, res) => {
         try {
             const result = await pool.query('SELECT * FROM role_defaults ORDER BY role');
-            res.json(result.rows);
+            res.json({ success: true, data: result.rows });
         } catch (err) {
             console.error('Get role defaults error:', err);
             res.status(500).json({ success: false, error: 'Server error' });
@@ -304,7 +307,7 @@ module.exports = function(pool) {
                 return res.status(404).json({ success: false, error: 'User not found' });
             }
             
-            res.json(result.rows[0]);
+            res.json({ success: true, data: result.rows[0] });
         } catch (err) {
             console.error('Get user error:', err);
             res.status(500).json({ success: false, error: 'Server error' });
@@ -348,7 +351,7 @@ module.exports = function(pool) {
                     username 
                 });
                 
-                res.status(201).json({ success: true, user: result.rows[0] });
+                res.status(201).json({ success: true, data: result.rows[0] });
             } catch (err) {
                 console.error('Create user error:', err);
                 if (err.code === '23505') {
@@ -424,7 +427,7 @@ module.exports = function(pool) {
                 // Log activity
                 await logActivity(req.user.id, 'user_updated', { updated_user_id: userId });
                 
-                res.json({ success: true, user: result.rows[0] });
+                res.json({ success: true, data: result.rows[0] });
             } catch (err) {
                 console.error('Update user error:', err);
                 if (err.code === '23505') {
@@ -498,7 +501,7 @@ module.exports = function(pool) {
                     new_permissions: tab_permissions 
                 });
                 
-                res.json({ success: true, user: result.rows[0] });
+                res.json({ success: true, data: result.rows[0] });
             } catch (err) {
                 console.error('Update permissions error:', err);
                 res.status(500).json({ success: false, error: 'Server error' });
@@ -541,7 +544,7 @@ module.exports = function(pool) {
                     return res.status(404).json({ success: false, error: 'User not found' });
                 }
                 
-                res.json({ success: true, user: result.rows[0] });
+                res.json({ success: true, data: result.rows[0] });
             } catch (err) {
                 console.error('Update appearance error:', err);
                 res.status(500).json({ success: false, error: 'Server error' });

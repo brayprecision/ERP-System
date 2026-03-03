@@ -1,8 +1,9 @@
 // Work Orders API Routes for BPERP Sales Module
 const express = require('express');
 const router = express.Router();
+const { validateBody, schemas } = require('../middleware/validation');
 
-// Validation helpers
+// Validation helpers (kept for PUT - Zod used for POST)
 const validateWorkOrder = (data, isUpdate = false) => {
     const errors = [];
     
@@ -135,6 +136,9 @@ const transformChecklistItem = (row) => ({
 });
 
 module.exports = (pool) => {
+    const { requireAuth } = require('../middleware/auth')(pool);
+    router.use(requireAuth);
+
     // ==================== WORK ORDERS ====================
     
     // GET all work orders with filters
@@ -309,20 +313,15 @@ module.exports = (pool) => {
     });
     
     // POST create new work order
-    router.post('/', async (req, res) => {
+    router.post('/', validateBody(schemas.workOrder), async (req, res) => {
         try {
-            const validation = validateWorkOrder(req.body);
-            if (!validation.isValid) {
-                return sendError(res, 400, 'Validation failed', validation.errors);
-            }
-            
             const woNumber = await generateWONumber(pool);
             
             const {
                 customerId, quoteId, quoteItemId, partNumber, revision, description,
                 quantity, unit, material, dueDate, priority, customerPo, quotedPrice,
                 notes, internalNotes
-            } = req.body;
+            } = req.validatedBody;
             
             const result = await pool.query(`
                 INSERT INTO work_orders (wo_number, customer_id, quote_id, quote_item_id, part_number,

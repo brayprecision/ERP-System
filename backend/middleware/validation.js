@@ -86,25 +86,33 @@ const appearanceSettingsSchema = z.object({
     })
 });
 
-// ==================== CUSTOMER SCHEMAS ====================
+// ==================== CUSTOMER SCHEMAS (camelCase for API) ====================
 
 const customerSchema = z.object({
     name: z.string()
         .min(1, 'Customer name is required')
         .max(200, 'Name too long')
         .trim(),
-    address: z.string()
-        .max(500, 'Address too long')
-        .optional()
-        .nullable(),
-    phone: z.string()
-        .max(50, 'Phone number too long')
-        .optional()
-        .nullable(),
-    terms: z.string()
-        .max(100, 'Terms too long')
-        .optional()
-        .nullable()
+    addressLine1: z.string().max(500).optional().nullable(),
+    addressLine2: z.string().max(500).optional().nullable(),
+    city: z.string().max(100).optional().nullable(),
+    state: z.string().max(100).optional().nullable(),
+    zipCode: z.string().max(20).optional().nullable(),
+    country: z.string().max(100).optional().nullable(),
+    phone: z.string().max(50).optional().nullable(),
+    fax: z.string().max(50).optional().nullable(),
+    website: z.string().max(255).optional().nullable(),
+    defaultTerms: z.string().max(100).optional().nullable(),
+    taxId: z.string().max(50).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+    contacts: z.array(z.object({
+        name: z.string().min(1).max(100),
+        role: z.string().max(100).optional().nullable(),
+        email: z.string().email().max(255).optional().nullable(),
+        phone: z.string().max(50).optional().nullable(),
+        mobile: z.string().max(50).optional().nullable(),
+        isPrimary: z.boolean().optional()
+    })).optional()
 });
 
 const contactSchema = z.object({
@@ -117,101 +125,173 @@ const contactSchema = z.object({
         .max(255, 'Email too long')
         .optional()
         .nullable(),
-    phone: z.string()
-        .max(50, 'Phone number too long')
-        .optional()
-        .nullable(),
-    role: z.string()
-        .max(100, 'Role too long')
-        .optional()
-        .nullable(),
-    is_primary: z.boolean()
-        .optional()
-        .default(false)
+    phone: z.string().max(50).optional().nullable(),
+    mobile: z.string().max(50).optional().nullable(),
+    role: z.string().max(100).optional().nullable(),
+    isPrimary: z.boolean().optional().default(false),
+    notes: z.string().max(500).optional().nullable()
 });
 
-// ==================== INVENTORY SCHEMAS ====================
+// ==================== INVENTORY SCHEMAS (camelCase for API) ====================
 
 const materialSchema = z.object({
     name: z.string()
         .min(1, 'Name is required')
         .max(200, 'Name too long')
         .trim(),
-    part_number: z.string()
-        .max(100, 'Part number too long')
-        .optional()
-        .nullable(),
-    category: z.string()
-        .max(100, 'Category too long')
-        .optional()
-        .nullable(),
-    qty_on_hand: z.number()
-        .int('Quantity must be an integer')
-        .min(0, 'Quantity cannot be negative')
-        .optional()
-        .default(0),
-    minimum_qty: z.number()
-        .int('Minimum quantity must be an integer')
-        .min(0, 'Minimum quantity cannot be negative')
-        .optional()
-        .default(0),
+    materialType: z.string()
+        .min(1, 'Material type is required')
+        .max(100)
+        .trim(),
+    materialShape: z.string()
+        .min(1, 'Material shape is required')
+        .max(100)
+        .trim(),
+    qtyOnHand: z.coerce.number()
+        .min(0, 'Quantity cannot be negative'),
+    lengthUnit: z.string()
+        .min(1, 'Length unit is required')
+        .max(20)
+        .trim(),
+    unitPrice: z.coerce.number()
+        .min(0, 'Price cannot be negative'),
     supplier: z.string()
-        .max(200, 'Supplier name too long')
-        .optional()
-        .nullable(),
-    unit_price: z.number()
-        .min(0, 'Price cannot be negative')
-        .optional()
-        .nullable()
+        .min(1, 'Supplier is required')
+        .max(200)
+        .trim(),
+    minimumQty: z.coerce.number()
+        .min(0, 'Minimum quantity cannot be negative'),
+    reorderLink: z.string().max(500).optional().nullable()
 });
 
-// ==================== QUOTE SCHEMAS ====================
+const toolSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(200).trim(),
+    toolType: z.string().min(1, 'Tool type is required').max(100).trim(),
+    operation: z.string().min(1, 'Operation is required').max(100).trim(),
+    qtyOnHand: z.number().min(0),
+    minimumQty: z.number().min(0),
+    supplier: z.string().min(1, 'Supplier is required').max(200).trim(),
+    toolPrice: z.number().min(0)
+});
+
+const miscItemSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(200).trim(),
+    workcenter: z.string().min(1, 'Workcenter is required').max(100).trim(),
+    qtyOnHand: z.number().min(0),
+    minimumQty: z.number().min(0),
+    itemPrice: z.number().min(0)
+});
+
+const productSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(200).trim(),
+    partNumber: z.string().max(100).optional().nullable(),
+    category: z.string().max(100).optional().nullable(),
+    description: z.string().max(1000).optional().nullable(),
+    qtyOnHand: z.coerce.number().min(0),
+    minimumQty: z.coerce.number().min(0),
+    unit: z.string().max(20).optional().nullable(),
+    supplier: z.string().max(200).optional().nullable(),
+    unitPrice: z.coerce.number().min(0),
+    location: z.string().max(200).optional().nullable(),
+    reorderLink: z.string().max(500).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable()
+});
+
+const partSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(200).trim(),
+    partNumber: z.string().max(100).optional().nullable(),
+    category: z.string().max(100).optional().nullable(),
+    source: z.enum(['purchased', 'manufactured']).optional().default('purchased'),
+    description: z.string().max(1000).optional().nullable(),
+    qtyOnHand: z.coerce.number().min(0),
+    minimumQty: z.coerce.number().min(0),
+    unit: z.string().max(20).optional().nullable(),
+    supplier: z.string().max(200).optional().nullable(),
+    unitPrice: z.coerce.number().min(0),
+    location: z.string().max(200).optional().nullable(),
+    reorderLink: z.string().max(500).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable()
+});
+
+const productBomSchema = z.object({
+    partId: z.coerce.number().int().positive('Part ID is required'),
+    quantityPerAssembly: z.coerce.number().min(0.001, 'Quantity must be positive')
+});
+
+// ==================== QUOTE SCHEMAS (camelCase for API) ====================
 
 const quoteSchema = z.object({
-    customer_id: z.number()
+    customerId: z.coerce.number()
         .int('Customer ID must be an integer')
         .positive('Customer ID must be positive'),
-    part_number: z.string()
-        .max(100, 'Part number too long')
-        .optional()
-        .nullable(),
-    description: z.string()
-        .max(1000, 'Description too long')
-        .optional()
-        .nullable(),
-    quantity: z.number()
-        .int('Quantity must be an integer')
-        .positive('Quantity must be positive')
-        .optional()
-        .default(1),
-    requested_date: z.string()
-        .datetime()
-        .optional()
-        .nullable(),
-    due_date: z.string()
-        .datetime()
-        .optional()
-        .nullable()
+    contactId: z.coerce.number().int().positive().optional().nullable(),
+    priority: z.string().max(50).optional(),
+    rfqNumber: z.string().max(100).optional().nullable(),
+    rfqReceivedDate: z.string().optional().nullable(),
+    quoteDueDate: z.string().optional().nullable(),
+    validUntil: z.string().optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+    internalNotes: z.string().max(2000).optional().nullable(),
+    items: z.array(z.object({
+        partNumber: z.string().min(1, 'Part number is required').max(100),
+        revision: z.string().max(50).optional().nullable(),
+        description: z.string().max(1000).optional().nullable(),
+        quantity: z.coerce.number().int().positive(),
+        unit: z.string().max(20).optional(),
+        material: z.string().max(200).optional().nullable(),
+        materialCost: z.number().min(0).optional(),
+        unitPrice: z.coerce.number().min(0, 'Unit price is required'),
+        setupCost: z.number().min(0).optional(),
+        leadTimeDays: z.number().int().min(0).optional().nullable(),
+        notes: z.string().max(500).optional().nullable()
+    })).optional()
 });
 
-// ==================== WORK ORDER SCHEMAS ====================
+const quoteItemSchema = z.object({
+    partNumber: z.string()
+        .min(1, 'Part number is required')
+        .max(100)
+        .trim(),
+    revision: z.string().max(50).optional().nullable(),
+    description: z.string().max(1000).optional().nullable(),
+    quantity: z.coerce.number()
+        .int('Quantity must be an integer')
+        .positive('Quantity must be at least 1'),
+    unit: z.string().max(20).optional(),
+    material: z.string().max(200).optional().nullable(),
+    materialCost: z.number().min(0).optional(),
+    unitPrice: z.coerce.number()
+        .min(0, 'Unit price is required'),
+    setupCost: z.number().min(0).optional(),
+    leadTimeDays: z.number().int().min(0).optional().nullable(),
+    notes: z.string().max(500).optional().nullable()
+});
+
+// ==================== WORK ORDER SCHEMAS (camelCase for API) ====================
 
 const workOrderSchema = z.object({
-    customer_id: z.number()
+    customerId: z.coerce.number()
         .int('Customer ID must be an integer')
-        .positive('Customer ID must be positive'),
-    quote_id: z.number()
-        .int('Quote ID must be an integer')
-        .positive('Quote ID must be positive')
-        .optional()
-        .nullable(),
-    due_date: z.string()
-        .optional()
-        .nullable(),
-    notes: z.string()
-        .max(2000, 'Notes too long')
-        .optional()
-        .nullable()
+        .positive('Please select a customer'),
+    quoteId: z.coerce.number().int().positive().optional().nullable(),
+    quoteItemId: z.coerce.number().int().positive().optional().nullable(),
+    partNumber: z.string()
+        .min(1, 'Part number is required')
+        .max(100)
+        .trim(),
+    revision: z.string().max(50).optional().nullable(),
+    description: z.string().max(1000).optional().nullable(),
+    quantity: z.coerce.number()
+        .int('Quantity must be an integer')
+        .positive('Quantity must be at least 1'),
+    unit: z.string().max(20).optional(),
+    material: z.string().max(200).optional().nullable(),
+    dueDate: z.string().min(1, 'Due date is required'),
+    priority: z.string().max(50).optional(),
+    customerPo: z.string().max(100).optional().nullable(),
+    quotedPrice: z.coerce.number().min(0).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+    internalNotes: z.string().max(2000).optional().nullable()
 });
 
 // ==================== ID PARAMETER SCHEMA ====================
@@ -324,7 +404,13 @@ module.exports = {
         customer: customerSchema,
         contact: contactSchema,
         material: materialSchema,
+        tool: toolSchema,
+        miscItem: miscItemSchema,
+        product: productSchema,
+        part: partSchema,
+        productBom: productBomSchema,
         quote: quoteSchema,
+        quoteItem: quoteItemSchema,
         workOrder: workOrderSchema,
         idParam: idParamSchema
     },

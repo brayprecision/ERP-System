@@ -300,9 +300,9 @@ export async function updateUserPermissions(userId, permissions) {
             if (response.ok) {
                 const data = await response.json();
                 if (data.success) {
-                    // Update in local cache too
+                    const user = data.data ?? data.user;
                     updateUserInCache(userId, { tab_permissions: permissions });
-                    return { success: true, user: data.user };
+                    return { success: true, user };
                 }
                 return { success: false, error: data.error };
             }
@@ -428,7 +428,8 @@ export async function getAllUsers() {
             });
             
             if (response.ok) {
-                const users = await response.json();
+                const json = await response.json();
+                const users = json.data ?? json;
                 storage.set(USER_STORAGE_KEYS.USERS_LIST, users, true);
                 return users;
             }
@@ -462,11 +463,11 @@ export async function createUser(userData) {
             if (response.ok) {
                 const data = await response.json();
                 if (data.success) {
-                    // Add to local cache
+                    const user = data.data ?? data.user;
                     const users = storage.get(USER_STORAGE_KEYS.USERS_LIST, []);
-                    users.push(data.user);
+                    users.push(user);
                     storage.set(USER_STORAGE_KEYS.USERS_LIST, users, true);
-                    return { success: true, user: data.user };
+                    return { success: true, user };
                 }
                 return { success: false, error: data.error };
             }
@@ -537,8 +538,9 @@ export async function updateUser(userId, updates) {
             if (response.ok) {
                 const data = await response.json();
                 if (data.success) {
+                    const user = data.data ?? data.user;
                     updateUserInCache(userId, updates);
-                    return { success: true, user: data.user };
+                    return { success: true, user };
                 }
                 return { success: false, error: data.error };
             }
@@ -1092,8 +1094,10 @@ export function showLoginModal(onSuccess = null) {
                 <button type="submit" class="btn btn-primary w-full">
                     <i class="fa-solid fa-sign-in-alt mr-2"></i>Sign In
                 </button>
-                <p class="text-gray-500 text-xs text-center mt-4">
-                    Demo: Use "admin", "machinist1", or "operator1" with any password
+                <p class="text-gray-500 text-xs text-center mt-4" id="loginHint">
+                    ${typeof window !== 'undefined' && window.platform?.isElectron
+                        ? 'Sign in with the username you created during setup'
+                        : 'Demo: Use "admin", "machinist1", or "operator1" with any password'}
                 </p>
             </form>
         </div>

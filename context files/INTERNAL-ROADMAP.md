@@ -62,7 +62,7 @@ All data: users, inventory, sales, tasks, workcenters, maintenance
 
 ### Phase 3: Data Import & Testing — COMPLETE
 - [x] CSV/Excel import system (`backend/routes/import.js`)
-- [x] 6 entity types: customers, contacts, materials, tooling, workcenters, machines
+- [x] 8 entity types: customers, contacts, materials, tooling, products, parts, workcenters, machines
 - [x] Jest test framework with test helpers
 - [x] Validation and import API tests
 
@@ -99,7 +99,7 @@ All data: users, inventory, sales, tasks, workcenters, maintenance
 
 | Task | Status | Notes |
 |------|--------|-------|
-| Build Windows installer | IN PROGRESS | Builds but native modules (`better-sqlite3`, `bcrypt`) need `electron-rebuild --version 28.3.3` in `backend/` before packaging |
+| Build Windows installer | DONE | `npm run build:win` runs `@electron/rebuild -f -w better-sqlite3,bcrypt -m backend -v 28.3.3` before packaging |
 | Test Windows installer end-to-end | NOT DONE | Setup wizard, backend start, all modules |
 | Import existing shop data | NOT DONE | Use CSV import (Settings > Data Import) |
 | Test multi-device workflow | NOT DONE | Two machines, same NAS DB file, verify data syncs |

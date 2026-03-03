@@ -5,6 +5,8 @@ const express = require('express');
 
 module.exports = function(pool) {
     const router = express.Router();
+    const { requireAuth } = require('../middleware/auth')(pool);
+    router.use(requireAuth);
 
     // Helper: Transform queue item from DB to API format
     function transformQueueItem(row) {
