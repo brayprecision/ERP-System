@@ -1,0 +1,28 @@
+---
+description: Update documentation after every code change
+alwaysApply: true
+---
+
+# Documentation Updates
+
+**Update documentation whenever the app changes.** Documentation must stay in sync with the codebase.
+
+## What to Update
+
+| Change Type | Files to Update |
+|-------------|-----------------|
+| New feature, API, or UI | `README.md`, `CHANGELOG.md` (add to [Unreleased]), `backend/README.md` if API changed |
+| New entity/table | `README.md`, `backend/README.md`, `context files/.cursorrules.md` (schema tables), `context files/INTERNAL-ROADMAP.md` if import-related |
+| New route or endpoint | `README.md` (API Endpoints table), `backend/README.md` (API Overview) |
+| Architecture or deployment change | `README.md`, `context files/INTERNAL-ROADMAP.md`, `docs/` as needed |
+
+## Workflow
+
+1. Make code changes
+2. Update relevant documentation in the same session
+3. Add CHANGELOG entry for user-facing or significant changes
+4. Verify README and backend README reflect current API and features
+
+## Before Committing
+
+- [ ] Documentation updated (README, CHANGELOG, backend README, .cursorrules as needed)

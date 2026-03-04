@@ -1,6 +1,8 @@
 # BPERP Backend
 
-Express.js API server for the BPERP ERP system. All workstations share a single SQLite database file on the NAS.
+Express.js API server for the BPERP ERP system. Runs on the NAS (or a central machine); workstations connect as thin clients. SQLite database is stored locally on the server.
+
+**For NAS deployment**, see `docs/NAS-SETUP.md`.
 
 ## Setup
 
@@ -19,9 +21,9 @@ npm install
 Create a `.env` file:
 
 ```env
-# Database — path to the shared SQLite file on the NAS
-# All workstations point to the same file
-DB_PATH=//NAS/share/bperp.db
+# Database — path to the SQLite file (local to this machine)
+# On NAS: use a path like /home/user/bperp/bperp.db
+DB_PATH=./bperp.db
 
 # Server
 PORT=3000
@@ -31,21 +33,16 @@ NODE_ENV=development
 SESSION_TIMEOUT_HOURS=24
 ```
 
-If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend directory (useful for local development).
+If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend directory.
 
-### Database Setup
+### Migrations
+
+Migrations run automatically when the server starts. To run manually:
 
 ```bash
-# Run all pending migrations
 npm run migrate
-
-# Check migration status
 npm run migrate:status
-
-# Rollback last migration
 npm run migrate:down
-
-# Create new migration
 npm run migrate:create -- my_migration_name
 ```
 
@@ -59,7 +56,7 @@ npm start
 npm run dev
 ```
 
-Server runs on `http://localhost:3000` by default.
+Server runs on `http://localhost:3000` by default and binds to `0.0.0.0` so it accepts connections from other machines on the network.
 
 ## Scripts
 
@@ -105,6 +102,7 @@ backend/
 │   ├── workcenters.js
 │   └── workorders.js
 ├── db.js                # SQLite wrapper (PostgreSQL-compatible query interface)
+├── scripts/             # NAS deployment (start-server.sh, bperp.service)
 ├── tests/
 │   ├── setup.js         # Jest setup
 │   ├── helpers/         # Test utilities
@@ -117,6 +115,13 @@ backend/
 ```
 
 ## API Overview
+
+### Setup (first-run)
+
+```
+GET  /api/setup/status             # Check if admin exists (no auth)
+POST /api/setup/init               # Create initial admin (no auth, first-run only)
+```
 
 ### Authentication & Users
 

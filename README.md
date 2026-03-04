@@ -23,18 +23,17 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 
 ### TODO (pick up here)
 1. Test the Windows installer end-to-end: run `dist-installers\BPERP-1.0.0-beta.1-win-x64.exe` (use `npm run build:win` to rebuild)
-2. Create `backend/.env` from `backend/.env.example` with `DB_PATH` pointing to the NAS
-3. Run `cd backend && npm run migrate` on the target machine
-4. Import shop data via CSV import (Settings > Data Import)
-5. Fix Backup/Restore to copy the SQLite DB file via Electron IPC
-6. Wire up cross-module search in `frontend/js/modules/search.js`
-7. Implement auto-refresh so workcenter displays show current data
-8. Ensure user profiles (appearance, permissions) load from database on login — no manual setup on new devices
+2. Set up the backend on the NAS (see `docs/NAS-SETUP.md`)
+3. Import shop data via CSV import (Settings > Data Import)
+4. Fix Backup/Restore to copy the SQLite DB file via Electron IPC
+5. Wire up cross-module search in `frontend/js/modules/search.js`
+6. Implement auto-refresh so workcenter displays show current data
+7. Ensure user profiles (appearance, permissions) load from database on login — no manual setup on new devices
 
 ## Architecture
 
-### Shared SQLite on NAS
-All workstations share a single SQLite database file hosted on the shop's NAS. There is no database server to install or maintain — just a file on a network share. When a new device is set up, the installer only needs the NAS database path. User profiles, permissions, and appearance settings are stored in the database and loaded automatically on login.
+### Central Backend on NAS (Option A)
+The BPERP backend runs on the shop's NAS (Zorin OS or other Linux). Workstations run the Electron app as thin clients and connect to the server via HTTP. The SQLite database is stored locally on the NAS (no network filesystem). User profiles, permissions, and appearance settings are stored in the database and loaded automatically on login.
 
 ```
 ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
@@ -44,13 +43,15 @@ All workstations share a single SQLite database file hosted on the shop's NAS. T
 └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
        │                  │                  │
        └──────────┬───────┴──────────────────┘
-                  │
+                  │  http://nas:3000
          ┌────────▼────────┐
-         │   NAS / Share    │
-         │   bperp.db       │
-         │  (SQLite file)   │
+         │   NAS           │
+         │  Backend + DB   │
+         │  (SQLite local) │
          └─────────────────┘
 ```
+
+See `docs/NAS-SETUP.md` for NAS deployment. Standalone mode (local backend, database path) is still supported when no server URL is configured.
 
 ### Auto-Update
 The app should auto-refresh data so each workcenter always displays current information. When one user creates a work order or updates inventory, other workstations reflect the change without manual refresh.
@@ -58,7 +59,7 @@ The app should auto-refresh data so each workcenter always displays current info
 ## Tech Stack
 
 - **Backend**: Node.js + Express.js (port 3000)
-- **Database**: SQLite via `better-sqlite3` (single `.db` file on NAS, shared across all devices)
+- **Database**: SQLite via `better-sqlite3` (single `.db` file on NAS, backend runs on NAS)
 - **Frontend**: Vanilla JavaScript (ES6 Modules) + Tailwind CSS (no build step)
 - **Desktop**: Electron (Windows & Linux only)
 - **Auth**: Token-based with bcrypt password hashing
@@ -78,12 +79,9 @@ npm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env — set DB_PATH to the SQLite database location
+# Edit .env — set DB_PATH for the SQLite database location
 
-# Run migrations
-npm run migrate
-
-# Start dev server (auto-reload)
+# Start dev server (auto-reload; migrations run on startup)
 npm run dev
 ```
 
@@ -117,9 +115,12 @@ ERP-System/
 │   ├── middleware/       # Auth, validation, rate limiting
 │   ├── migrations/       # Database migration scripts (SQLite)
 │   ├── routes/           # API route handlers (11 modules)
+│   ├── scripts/          # NAS deployment (start-server.sh, bperp.service)
 │   ├── tests/            # Jest test suites
 │   ├── server.js         # Express app entry point
 │   └── .env.example      # Environment config template
+├── docs/
+│   └── NAS-SETUP.md     # NAS deployment guide
 ├── frontend/
 │   ├── js/modules/       # ES6 modules (app, sales, tasks, inventory, etc.)
 │   ├── css/              # Tailwind CSS customizations
@@ -127,26 +128,28 @@ ERP-System/
 ├── electron/
 │   ├── main.js           # Electron main process
 │   ├── preload.js        # Secure IPC bridge
+│   ├── offline.html      # Connection error page (remote mode)
 │   └── setup-wizard/     # First-run setup UI
 └── package.json          # Electron-builder config
 ```
 
 ## New Device Setup
 
-1. Install BPERP using the Windows or Linux installer
-2. On first launch, the setup wizard asks for the NAS database path (or local path for testing)
-3. Create the admin user and password
-4. The app opens the shared SQLite database and runs any pending migrations
+1. **NAS**: Set up the backend on your NAS first (see `docs/NAS-SETUP.md`)
+2. **Workstation**: Install BPERP using the Windows or Linux installer
+3. On first launch, the setup wizard asks for the **Server URL** (e.g. `http://192.168.1.100:3000`)
+4. Test the connection, create the admin user if prompted, and launch
 5. User logs in — their profile, permissions, and appearance settings load automatically from the database
-6. No manual configuration needed beyond the database path
+6. Change server URL anytime via Settings > Server Connection
 
 ## End-to-End Testing (Installer)
 
-1. Run the installer: `dist-installers\BPERP-1.0.0-beta.1-win-x64.exe`
-2. Complete setup wizard: choose a local DB path (e.g. `C:\temp\bperp.db`) for testing
-3. Create admin user and launch
-4. Verify: login, dashboard, inventory, sales, tasks, workcenter, settings
-5. Import sample data via Settings > Data Import
+1. Start the backend on your machine or NAS: `cd backend && npm start`
+2. Run the installer: `dist-installers\BPERP-1.0.0-beta.1-win-x64.exe`
+3. Complete setup wizard: enter server URL (e.g. `http://localhost:3000` or your NAS IP)
+4. Create admin user and launch
+5. Verify: login, dashboard, inventory, sales, tasks, workcenter, settings
+6. Import sample data via Settings > Data Import
 
 ## API Endpoints
 
@@ -154,6 +157,8 @@ All endpoints (except login) require `Authorization: Bearer <token>` header.
 
 | Endpoint | Description |
 |----------|-------------|
+| `GET /api/health` | Health check (no auth) |
+| `GET /api/setup/status` | Check if setup complete (no auth) |
 | `POST /api/users/login` | Authenticate user |
 | `GET /api/customers` | List customers |
 | `GET /api/inventory/:category` | List inventory items (products/parts/materials/tooling/misc) |
