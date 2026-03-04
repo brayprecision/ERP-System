@@ -65,7 +65,8 @@ const store = new Store({
             maximized: false
         },
         server: {
-            port: 3000
+            port: 3000,
+            url: ''   // When set, connect to remote backend (NAS). Empty = standalone (local backend).
         }
     }
 });
@@ -206,9 +207,25 @@ function createMainWindow() {
         mainWindow.setMaximizable(true);
     }
 
-    // Load the frontend (cache-bust query param forces fresh fetch, avoids stale UI e.g. missing Products/Parts tabs)
-    const serverPort = store.get('server.port');
-    mainWindow.loadURL(`http://localhost:${serverPort}/?nocache=${Date.now()}`);
+    // Load the frontend - from remote URL (NAS) or localhost (standalone)
+    const serverUrl = store.get('server.url');
+    if (serverUrl) {
+        const url = serverUrl.replace(/\/$/, '') + `/?nocache=${Date.now()}`;
+        mainWindow.loadURL(url);
+
+        // Handle load failure (server unreachable)
+        mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+            if (event.isMainFrame && (errorCode === -2 || errorCode === -3 || errorCode === -6)) {
+                // -2: ERR_FAILED, -3: ERR_ABORTED, -6: ERR_CONNECTION_REFUSED
+                log('warn', 'Remote load failed:', errorCode, errorDescription);
+                mainWindow.loadFile(path.join(__dirname, 'offline.html'));
+            }
+        });
+        log('info', 'Loading from remote server:', url);
+    } else {
+        const serverPort = store.get('server.port');
+        mainWindow.loadURL(`http://localhost:${serverPort}/?nocache=${Date.now()}`);
+    }
 
     // Show window when ready
     mainWindow.once('ready-to-show', () => {
@@ -452,6 +469,57 @@ function setupIpcHandlers() {
         return true;
     });
     
+    // Server URL (for remote/NAS mode)
+    ipcMain.handle('get-server-url', () => store.get('server.url') || '');
+    ipcMain.handle('set-server-url', (event, url) => {
+        store.set('server.url', (url || '').trim());
+        return true;
+    });
+    ipcMain.handle('retry-connection', () => {
+        if (mainWindow) {
+            const serverUrl = store.get('server.url');
+            if (serverUrl) {
+                const url = serverUrl.replace(/\/$/, '') + `/?nocache=${Date.now()}`;
+                mainWindow.loadURL(url);
+            }
+        }
+    });
+    ipcMain.handle('reopen-setup', () => {
+        store.set('firstRun', true);
+        if (mainWindow) {
+            mainWindow.close();
+            mainWindow = null;
+        }
+        createSetupWindow();
+    });
+    ipcMain.handle('test-server-connection', async (event, url) => {
+        const baseUrl = (url || store.get('server.url') || '').trim().replace(/\/$/, '');
+        if (!baseUrl) return { success: false, error: 'No server URL provided' };
+        try {
+            const urlObj = new URL(baseUrl);
+            const protocol = urlObj.protocol === 'https:' ? require('https') : require('http');
+            const res = await new Promise((resolve, reject) => {
+                const req = protocol.request({
+                    hostname: urlObj.hostname,
+                    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+                    path: '/api/health',
+                    method: 'GET',
+                    timeout: 5000
+                }, resolve);
+                req.on('error', reject);
+                req.on('timeout', () => { req.destroy(); reject(new Error('Connection timed out')); });
+                req.end();
+            });
+            if (res.statusCode === 200) {
+                return { success: true };
+            }
+            return { success: false, error: `Server returned ${res.statusCode}` };
+        } catch (err) {
+            log('warn', 'Server connection test failed:', err.message);
+            return { success: false, error: err.message };
+        }
+    });
+    
     // Database - SQLite path testing
     ipcMain.handle('test-db-connection', async (event, config) => {
         const dbPath = config.path || config;
@@ -601,48 +669,40 @@ function setupIpcHandlers() {
         return mainWindow ? mainWindow.isMaximized() : false;
     });
     
-    // Setup wizard completion
-    ipcMain.handle('complete-setup', async (event, config) => {
-        // Save configuration
-        store.set('database', config.database);
-        
-        log('info', 'Setup configuration received');
-        log('info', 'Database type: ' + config.database.type);
-        
-        // Close setup window
+    // Setup wizard completion (remote mode - connect to NAS server)
+    ipcMain.handle('complete-setup', async (event, setupConfig) => {
+        const serverUrl = (setupConfig.server?.url || '').trim().replace(/\/$/, '');
+        if (!serverUrl) {
+            return { success: false, error: 'Server URL is required' };
+        }
+
+        store.set('server.url', serverUrl);
+        log('info', 'Setup configuration received, server:', serverUrl);
+
         if (setupWindow) {
             setupWindow.close();
         }
-        
-        // Show splash screen
+
         createSplashWindow();
-        
-        // Start backend and main window
+
         try {
-            log('info', 'Starting backend server...');
-            await startBackend();
-            
-            // Wait a moment for the server to be fully ready
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Create initial admin user if provided
-            if (config.admin && config.admin.username && config.admin.password) {
-                log('info', 'Creating initial admin user...');
-                const serverPort = store.get('server.port');
-                
+            // Create initial admin user if provided (setup not already complete)
+            if (setupConfig.admin && setupConfig.admin.username && setupConfig.admin.password) {
+                log('info', 'Creating initial admin user on server...');
                 try {
-                    const http = require('http');
+                    const urlObj = new URL(serverUrl);
+                    const protocol = urlObj.protocol === 'https:' ? require('https') : require('http');
                     const adminData = JSON.stringify({
-                        username: config.admin.username,
-                        name: config.admin.name || config.admin.username,
-                        email: config.admin.email || null,
-                        password: config.admin.password
+                        username: setupConfig.admin.username,
+                        name: setupConfig.admin.name || setupConfig.admin.username,
+                        email: setupConfig.admin.email || null,
+                        password: setupConfig.admin.password
                     });
-                    
-                    const result = await new Promise((resolve, reject) => {
-                        const req = http.request({
-                            hostname: 'localhost',
-                            port: serverPort,
+
+                    await new Promise((resolve, reject) => {
+                        const req = protocol.request({
+                            hostname: urlObj.hostname,
+                            port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
                             path: '/api/setup/init',
                             method: 'POST',
                             headers: {
@@ -665,50 +725,35 @@ function setupIpcHandlers() {
                                 }
                             });
                         });
-                        
                         req.on('error', reject);
                         req.write(adminData);
                         req.end();
                     });
-                    
-                    log('info', 'Admin user created successfully: ' + config.admin.username);
+                    log('info', 'Admin user created successfully');
                 } catch (adminError) {
-                    // If setup already completed (users exist), this is fine
                     if (adminError.message.includes('already')) {
                         log('info', 'Users already exist, skipping admin creation');
                     } else {
                         log('warn', 'Failed to create admin user: ' + adminError.message);
-                        // Continue anyway - user can be created manually
                     }
                 }
             }
-            
-            // Mark setup as complete
+
             store.set('firstRun', false);
-            
             createMainWindow();
             return { success: true };
         } catch (error) {
-            log('error', 'Failed to start after setup: ' + error.message);
-            
-            // Close splash if open
+            log('error', 'Setup failed: ' + error.message);
             if (splashWindow) {
                 splashWindow.close();
                 splashWindow = null;
             }
-            
-            // Reset firstRun so user can try again
             store.set('firstRun', true);
-            
-            // Show error dialog
             dialog.showErrorBox(
-                'Startup Error',
-                `Failed to start BPERP:\n\n${error.message}\n\nThis usually means the database file is not accessible.\n\nPlease ensure the NAS path is reachable and your database path is correct.`
+                'Setup Error',
+                `Failed to connect to BPERP:\n\n${error.message}\n\nEnsure the server is running on your NAS.`
             );
-            
-            // Show setup wizard again
             createSetupWindow();
-            
             return { success: false, error: error.message };
         }
     });
@@ -847,22 +892,30 @@ app.whenReady().then(async () => {
         // Show splash and start normally
         createSplashWindow();
         
-        try {
-            await startBackend();
+        const serverUrl = store.get('server.url');
+        if (serverUrl) {
+            // Remote mode: connect to NAS, no local backend
+            log('info', 'Remote mode: connecting to', serverUrl);
             createMainWindow();
-        } catch (error) {
-            log('error', 'Failed to start:', error.message);
-            
-            if (splashWindow) {
-                splashWindow.close();
+        } else {
+            // Standalone mode: start local backend
+            try {
+                await startBackend();
+                createMainWindow();
+            } catch (error) {
+                log('error', 'Failed to start:', error.message);
+                
+                if (splashWindow) {
+                    splashWindow.close();
+                }
+                
+                dialog.showErrorBox(
+                    'Startup Error',
+                    `Failed to start BPERP:\n\n${error.message}\n\nPlease check the logs at:\n${logFile}`
+                );
+                
+                app.quit();
             }
-            
-            dialog.showErrorBox(
-                'Startup Error',
-                `Failed to start BPERP:\n\n${error.message}\n\nPlease check the logs at:\n${logFile}`
-            );
-            
-            app.quit();
         }
     }
 });
@@ -890,7 +943,10 @@ app.on('activate', () => {
 app.on('before-quit', async () => {
     isQuitting = true;
     log('info', 'Application quitting...');
-    await stopBackend();
+    // Only stop backend in standalone mode (no remote server URL)
+    if (!store.get('server.url')) {
+        await stopBackend();
+    }
 });
 
 // Error handlers are registered at the top of this file (before initialization)

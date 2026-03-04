@@ -1,18 +1,18 @@
 /**
  * BPERP Setup Wizard
  * Handles the first-run setup process
- * Database: SQLite file on NAS (shared across workstations)
+ * Connects to BPERP server on NAS (central backend)
  */
 
 // State
 let currentStep = 1;
 const totalSteps = 3;
-let pathTested = false;
+let connectionTested = false;
+let setupAlreadyComplete = false;  // When true, skip admin step
 
 const config = {
-    database: {
-        type: 'sqlite',
-        path: ''   // NAS path to folder where bperp.db will live
+    server: {
+        url: ''
     },
     admin: {
         username: '',
@@ -34,50 +34,25 @@ const loadingText = document.getElementById('loadingText');
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
-    applyPlatformDefaults();
     updateUI();
 });
 
-function applyPlatformDefaults() {
-    const pathInput = document.getElementById('dbPath');
-    const hintEl = document.getElementById('pathHint');
-    if (!pathInput) return;
-
-    if (typeof window.platform !== 'undefined' && window.platform.os === 'win32') {
-        pathInput.placeholder = '\\\\NAS\\bperp';
-        if (hintEl) hintEl.textContent = 'UNC path to a shared folder (e.g. \\\\NAS\\bperp)';
-    } else {
-        pathInput.placeholder = '/mnt/nas/bperp';
-        if (hintEl) hintEl.textContent = 'Mount path to NAS share (e.g. /mnt/nas/bperp)';
-    }
-}
-
 function setupEventListeners() {
-    // Navigation buttons
     btnBack.addEventListener('click', goBack);
     btnNext.addEventListener('click', goNext);
 
-    // Browse button
-    document.getElementById('browsePath')?.addEventListener('click', browsePath);
+    document.getElementById('testConnection')?.addEventListener('click', testConnection);
 
-    // Test path button
-    document.getElementById('testPath')?.addEventListener('click', testPath);
-
-    // Password strength
     document.getElementById('adminPassword')?.addEventListener('input', updatePasswordStrength);
-
-    // Password confirmation
     document.getElementById('adminPasswordConfirm')?.addEventListener('input', checkPasswordMatch);
 
-    // Database path input — use 'input' for immediate updates
-    document.getElementById('dbPath')?.addEventListener('input', (e) => {
-        config.database.path = e.target.value.trim();
-        pathTested = false;
-        clearFieldError('dbPath');
+    document.getElementById('serverUrl')?.addEventListener('input', (e) => {
+        config.server.url = e.target.value.trim();
+        connectionTested = false;
+        clearFieldError('serverUrl');
         updateConnectionStatusReset();
     });
 
-    // Admin form inputs — use 'input' so config updates on every keystroke
     ['adminUsername', 'adminName', 'adminEmail', 'adminPassword'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', (e) => {
             const key = id.replace('admin', '').toLowerCase();
@@ -86,13 +61,12 @@ function setupEventListeners() {
         });
     });
 
-    // Clear confirm password error on input
     document.getElementById('adminPasswordConfirm')?.addEventListener('input', () => {
         clearFieldError('adminPasswordConfirm');
     });
 }
 
-// ==================== INLINE ERROR HELPERS ====================
+// ==================== ERROR HELPERS ====================
 
 function showFieldError(fieldId, message) {
     const input = document.getElementById(fieldId);
@@ -119,28 +93,6 @@ function clearAllErrors() {
     });
 }
 
-// ==================== PATH ERROR TRANSLATION ====================
-
-function translatePathError(errorMessage) {
-    if (!errorMessage) return 'Unknown error. Check the path and try again.';
-
-    if (errorMessage.includes('ENOENT') || errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
-        return 'Could not find this path. Make sure the NAS is connected and the share is mounted.';
-    }
-    if (errorMessage.includes('EACCES') || errorMessage.includes('permission denied') || errorMessage.includes('Permission denied')) {
-        return 'Cannot write to this location. Check folder permissions on the NAS.';
-    }
-    if (errorMessage.includes('ENOTDIR')) {
-        return 'This path is not a folder. Please select a directory.';
-    }
-    if (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout')) {
-        return 'Connection timed out. Make sure the NAS is reachable on the network.';
-    }
-    return errorMessage + ' — Check the path and try again.';
-}
-
-// ==================== CONNECTION STATUS RESET ====================
-
 function updateConnectionStatusReset() {
     const statusEl = document.getElementById('connectionStatus');
     if (statusEl && statusEl.style.display === 'block') {
@@ -153,7 +105,6 @@ function updateConnectionStatusReset() {
 // ==================== UI ====================
 
 function updateUI() {
-    // Update step indicators
     steps.forEach((step, index) => {
         const stepNum = index + 1;
         step.classList.remove('active', 'completed');
@@ -164,16 +115,13 @@ function updateUI() {
         }
     });
 
-    // Update step content
     stepContents.forEach((content, index) => {
         content.classList.toggle('active', index + 1 === currentStep);
     });
 
-    // Update progress bar
     const progress = ((currentStep - 1) / (totalSteps - 1)) * 100;
     progressFill.style.width = `${progress}%`;
 
-    // Update buttons
     btnBack.disabled = currentStep === 1;
 
     if (currentStep === totalSteps) {
@@ -182,38 +130,29 @@ function updateUI() {
         btnNext.innerHTML = 'Next →';
     }
 
-    // Update summary on last step
     if (currentStep === totalSteps) {
         updateSummary();
     }
 }
 
-async function browsePath() {
-    if (window.electronAPI && window.electronAPI.browseDatabasePath) {
-        try {
-            const result = await window.electronAPI.browseDatabasePath();
-            if (result && !result.canceled) {
-                const pathInput = document.getElementById('dbPath');
-                pathInput.value = result.path;
-                config.database.path = result.path;
-                pathTested = false;
-                clearFieldError('dbPath');
-                updateConnectionStatusReset();
-            }
-        } catch (error) {
-            console.error('Browse failed:', error);
-        }
-    }
-}
-
-async function testPath() {
+async function testConnection() {
     const statusEl = document.getElementById('connectionStatus');
-    const btn = document.getElementById('testPath');
+    const btn = document.getElementById('testConnection');
+    const urlInput = document.getElementById('serverUrl');
+    const url = (urlInput?.value || config.server.url || '').trim();
 
-    if (!config.database.path) {
-        showFieldError('dbPath', 'Please enter a database path');
+    if (!url) {
+        showFieldError('serverUrl', 'Please enter a server URL');
         return;
     }
+
+    // Normalize URL
+    let normalizedUrl = url.replace(/\/$/, '');
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+        normalizedUrl = 'http://' + normalizedUrl;
+    }
+    config.server.url = normalizedUrl;
+    if (urlInput) urlInput.value = normalizedUrl;
 
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-icon">⏳</span> Testing...';
@@ -221,47 +160,56 @@ async function testPath() {
     statusEl.style.display = 'none';
 
     try {
-        if (window.electronAPI && window.electronAPI.testDatabasePath) {
-            const result = await window.electronAPI.testDatabasePath(config.database.path);
-
+        if (window.electronAPI?.testServerConnection) {
+            const result = await window.electronAPI.testServerConnection(normalizedUrl);
             statusEl.style.display = 'block';
 
             if (result.success) {
-                statusEl.textContent = '✓ Path is accessible and writable!';
+                statusEl.textContent = '✓ Connected successfully!';
                 statusEl.className = 'connection-status success';
-                pathTested = true;
+                connectionTested = true;
             } else {
-                statusEl.textContent = '✗ ' + translatePathError(result.error);
+                statusEl.textContent = '✗ ' + (result.error || 'Connection failed');
                 statusEl.className = 'connection-status error';
-                pathTested = false;
+                connectionTested = false;
             }
         } else {
-            // Demo mode (no Electron API)
             await new Promise(resolve => setTimeout(resolve, 1000));
             statusEl.style.display = 'block';
-            statusEl.textContent = '✓ Path is accessible! (Demo mode)';
+            statusEl.textContent = '✓ Connected! (Demo mode)';
             statusEl.className = 'connection-status success';
-            pathTested = true;
+            connectionTested = true;
         }
     } catch (error) {
-        console.error('Path test error:', error);
+        console.error('Connection test error:', error);
         statusEl.style.display = 'block';
-        statusEl.textContent = '✗ ' + translatePathError(error.message);
+        statusEl.textContent = '✗ ' + (error.message || 'Connection failed');
         statusEl.className = 'connection-status error';
-        pathTested = false;
+        connectionTested = false;
     }
 
     btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">📂</span> Test Path';
+    btn.innerHTML = '<span class="btn-icon">🔗</span> Test Connection';
+}
+
+async function fetchSetupStatus() {
+    const baseUrl = config.server.url.replace(/\/$/, '');
+    try {
+        const res = await fetch(baseUrl + '/api/setup/status');
+        const data = await res.json();
+        return data.setupComplete === true;
+    } catch (e) {
+        return false;
+    }
 }
 
 function updatePasswordStrength() {
-    const password = document.getElementById('adminPassword').value;
+    const password = document.getElementById('adminPassword')?.value || '';
     const strengthEl = document.getElementById('passwordStrength');
+    if (!strengthEl) return;
     const textEl = strengthEl.querySelector('.strength-text');
 
     let strength = 0;
-
     if (password.length >= 8) strength++;
     if (password.length >= 12) strength++;
     if (/[A-Z]/.test(password)) strength++;
@@ -270,7 +218,6 @@ function updatePasswordStrength() {
     if (/[^A-Za-z0-9]/.test(password)) strength++;
 
     strengthEl.classList.remove('weak', 'medium', 'strong');
-
     if (password.length === 0) {
         textEl.textContent = 'Enter a password';
     } else if (strength < 3) {
@@ -283,14 +230,14 @@ function updatePasswordStrength() {
         strengthEl.classList.add('strong');
         textEl.textContent = 'Strong password';
     }
-
     config.admin.password = password;
 }
 
 function checkPasswordMatch() {
-    const password = document.getElementById('adminPassword').value;
-    const confirm = document.getElementById('adminPasswordConfirm').value;
+    const password = document.getElementById('adminPassword')?.value || '';
+    const confirm = document.getElementById('adminPasswordConfirm')?.value || '';
     const matchEl = document.getElementById('passwordMatch');
+    if (!matchEl) return;
 
     if (confirm.length === 0) {
         matchEl.textContent = '';
@@ -304,10 +251,12 @@ function checkPasswordMatch() {
 }
 
 function updateSummary() {
-    document.getElementById('summaryDb').textContent =
-        config.database.path ? `SQLite — ${config.database.path}` : 'SQLite';
-    document.getElementById('summaryAdmin').textContent =
-        config.admin.username || 'admin';
+    const serverEl = document.getElementById('summaryServer');
+    const adminEl = document.getElementById('summaryAdmin');
+    if (serverEl) serverEl.textContent = config.server.url || '—';
+    if (adminEl) {
+        adminEl.textContent = setupAlreadyComplete ? 'Already configured' : (config.admin.username || 'admin');
+    }
 }
 
 function validateStep(step) {
@@ -315,29 +264,27 @@ function validateStep(step) {
 
     switch (step) {
         case 1: {
-            // Validate database path
-            if (!config.database.path) {
-                showFieldError('dbPath', 'Database path is required');
+            if (!config.server.url) {
+                showFieldError('serverUrl', 'Server URL is required');
                 return false;
             }
-
-            if (!pathTested) {
+            if (!connectionTested) {
                 const statusEl = document.getElementById('connectionStatus');
                 statusEl.style.display = 'block';
-                statusEl.textContent = 'Please test the path before continuing.';
+                statusEl.textContent = 'Please test the connection before continuing.';
                 statusEl.className = 'connection-status error';
                 return false;
             }
-
             return true;
         }
 
         case 2: {
-            // Validate admin user
-            const username = document.getElementById('adminUsername').value.trim();
-            const name = document.getElementById('adminName').value.trim();
-            const password = document.getElementById('adminPassword').value;
-            const confirm = document.getElementById('adminPasswordConfirm').value;
+            if (setupAlreadyComplete) return true;
+
+            const username = document.getElementById('adminUsername')?.value.trim() || '';
+            const name = document.getElementById('adminName')?.value.trim() || '';
+            const password = document.getElementById('adminPassword')?.value || '';
+            const confirm = document.getElementById('adminPasswordConfirm')?.value || '';
             let valid = true;
 
             if (!username) {
@@ -347,17 +294,14 @@ function validateStep(step) {
                 showFieldError('adminUsername', 'Username can only contain letters, numbers, spaces, underscores, and dots');
                 valid = false;
             }
-
             if (!name) {
                 showFieldError('adminName', 'Display name is required');
                 valid = false;
             }
-
             if (password.length < 8) {
                 showFieldError('adminPassword', 'Password must be at least 8 characters');
                 valid = false;
             }
-
             if (password !== confirm) {
                 showFieldError('adminPasswordConfirm', 'Passwords do not match');
                 valid = false;
@@ -366,10 +310,9 @@ function validateStep(step) {
             if (valid) {
                 config.admin.username = username;
                 config.admin.name = name;
-                config.admin.email = document.getElementById('adminEmail').value.trim();
+                config.admin.email = document.getElementById('adminEmail')?.value.trim() || '';
                 config.admin.password = password;
             }
-
             return valid;
         }
 
@@ -393,58 +336,50 @@ async function goNext() {
         return;
     }
 
-    if (currentStep < totalSteps) {
+    if (currentStep === 1) {
+        // After step 1: check if setup is already complete (admin exists)
+        setupAlreadyComplete = await fetchSetupStatus();
+        if (setupAlreadyComplete) {
+            currentStep = 3;  // Skip admin, go to finish
+        } else {
+            currentStep = 2;
+        }
+    } else if (currentStep < totalSteps) {
         currentStep++;
-        updateUI();
     } else {
-        // Final step — complete setup
         await completeSetup();
     }
+    updateUI();
 }
 
 async function completeSetup() {
-    showLoading('Setting up your database...');
+    showLoading('Connecting to BPERP...');
 
     try {
         if (window.electronAPI) {
-            // Run migrations on the SQLite database
-            showLoading('Running database migrations...');
-            const migrateResult = await window.electronAPI.runMigrations();
-
-            if (!migrateResult.success) {
-                console.warn('Migration warning:', migrateResult.output);
-                // Don't fail — database might already be set up
-            }
-
-            // Complete setup
             showLoading('Finalizing configuration...');
             const result = await window.electronAPI.completeSetup({
-                database: config.database,
-                admin: config.admin
+                server: config.server,
+                admin: setupAlreadyComplete ? null : config.admin
             });
 
             if (!result.success) {
                 throw new Error(result.error || 'Setup failed');
             }
-
-            // Setup complete — main window will open
             hideLoading();
         } else {
-            // Demo mode — simulate setup
             await simulateSetup();
             hideLoading();
-
             const statusEl = document.getElementById('connectionStatus');
             if (statusEl) {
                 statusEl.style.display = 'block';
-                statusEl.textContent = 'Setup complete! (Demo mode) In the real application, BPERP would launch now.';
+                statusEl.textContent = 'Setup complete! (Demo mode)';
                 statusEl.className = 'connection-status success';
             }
         }
     } catch (error) {
         console.error('Setup failed:', error);
         hideLoading();
-
         const statusEl = document.getElementById('connectionStatus');
         if (statusEl) {
             statusEl.style.display = 'block';
@@ -455,24 +390,17 @@ async function completeSetup() {
 }
 
 async function simulateSetup() {
-    const simSteps = [
-        'Setting up your database...',
-        'Running database migrations...',
-        'Creating admin user...',
-        'Finalizing configuration...'
-    ];
-
-    for (const step of simSteps) {
+    for (const step of ['Connecting...', 'Finalizing...']) {
         showLoading(step);
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 600));
     }
 }
 
 function showLoading(text) {
-    loadingText.textContent = text;
-    loadingOverlay.classList.remove('hidden');
+    if (loadingText) loadingText.textContent = text;
+    if (loadingOverlay) loadingOverlay.classList.remove('hidden');
 }
 
 function hideLoading() {
-    loadingOverlay.classList.add('hidden');
+    if (loadingOverlay) loadingOverlay.classList.add('hidden');
 }

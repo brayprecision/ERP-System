@@ -20,7 +20,7 @@
             <div class="progress-steps">
                 <div class="step active" data-step="1">
                     <div class="step-circle">1</div>
-                    <span>Database</span>
+                    <span>Server</span>
                 </div>
                 <div class="step" data-step="2">
                     <div class="step-circle">2</div>
@@ -38,37 +38,33 @@
 
         <!-- Step Content -->
         <div class="wizard-content">
-            <!-- Step 1: Database Location -->
+            <!-- Step 1: Connect to BPERP Server -->
             <div class="step-content active" id="step-1">
-                <h2>Database Location</h2>
+                <h2>Connect to BPERP Server</h2>
                 <p class="description">
-                    Choose where to store your BPERP database. For shared access across
-                    multiple workstations, select a folder on your shop's NAS.
+                    Enter the URL of your BPERP server (running on your NAS or central machine).
+                    All workstations connect to this server to share data.
                 </p>
 
                 <div class="db-config">
                     <div class="form-group">
-                        <label for="dbPath">Database Path</label>
+                        <label for="serverUrl">Server URL</label>
                         <div class="path-input-row">
-                            <input type="text" id="dbPath" placeholder="" value="">
-                            <button type="button" class="btn btn-secondary btn-sm" id="browsePath">
-                                Browse...
-                            </button>
+                            <input type="text" id="serverUrl" placeholder="http://192.168.1.100:3000" value="">
                         </div>
-                        <span class="hint" id="pathHint">Enter a folder path on your NAS or local drive</span>
+                        <span class="hint" id="pathHint">e.g. http://nas.local:3000 or http://192.168.1.100:3000</span>
                         <div class="error-message"></div>
                     </div>
 
-                    <button type="button" class="btn btn-secondary" id="testPath">
-                        <span class="btn-icon">📂</span> Test Path
+                    <button type="button" class="btn btn-secondary" id="testConnection">
+                        <span class="btn-icon">🔗</span> Test Connection
                     </button>
                     <div class="connection-status" id="connectionStatus"></div>
                 </div>
 
                 <div class="info-box">
-                    <strong>Tip:</strong> To share the database across workstations, pick a folder
-                    on your NAS that all machines can access. The database file (<code>bperp.db</code>)
-                    will be created automatically.
+                    <strong>Tip:</strong> The BPERP backend must be running on your NAS first.
+                    See <code>docs/NAS-SETUP.md</code> for setup instructions.
                 </div>
             </div>
 
@@ -127,8 +123,8 @@
                 <div class="summary-card">
                     <h3>Configuration Summary</h3>
                     <div class="summary-item">
-                        <span class="label">Database:</span>
-                        <span class="value" id="summaryDb">—</span>
+                        <span class="label">Server:</span>
+                        <span class="value" id="summaryServer">—</span>
                     </div>
                     <div class="summary-item">
                         <span class="label">Admin User:</span>

@@ -141,8 +141,108 @@ const routes = {
     'settings-branding': () => ShopBranding.showSettings(),
     'settings-preferences': () => ThemeManager.showModal(),
     'settings-users': () => modules.users?.loadUsersView(),
-    'settings-backup': () => loadBackupRestoreView()
+    'settings-backup': () => loadBackupRestoreView(),
+    'settings-server': () => loadServerSettingsView()
 };
+
+async function loadServerSettingsView() {
+    const container = document.getElementById('dashboardContent');
+    if (!container) return;
+
+    if (!window.electronAPI?.getServerUrl) {
+        container.innerHTML = `
+            <div class="col-span-3">
+                <div class="card p-6">
+                    <p class="text-gray-400">Server connection settings are only available in the desktop app.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const currentUrl = await window.electronAPI.getServerUrl();
+
+    container.innerHTML = `
+        <div class="col-span-3 space-y-6">
+            <div class="card p-6">
+                <div class="flex items-center mb-6">
+                    <i class="fa-solid fa-server text-3xl mr-4 text-cyan-400"></i>
+                    <div>
+                        <h2 class="text-xl font-semibold text-white">Server Connection</h2>
+                        <p class="text-gray-400 text-sm">Change the BPERP server URL (e.g. when NAS IP changes)</p>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-2">Server URL</label>
+                        <input type="text" id="serverUrlInput" class="form-input w-full" placeholder="http://192.168.1.100:3000" value="${(currentUrl || '').replace(/"/g, '&quot;')}">
+                        <p class="text-xs text-gray-500 mt-1">e.g. http://nas.local:3000 or http://192.168.1.100:3000</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button type="button" id="testServerBtn" class="btn btn-secondary">
+                            <i class="fa-solid fa-link mr-2"></i>Test Connection
+                        </button>
+                        <button type="button" id="saveServerBtn" class="btn btn-primary">
+                            <i class="fa-solid fa-save mr-2"></i>Save
+                        </button>
+                        <button type="button" id="clearServerBtn" class="btn bg-gray-600 hover:bg-gray-700 text-white">
+                            <i class="fa-solid fa-times mr-2"></i>Clear (Standalone Mode)
+                        </button>
+                    </div>
+                    <div id="serverStatus" class="text-sm hidden"></div>
+                </div>
+                <p class="text-xs text-gray-500 mt-4">Restart the app after changing the server URL.</p>
+            </div>
+        </div>
+    `;
+
+    const input = document.getElementById('serverUrlInput');
+    const testBtn = document.getElementById('testServerBtn');
+    const saveBtn = document.getElementById('saveServerBtn');
+    const clearBtn = document.getElementById('clearServerBtn');
+    const statusEl = document.getElementById('serverStatus');
+
+    testBtn?.addEventListener('click', async () => {
+        const url = input?.value?.trim() || '';
+        if (!url) {
+            modules.common?.showToast?.('Enter a server URL first', 'error');
+            return;
+        }
+        testBtn.disabled = true;
+        testBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Testing...';
+        statusEl?.classList.add('hidden');
+        try {
+            const result = await window.electronAPI.testServerConnection(url);
+            statusEl.classList.remove('hidden');
+            if (result.success) {
+                statusEl.textContent = '✓ Connection successful';
+                statusEl.className = 'text-sm text-green-400';
+            } else {
+                statusEl.textContent = '✗ ' + (result.error || 'Connection failed');
+                statusEl.className = 'text-sm text-red-400';
+            }
+        } catch (e) {
+            statusEl.classList.remove('hidden');
+            statusEl.textContent = '✗ ' + (e.message || 'Test failed');
+            statusEl.className = 'text-sm text-red-400';
+        }
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<i class="fa-solid fa-link mr-2"></i>Test Connection';
+    });
+
+    saveBtn?.addEventListener('click', async () => {
+        const url = input?.value?.trim() || '';
+        await window.electronAPI.setServerUrl(url);
+        modules.common?.showToast?.('Server URL saved. Restart the app to connect.', 'success');
+    });
+
+    clearBtn?.addEventListener('click', async () => {
+        await window.electronAPI.setServerUrl('');
+        input.value = '';
+        modules.common?.showToast?.('Cleared. Restart the app to use standalone mode.', 'success');
+    });
+}
 
 function loadBackupRestoreView() {
     const container = document.getElementById('dashboardContent');
@@ -376,7 +476,8 @@ const routeToCategory = {
     'settings-branding': 'settings',
     'settings-preferences': 'settings',
     'settings-users': 'settings',
-    'settings-backup': 'settings'
+    'settings-backup': 'settings',
+    'settings-server': 'settings'
 };
 
 function checkRoutePermission(route) {
@@ -517,6 +618,7 @@ function updatePageTitle(route) {
         'settings-branding': 'Shop Branding',
         'settings-users': 'Users & Permissions',
         'settings-backup': 'Backup & Restore',
+        'settings-server': 'Server Connection',
         'settings-preferences': 'Preferences'
     };
     
@@ -1041,6 +1143,12 @@ async function initializeApp() {
         
         // Initialize shop branding
         ShopBranding.init();
+        
+        // Show Server Connection in Settings when running in Electron
+        const serverNav = document.getElementById('settingsServerNav');
+        if (serverNav && window.electronAPI) {
+            serverNav.style.display = '';
+        }
         
         // Check if user is logged in, if not show login modal
         if (modules.users?.isLoggedIn?.()) {

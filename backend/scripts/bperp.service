@@ -1,0 +1,31 @@
+# BPERP Backend - systemd service for NAS (Zorin OS / Linux)
+#
+# Installation:
+#   1. Copy this file to /etc/systemd/system/bperp.service
+#   2. Edit the paths and User below
+#   3. Run: sudo systemctl daemon-reload
+#   4. Run: sudo systemctl enable bperp
+#   5. Run: sudo systemctl start bperp
+#
+# Check status: sudo systemctl status bperp
+# View logs:    journalctl -u bperp -f
+
+[Unit]
+Description=BPERP Manufacturing ERP Backend Server
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/ERP-System/backend
+Environment="DB_PATH=/path/to/bperp/bperp.db"
+Environment="PORT=3000"
+Environment="NODE_ENV=production"
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

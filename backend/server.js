@@ -2,6 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { spawnSync } = require('child_process');
 const { pool, initDb } = require('./db');
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +12,27 @@ const { apiLimiter, exportLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Database path - used for migrations and init
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'bperp.db');
+
+// Run migrations before opening DB (for central server / NAS deployment)
+const migrateResult = spawnSync('node', ['migrations/migrate.js', 'up'], {
+    cwd: __dirname,
+    env: { ...process.env, DB_PATH: dbPath },
+    stdio: 'pipe',
+    encoding: 'utf8'
+});
+if (migrateResult.status !== 0) {
+    console.error('Migrations failed:', migrateResult.stderr || migrateResult.stdout);
+    process.exit(1);
+}
+if (migrateResult.stdout) {
+    console.log('Migrations:', migrateResult.stdout.trim());
+}
+
+// Database Connection Configuration
+initDb(dbPath);
 
 // CORS configuration - restrict origins in production
 const corsOptions = {
@@ -27,10 +49,6 @@ app.use(express.json({ limit: '10mb' })); // Limit request body size
 
 // Apply general rate limiting to all API routes
 app.use('/api/', apiLimiter);
-
-// Database Connection Configuration
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'bperp.db');
-initDb(dbPath);
 
 // Auth middleware for protected routes (must be after initDb)
 const { requireAuth } = require('./middleware/auth')(pool);
@@ -180,6 +198,18 @@ app.get('/api/inventory/alerts', requireAuth, async (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Setup status - used by setup wizard to check if admin creation is needed (no auth)
+app.get('/api/setup/status', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT COUNT(*) FROM users');
+        const userCount = parseInt(result.rows[0]?.count || 0);
+        res.json({ setupComplete: userCount > 0 });
+    } catch (err) {
+        // If users table doesn't exist yet, setup not complete
+        res.json({ setupComplete: false });
+    }
 });
 
 // ==================== SETUP ROUTES (First-run only) ====================
@@ -681,9 +711,9 @@ app.use((req, res) => {
     });
 });
 
-// Start the Server
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Start the Server - bind to 0.0.0.0 so NAS accepts connections from workstations
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT} (accessible from network)`);
     console.log(`Export directories:`);
     console.log(`  CSV exports: ${csvDir}`);
     console.log(`  Backups: ${backupsDir}`);
