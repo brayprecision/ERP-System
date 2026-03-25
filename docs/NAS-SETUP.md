@@ -14,14 +14,22 @@ This guide explains how to run the BPERP backend on your NAS (Zorin OS or other 
 
 ## Quick Start (Manual)
 
-1. **Copy the backend to your NAS**
+1. **Copy the backend and frontend to your NAS**
 
-   Copy the entire `backend/` folder to your NAS, e.g. `/home/youruser/bperp-backend/`.
+   The server serves the UI from a `frontend/` folder **next to** `backend/` (same parent directory as in the repo). Copy both folders, e.g.:
+
+   ```
+   /home/youruser/bperp/
+     backend/
+     frontend/
+   ```
+
+   If you deploy only `backend/` and omit `frontend/`, the app will not load correctly. If `frontend/` is an **older copy** of the project, the browser will show an outdated sidebar (for example, missing **Products** and **Parts** under Inventory). After pulling UI changes from git, copy the updated `frontend/` directory to the NAS and restart the backend.
 
 2. **Install dependencies**
 
    ```bash
-   cd /home/youruser/bperp-backend
+   cd /home/youruser/bperp/backend
    npm install
    ```
 
@@ -119,3 +127,4 @@ sudo ufw reload
 - **Connection refused**: Check that the backend is running (`systemctl status bperp`) and the firewall allows port 3000.
 - **Database errors**: Ensure the `DB_PATH` directory exists and is writable by the service user.
 - **CORS errors**: The backend allows all origins by default. Set `CORS_ORIGIN` in `.env` to restrict if needed.
+- **Missing Inventory tabs (e.g. Products / Parts)**: Workstations that use **Server URL** (remote mode) load the UI from the NAS, not from the Electron installer. Update `frontend/` on the server to match your current repo, restart the backend, then reload the app (the server sends `Cache-Control: no-cache` for `index.html`). To confirm, open `http://<nas-ip>:3000/` in a browser and search the page source for `inventory-products`.

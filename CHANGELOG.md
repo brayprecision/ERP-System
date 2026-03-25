@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **NAS setup docs** — Clarified that both `backend/` and `frontend/` must be deployed side-by-side; outdated `frontend/` on the server explains missing UI such as Products/Parts under Inventory when using remote Server URL.
+
+### Fixed
+
+- **Routing** — `inventory-products` and `inventory-parts` are included in permission category mapping and page titles (was inconsistent with other inventory routes).
+
 ### Added
 
 #### Products and Parts Inventory

@@ -455,6 +455,8 @@ function updateLastBackupDate() {
 // Map routes to tab categories for permission checking
 const routeToCategory = {
     'dashboard': 'dashboard',
+    'inventory-products': 'inventory',
+    'inventory-parts': 'inventory',
     'inventory-materials': 'inventory',
     'inventory-tooling': 'inventory',
     'inventory-misc': 'inventory',
@@ -597,6 +599,8 @@ function updatePageTitle(route) {
     
     const titles = {
         'dashboard': 'Dashboard',
+        'inventory-products': 'Products Inventory',
+        'inventory-parts': 'Parts Inventory',
         'inventory-materials': 'Materials Inventory',
         'inventory-tooling': 'Tooling Inventory',
         'inventory-misc': 'Miscellaneous Items',
