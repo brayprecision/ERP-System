@@ -7,12 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Standalone mode** — Setup wizard now offers a choice between Standalone (Local) and Network (NAS) modes. Standalone runs the backend and SQLite database entirely on the local machine, with no NAS or network dependency. Network mode preserves the existing NAS deployment workflow.
+- **`scripts/rebuild-backend-native.js`** — Invoked by `npm run rebuild:backend`; removes stale `better-sqlite3` / `bcrypt` native build artifacts, then runs `electron-rebuild --build-from-source` for the installed Electron version.
+- **Local development workflow** — `cd backend && npm run dev` starts the full app at `http://localhost:3000` with zero configuration. A `backend/.env` with sensible defaults is provided (gitignored).
+
 ### Changed
 
+- **Cursor rules** — Replaced monolithic `context files/.cursorrules.md` with focused `.mdc` rules under `.cursor/rules/` (`bperp-project-overview`, `bperp-reference`, `bperp-architecture`, `bperp-backend`, `bperp-frontend`, `bperp-electron`, `bperp-database-schema`, `bperp-domain-quality`); the old file was removed after the split. `documentation-updates.mdc` references `bperp-database-schema.mdc` for schema edits.
+- **Documentation** — README (architecture, TODO, Common Commands, end-to-end testing), `backend/README.md` (Electron + migrations), `docs/NAS-SETUP.md` (local dev vs NAS), and `context files/INTERNAL-ROADMAP.md` updated for Standalone/Network modes, native rebuild, and Electron migration spawning.
 - **NAS setup docs** — Clarified that both `backend/` and `frontend/` must be deployed side-by-side; outdated `frontend/` on the server explains missing UI such as Products/Parts under Inventory when using remote Server URL.
 
 ### Fixed
 
+- **Migrations under Electron** — `server.js` no longer runs `spawnSync('node', ...)` for migrations (system Node could load a different ABI than the Electron-forked server). Migrations now use `process.execPath` with `ELECTRON_RUN_AS_NODE=1` when `process.versions.electron` is set, matching the embedded Node used for `initDb` and the API.
+- **Electron native rebuild** — `npm run rebuild:backend` now runs [`scripts/rebuild-backend-native.js`](scripts/rebuild-backend-native.js): clears `better-sqlite3` / `bcrypt` `build` and `prebuilds` folders, then `electron-rebuild --build-from-source` against the installed Electron version. Fixes cases where `electron-rebuild` completed but Electron still loaded a system-Node `better_sqlite3.node` (NODE_MODULE_VERSION mismatch).
 - **Routing** — `inventory-products` and `inventory-parts` are included in permission category mapping and page titles (was inconsistent with other inventory routes).
 
 ### Added

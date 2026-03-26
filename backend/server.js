@@ -17,9 +17,16 @@ const PORT = process.env.PORT || 3000;
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'bperp.db');
 
 // Run migrations before opening DB (for central server / NAS deployment)
-const migrateResult = spawnSync('node', ['migrations/migrate.js', 'up'], {
+// When the backend is forked from Electron, use the same executable + Node mode as this process.
+// Hard-coded `node` would use system Node (often a different NODE_MODULE_VERSION than better-sqlite3 was built for).
+const migrateScript = path.join(__dirname, 'migrations', 'migrate.js');
+const migrateEnv = { ...process.env, DB_PATH: dbPath };
+if (process.versions.electron) {
+    migrateEnv.ELECTRON_RUN_AS_NODE = '1';
+}
+const migrateResult = spawnSync(process.execPath, [migrateScript, 'up'], {
     cwd: __dirname,
-    env: { ...process.env, DB_PATH: dbPath },
+    env: migrateEnv,
     stdio: 'pipe',
     encoding: 'utf8'
 });

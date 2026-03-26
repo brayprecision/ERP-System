@@ -1,7 +1,7 @@
 /**
  * BPERP Setup Wizard
  * Handles the first-run setup process
- * Connects to BPERP server on NAS (central backend)
+ * Supports standalone (local) and network (NAS) modes
  */
 
 // State
@@ -11,6 +11,7 @@ let connectionTested = false;
 let setupAlreadyComplete = false;  // When true, skip admin step
 
 const config = {
+    mode: 'standalone',  // 'standalone' or 'network'
     server: {
         url: ''
     },
@@ -40,6 +41,25 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupEventListeners() {
     btnBack.addEventListener('click', goBack);
     btnNext.addEventListener('click', goNext);
+
+    // Mode picker cards
+    document.querySelectorAll('.mode-card').forEach(card => {
+        card.addEventListener('click', () => {
+            document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            config.mode = card.dataset.mode;
+
+            const networkConfig = document.getElementById('networkConfig');
+            if (config.mode === 'network') {
+                networkConfig.classList.remove('hidden');
+            } else {
+                networkConfig.classList.add('hidden');
+                connectionTested = false;
+                config.server.url = '';
+                updateConnectionStatusReset();
+            }
+        });
+    });
 
     document.getElementById('testConnection')?.addEventListener('click', testConnection);
 
@@ -251,8 +271,19 @@ function checkPasswordMatch() {
 }
 
 function updateSummary() {
+    const modeEl = document.getElementById('summaryMode');
+    const serverRow = document.getElementById('summaryServerRow');
     const serverEl = document.getElementById('summaryServer');
     const adminEl = document.getElementById('summaryAdmin');
+
+    if (modeEl) {
+        modeEl.textContent = config.mode === 'standalone'
+            ? 'Standalone (this computer)'
+            : 'Network (NAS)';
+    }
+    if (serverRow) {
+        serverRow.style.display = config.mode === 'standalone' ? 'none' : 'flex';
+    }
     if (serverEl) serverEl.textContent = config.server.url || '—';
     if (adminEl) {
         adminEl.textContent = setupAlreadyComplete ? 'Already configured' : (config.admin.username || 'admin');
@@ -264,6 +295,10 @@ function validateStep(step) {
 
     switch (step) {
         case 1: {
+            if (config.mode === 'standalone') {
+                return true;
+            }
+            // Network mode requires URL + connection test
             if (!config.server.url) {
                 showFieldError('serverUrl', 'Server URL is required');
                 return false;
@@ -337,12 +372,18 @@ async function goNext() {
     }
 
     if (currentStep === 1) {
-        // After step 1: check if setup is already complete (admin exists)
-        setupAlreadyComplete = await fetchSetupStatus();
-        if (setupAlreadyComplete) {
-            currentStep = 3;  // Skip admin, go to finish
-        } else {
+        if (config.mode === 'standalone') {
+            // Standalone: always need to create admin locally
+            setupAlreadyComplete = false;
             currentStep = 2;
+        } else {
+            // Network: check if setup is already complete on remote (admin exists)
+            setupAlreadyComplete = await fetchSetupStatus();
+            if (setupAlreadyComplete) {
+                currentStep = 3;
+            } else {
+                currentStep = 2;
+            }
         }
     } else if (currentStep < totalSteps) {
         currentStep++;
@@ -353,12 +394,16 @@ async function goNext() {
 }
 
 async function completeSetup() {
-    showLoading('Connecting to BPERP...');
+    const loadingMsg = config.mode === 'standalone'
+        ? 'Starting local server...'
+        : 'Connecting to BPERP...';
+    showLoading(loadingMsg);
 
     try {
         if (window.electronAPI) {
             showLoading('Finalizing configuration...');
             const result = await window.electronAPI.completeSetup({
+                mode: config.mode,
                 server: config.server,
                 admin: setupAlreadyComplete ? null : config.admin
             });

@@ -20,7 +20,7 @@
     "dev": "NODE_ENV=development electron .",
     "dev:backend": "cd backend && npm run dev",
     "build": "electron-builder",
-    "rebuild:backend": "electron-rebuild -f -w better-sqlite3,bcrypt -m backend -v 28.3.3",
+    "rebuild:backend": "node scripts/rebuild-backend-native.js",
     "build:win": "npm run backend:install && npm run rebuild:backend && electron-builder --win",
     "build:linux": "npm run backend:install && npm run rebuild:backend && electron-builder --linux",
     "pack": "electron-builder --dir",

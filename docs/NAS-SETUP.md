@@ -2,6 +2,8 @@
 
 This guide explains how to run the BPERP backend on your NAS (Zorin OS or other Linux) so workstations can connect as thin clients.
 
+**Local-only development** does not require a NAS: use **Standalone (Local)** in the Electron setup wizard, or run `cd backend && npm run dev` and open `http://localhost:3000`. Use this document when you are ready for **Network (NAS)** mode and multiple workstations.
+
 ## Architecture
 
 - **NAS**: Runs the backend server. SQLite database is stored locally (no network filesystem).

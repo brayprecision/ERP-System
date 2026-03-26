@@ -1,0 +1,40 @@
+---
+description: BPERP Electron main process, IPC, packaging, native rebuild notes
+globs:
+  - electron/**/*
+---
+
+# BPERP — Electron desktop app
+
+## Main process (`electron/main.js`)
+
+- **Windows:** Splash → Setup Wizard (first run) → Main Window
+- **Backend lifecycle:** Use `fork()`, not `spawn('node', ...)`, so the bundled runtime is used
+- **IPC:** Config, DB path tests, migrations, system info
+- **Single instance** lock
+- **Migrations:** `backend/server.js` must not spawn system `node` for startup migrations when running under Electron. It uses `process.execPath` with `ELECTRON_RUN_AS_NODE=1` so `better-sqlite3` matches the forked server ABI (see `backend/README.md`).
+
+## IPC bridge (`electron/preload.js`)
+
+Renderer uses `window.electronAPI`, e.g. `getConfig()`, `testConnection`, `runMigrations`, `completeSetup(config)`.
+
+## Configuration storage
+
+- Path: `~/.config/BPERP - Manufacturing ERP/bperp-config.json` (electron-store)
+- Notable keys: `firstRun`, `database.path`, `window.*`, `server.port`, `server.url` (empty = standalone, set = network/NAS)
+
+## Build outputs
+
+| Format | Use case |
+|--------|----------|
+| `.exe` (NSIS) | Windows installer |
+| `.deb` | Ubuntu/Debian/Zorin |
+| `.AppImage` | Portable Linux |
+
+## `package.json` build section
+
+- `extraResources`: `backend/`, `frontend/` (outside asar as configured)
+- `linux.category`: Office
+- SQLite via `better-sqlite3`; no separate DB server dependency
+
+Native rebuild from repo root: `npm run rebuild:backend` → `scripts/rebuild-backend-native.js`.

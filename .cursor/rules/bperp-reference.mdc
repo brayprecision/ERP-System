@@ -1,0 +1,45 @@
+---
+description: Key file paths and common shell commands for BPERP
+alwaysApply: true
+---
+
+# BPERP — Quick reference
+
+## Key paths
+
+| Component | Path |
+|-----------|------|
+| Backend entry | `backend/server.js` |
+| Backend routes (JS) | `backend/routes/*.js` |
+| Middleware | `backend/middleware/*.js` |
+| Type definitions | `backend/src/types/index.ts` |
+| Frontend entry | `frontend/js/app.js` |
+| Frontend modules | `frontend/js/modules/*.js` |
+| Frontend CSS | `frontend/css/dashboard.css` |
+| Electron main | `electron/main.js` |
+| Electron preload | `electron/preload.js` |
+| Setup wizard | `electron/setup-wizard/` |
+| Electron native rebuild | `scripts/rebuild-backend-native.js` |
+| Database schemas | `database/*.sql` |
+| Build config | `package.json` (build section) |
+| Cursor rules | `.cursor/rules/*.mdc` |
+
+## Common commands
+
+```bash
+# Development
+cd backend && npm run dev          # Backend with nodemon (system Node)
+npm run rebuild:backend            # Repo root: native modules for Electron
+npm start                          # Electron (forks backend; run rebuild:backend after backend npm install)
+
+# Testing
+cd backend && npm test
+
+# Building installers
+npx electron-builder --win --publish never
+npx electron-builder --linux deb --publish never
+npx electron-builder --linux AppImage --publish never
+
+# Database
+cd backend && npm run migrate
+```

@@ -1,0 +1,54 @@
+---
+description: BPERP core schema tables — update when adding entities or migrations
+globs:
+  - backend/**/*
+  - database/**/*
+---
+
+# BPERP — Database schema reference
+
+When you add or rename tables, update this file, `README.md`, `backend/README.md`, and `CHANGELOG.md` as appropriate.
+
+## Core tables
+
+| Table | Purpose |
+|-------|---------|
+| `users` | User accounts with roles, permissions, appearance |
+| `user_sessions` | Active auth tokens |
+| `role_defaults` | Default permissions per role |
+| `user_activity_log` | Audit trail |
+
+## Inventory tables
+
+| Table | Purpose |
+|-------|---------|
+| `products` | Finished assemblies for sale |
+| `parts` | Components (purchased or manufactured) |
+| `materials` | Raw materials |
+| `tooling` | Cutting tools, inserts |
+| `misc_items` | Consumables, supplies |
+
+## Sales tables
+
+| Table | Purpose |
+|-------|---------|
+| `customers` | Customer records |
+| `customer_contacts` | Contacts per customer |
+| `quotes` | Quote header + status workflow |
+| `quote_items` | Quote line items |
+| `work_orders` | Jobs from won quotes |
+| `work_order_parts` | Parts on work orders |
+
+## Production tables
+
+| Table | Purpose |
+|-------|---------|
+| `workcenters` | Work areas (Mill, Lathe, etc.) |
+| `machines` | Individual machines |
+| `tasks` | Workflow tasks with assignments |
+| `maintenance_tasks` | Scheduled maintenance |
+
+## Naming
+
+- DB columns: `snake_case`
+- API JSON: `camelCase` (transform in routes)

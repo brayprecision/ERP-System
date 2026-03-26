@@ -1,5 +1,7 @@
 # Plan: Streamline Setup Wizard for NAS-Based SQLite Deployment
 
+> **Historical note (Mar 2026):** The shipped wizard uses **Standalone (Local)** vs **Network (NAS)** with a **server URL** (central backend), not per-workstation SQLite paths. This document describes an older direction; see `README.md` and `electron/setup-wizard/` for current behavior.
+
 ## Context
 
 All workstations (Windows & Linux) read/write a single SQLite database file stored on the

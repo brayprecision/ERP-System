@@ -20,7 +20,7 @@
             <div class="progress-steps">
                 <div class="step active" data-step="1">
                     <div class="step-circle">1</div>
-                    <span>Server</span>
+                    <span>Mode</span>
                 </div>
                 <div class="step" data-step="2">
                     <div class="step-circle">2</div>
@@ -38,33 +38,54 @@
 
         <!-- Step Content -->
         <div class="wizard-content">
-            <!-- Step 1: Connect to BPERP Server -->
+            <!-- Step 1: Choose Mode -->
             <div class="step-content active" id="step-1">
-                <h2>Connect to BPERP Server</h2>
+                <h2>Choose Setup Mode</h2>
                 <p class="description">
-                    Enter the URL of your BPERP server (running on your NAS or central machine).
-                    All workstations connect to this server to share data.
+                    How would you like to run BPERP?
                 </p>
 
-                <div class="db-config">
-                    <div class="form-group">
-                        <label for="serverUrl">Server URL</label>
-                        <div class="path-input-row">
-                            <input type="text" id="serverUrl" placeholder="http://192.168.1.100:3000" value="">
+                <div class="mode-picker">
+                    <div class="mode-card selected" data-mode="standalone">
+                        <div class="mode-icon">💻</div>
+                        <div class="mode-info">
+                            <h3>Standalone (Local)</h3>
+                            <p>Run everything on this computer. Best for development, single-user, or testing.</p>
                         </div>
-                        <span class="hint" id="pathHint">e.g. http://nas.local:3000 or http://192.168.1.100:3000</span>
-                        <div class="error-message"></div>
+                        <div class="mode-check">✓</div>
                     </div>
-
-                    <button type="button" class="btn btn-secondary" id="testConnection">
-                        <span class="btn-icon">🔗</span> Test Connection
-                    </button>
-                    <div class="connection-status" id="connectionStatus"></div>
+                    <div class="mode-card" data-mode="network">
+                        <div class="mode-icon">🌐</div>
+                        <div class="mode-info">
+                            <h3>Network (NAS)</h3>
+                            <p>Connect to a BPERP server on your network. Best for multi-workstation shops.</p>
+                        </div>
+                        <div class="mode-check">✓</div>
+                    </div>
                 </div>
 
-                <div class="info-box">
-                    <strong>Tip:</strong> The BPERP backend must be running on your NAS first.
-                    See <code>docs/NAS-SETUP.md</code> for setup instructions.
+                <!-- Network config (hidden by default) -->
+                <div class="network-config hidden" id="networkConfig">
+                    <div class="db-config">
+                        <div class="form-group">
+                            <label for="serverUrl">Server URL</label>
+                            <div class="path-input-row">
+                                <input type="text" id="serverUrl" placeholder="http://192.168.1.100:3000" value="">
+                            </div>
+                            <span class="hint" id="pathHint">e.g. http://nas.local:3000 or http://192.168.1.100:3000</span>
+                            <div class="error-message"></div>
+                        </div>
+
+                        <button type="button" class="btn btn-secondary" id="testConnection">
+                            <span class="btn-icon">🔗</span> Test Connection
+                        </button>
+                        <div class="connection-status" id="connectionStatus"></div>
+                    </div>
+
+                    <div class="info-box">
+                        <strong>Tip:</strong> The BPERP backend must be running on your NAS first.
+                        See <code>docs/NAS-SETUP.md</code> for setup instructions.
+                    </div>
                 </div>
             </div>
 
@@ -123,6 +144,10 @@
                 <div class="summary-card">
                     <h3>Configuration Summary</h3>
                     <div class="summary-item">
+                        <span class="label">Mode:</span>
+                        <span class="value" id="summaryMode">Standalone (this computer)</span>
+                    </div>
+                    <div class="summary-item" id="summaryServerRow">
                         <span class="label">Server:</span>
                         <span class="value" id="summaryServer">—</span>
                     </div>

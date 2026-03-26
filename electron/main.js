@@ -669,15 +669,21 @@ function setupIpcHandlers() {
         return mainWindow ? mainWindow.isMaximized() : false;
     });
     
-    // Setup wizard completion (remote mode - connect to NAS server)
+    // Setup wizard completion (standalone or remote/NAS mode)
     ipcMain.handle('complete-setup', async (event, setupConfig) => {
+        const mode = setupConfig.mode || 'network';
         const serverUrl = (setupConfig.server?.url || '').trim().replace(/\/$/, '');
-        if (!serverUrl) {
-            return { success: false, error: 'Server URL is required' };
+
+        if (mode === 'network' && !serverUrl) {
+            return { success: false, error: 'Server URL is required for network mode' };
         }
 
-        store.set('server.url', serverUrl);
-        log('info', 'Setup configuration received, server:', serverUrl);
+        if (mode === 'network') {
+            store.set('server.url', serverUrl);
+        } else {
+            store.set('server.url', '');
+        }
+        log('info', `Setup configuration received, mode: ${mode}` + (serverUrl ? `, server: ${serverUrl}` : ''));
 
         if (setupWindow) {
             setupWindow.close();
@@ -686,11 +692,21 @@ function setupIpcHandlers() {
         createSplashWindow();
 
         try {
+            // Standalone mode: start the local backend first
+            if (mode === 'standalone') {
+                log('info', 'Standalone mode: starting local backend...');
+                await startBackend();
+            }
+
             // Create initial admin user if provided (setup not already complete)
             if (setupConfig.admin && setupConfig.admin.username && setupConfig.admin.password) {
-                log('info', 'Creating initial admin user on server...');
+                const targetUrl = mode === 'standalone'
+                    ? `http://localhost:${store.get('server.port')}`
+                    : serverUrl;
+                log('info', 'Creating initial admin user on', targetUrl);
+
                 try {
-                    const urlObj = new URL(serverUrl);
+                    const urlObj = new URL(targetUrl);
                     const protocol = urlObj.protocol === 'https:' ? require('https') : require('http');
                     const adminData = JSON.stringify({
                         username: setupConfig.admin.username,
@@ -749,10 +765,10 @@ function setupIpcHandlers() {
                 splashWindow = null;
             }
             store.set('firstRun', true);
-            dialog.showErrorBox(
-                'Setup Error',
-                `Failed to connect to BPERP:\n\n${error.message}\n\nEnsure the server is running on your NAS.`
-            );
+            const errorContext = mode === 'standalone'
+                ? 'Failed to start local BPERP server.'
+                : 'Failed to connect to BPERP. Ensure the server is running on your NAS.';
+            dialog.showErrorBox('Setup Error', `${errorContext}\n\n${error.message}`);
             createSetupWindow();
             return { success: false, error: error.message };
         }

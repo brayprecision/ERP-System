@@ -1,8 +1,10 @@
 # BPERP Backend
 
-Express.js API server for the BPERP ERP system. Runs on the NAS (or a central machine); workstations connect as thin clients. SQLite database is stored locally on the server.
+Express.js API server for the BPERP ERP system. It can run **on the NAS** (or any central machine) for Network mode, or **locally** when started by Electron (Standalone) or via `npm run dev` / `npm start` for browser development. SQLite uses a single file at `DB_PATH`.
 
-**For NAS deployment**, see `docs/NAS-SETUP.md`.
+**NAS deployment:** see `docs/NAS-SETUP.md`.
+
+**Electron:** Native modules must match Electron’s embedded Node. From the **repository root**, run `npm run rebuild:backend` (see `scripts/rebuild-backend-native.js`). After `npm install` in `backend/`, run that again before `npm start` at the root.
 
 ## Setup
 
@@ -37,7 +39,9 @@ If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend dir
 
 ### Migrations
 
-Migrations run automatically when the server starts. To run manually:
+Migrations run automatically when the server starts (`server.js` spawns the migration CLI before `initDb`). When the backend process is running **inside Electron** (forked child), that subprocess uses `process.execPath` with `ELECTRON_RUN_AS_NODE=1` so migrations use the **same Node binary** as the API server. Using plain `node` here would mix system Node with Electron’s Node and break `better-sqlite3` (NODE_MODULE_VERSION mismatch).
+
+To run migrations manually:
 
 ```bash
 npm run migrate
