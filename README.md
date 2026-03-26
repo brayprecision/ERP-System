@@ -126,9 +126,36 @@ On first launch, the setup wizard will ask you to choose **Standalone (Local)** 
 ```bash
 npm run build:win        # Windows NSIS installer → dist-installers/BPERP-*-win-x64.exe
 npm run build:linux     # Linux .deb + AppImage + rpm
+npm run pack:win         # Windows unpacked app only (faster than NSIS; same packaged layout)
 ```
 
 Output: `dist-installers/` (installer + unpacked app for testing).
+
+### Beta testing (Windows): rebuild on launch
+
+To avoid reinstalling the NSIS build after every change, use the PowerShell launcher from the repo root. It repackages the app, then starts `dist-installers\win-unpacked\BPERP.exe` (faster than a full installer build).
+
+```powershell
+.\scripts\launch-beta.ps1              # backend:install + rebuild:backend + pack:win + start unpacked exe
+.\scripts\launch-beta.ps1 -Dev         # fastest: Electron from source (no electron-builder)
+.\scripts\launch-beta.ps1 -FullInstaller   # same as npm run build:win, then start unpacked exe
+.\scripts\launch-beta.ps1 -SkipBackendInstall -SkipNativeRebuild   # fastest repack when only app code changed
+```
+
+From **cmd** or double-click: `scripts\launch-beta.cmd` (same flags). If `.ps1` is blocked, use the `.cmd` wrapper or run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+
+`-Dev` is best for rapid UI/backend edits. The default path matches **installed** layout (asar + `resources`); use it when verifying behavior close to the shipped app.
+
+### Why reinstalling can still show an “old” UI
+
+- **Settings and server URL survive uninstall.** Electron stores config (including **Network mode** `server.url`) under **user data** (on Windows, typically `%APPDATA%\BPERP` or similar—not inside the install folder). The NSIS uninstaller removes the app under `%LOCALAPPDATA%\Programs\...` but usually **does not** delete that folder. After reinstall, the app can still open **Network** mode and load the **HTML/JS from your NAS**, which may be an older `frontend/` tree. To exercise the **new installer’s** UI: **Settings → Server Connection → Clear (Standalone Mode)**, restart, or deploy an updated `frontend/` on the server (see `docs/NAS-SETUP.md`).
+- **Standalone mode** should match the installed `resources/frontend`. If it does not, confirm the Start menu shortcut **target** points at the install you updated (not an old `win-unpacked` or dev copy).
+
+In the desktop app, **Settings → About this app** shows the running app version, mode, and server URL (if any)—**but only if the page you’re viewing includes that menu** (i.e. bundled UI or an up-to-date `frontend/` on the server). If the sidebar looks old and **About this app** is missing, check the **window title bar** after rebuilding the desktop app: it should end with `· v… · Standalone` or `· v… · Network · UI from server` after your shop name (branding sets the first part of the title). For diagnostics regardless of page version, press **Alt** to show the menu bar → **Help → About BPERP**, or use the **system tray** icon → **About BPERP**.
+
+### Version field for each installer build
+
+`app.getVersion()` and Windows “Apps & features” use the **`version`** in root [`package.json`](package.json). Before you produce an installer you need to tell apart from a previous build, **bump `version`** (e.g. `1.0.0-beta.2` or a prerelease you agree on as a team). Reusing the same version for multiple installers makes it hard to know which bits are on disk.
 
 ## Project Structure
 
@@ -137,7 +164,9 @@ ERP-System/
 ├── .cursor/
 │   └── rules/           # Cursor AI project rules (*.mdc)
 ├── scripts/
-│   └── rebuild-backend-native.js  # Native rebuild for Electron (better-sqlite3, bcrypt)
+│   ├── rebuild-backend-native.js  # Native rebuild for Electron (better-sqlite3, bcrypt)
+│   ├── launch-beta.ps1            # Windows: repack + run unpacked (beta testing)
+│   └── launch-beta.cmd            # Wrapper (Bypass execution policy for .ps1)
 ├── backend/
 │   ├── db.js            # SQLite wrapper (PostgreSQL-compatible interface)
 │   ├── middleware/       # Auth, validation, rate limiting
@@ -214,11 +243,12 @@ cd backend && npm run migrate:status  # Check migration status
 # Electron app (from repo root; run rebuild:backend after backend npm install)
 npm run rebuild:backend            # Native modules for Electron (better-sqlite3, bcrypt)
 npm start                          # Run desktop app
-npm run dev                        # Electron with NODE_ENV=development (Unix-style env; on Windows use Git Bash or set NODE_ENV manually)
+npm run dev                        # Electron with NODE_ENV=development (works on Windows via cross-env)
 
 # Build installers (rebuilds native modules automatically)
 npm run build:win                  # Windows
 npm run build:linux                # Linux
+npm run pack:win                   # Windows unpacked dir only (see scripts/launch-beta.ps1)
 ```
 
 ## Security

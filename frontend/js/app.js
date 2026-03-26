@@ -142,7 +142,8 @@ const routes = {
     'settings-preferences': () => ThemeManager.showModal(),
     'settings-users': () => modules.users?.loadUsersView(),
     'settings-backup': () => loadBackupRestoreView(),
-    'settings-server': () => loadServerSettingsView()
+    'settings-server': () => loadServerSettingsView(),
+    'settings-about': () => void loadAboutAppView()
 };
 
 async function loadServerSettingsView() {
@@ -161,6 +162,18 @@ async function loadServerSettingsView() {
     }
 
     const currentUrl = await window.electronAPI.getServerUrl();
+    const isNetworkMode = Boolean((currentUrl || '').trim());
+    const networkModeNotice = isNetworkMode
+        ? `
+                <div class="mb-6 rounded-lg border border-amber-600/50 bg-amber-950/40 p-4 text-sm text-amber-100/95">
+                    <p class="font-medium text-amber-200 mb-1">Network mode — UI comes from the server</p>
+                    <p class="text-amber-100/80">The sidebar, pages, and JavaScript are loaded from the URL below, not from this installer. If items are missing (for example <strong class="text-amber-100">Products</strong> or <strong class="text-amber-100">Parts</strong> under Inventory), deploy the latest <code class="text-xs bg-black/30 px-1 rounded">frontend</code> folder from your repo onto the machine that runs the backend (alongside <code class="text-xs bg-black/30 px-1 rounded">backend</code>), then restart the BPERP server.</p>
+                </div>`
+        : `
+                <div class="mb-6 rounded-lg border border-gray-600/50 bg-gray-800/40 p-4 text-sm text-gray-300">
+                    <p class="font-medium text-gray-200 mb-1">Standalone mode</p>
+                    <p class="text-gray-400">This app runs the bundled backend and serves the UI from your PC. If the UI looks outdated, install the latest BPERP build from your team.</p>
+                </div>`;
 
     container.innerHTML = `
         <div class="col-span-3 space-y-6">
@@ -172,7 +185,7 @@ async function loadServerSettingsView() {
                         <p class="text-gray-400 text-sm">Change the BPERP server URL (e.g. when NAS IP changes)</p>
                     </div>
                 </div>
-
+                ${networkModeNotice}
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-400 mb-2">Server URL</label>
@@ -242,6 +255,92 @@ async function loadServerSettingsView() {
         input.value = '';
         modules.common?.showToast?.('Cleared. Restart the app to use standalone mode.', 'success');
     });
+}
+
+async function loadAboutAppView() {
+    const container = document.getElementById('dashboardContent');
+    if (!container) return;
+
+    if (!window.electronAPI?.getAppInfo) {
+        container.innerHTML = `
+            <div class="col-span-3">
+                <div class="card p-6">
+                    <p class="text-gray-400">About this app is only available in the BPERP desktop application.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    let info;
+    try {
+        info = await window.electronAPI.getAppInfo();
+    } catch (e) {
+        container.innerHTML = `
+            <div class="col-span-3">
+                <div class="card p-6">
+                    <p class="text-red-400">Could not load app information.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const serverUrl = (info.serverUrl || '').trim();
+    const network = Boolean(serverUrl);
+    const modeLabel = network ? 'Network' : 'Standalone';
+    const modeDesc = network
+        ? 'Pages and scripts are loaded from the server URL below (not from the installed app files). If the UI looks outdated, deploy the latest <code class="text-xs bg-black/30 px-1 rounded">frontend</code> folder on that server, or clear Server URL and use Standalone to use the bundled UI.'
+        : 'Pages and scripts come from this install (bundled frontend). The local backend runs on this PC.';
+
+    const esc = (s) =>
+        String(s ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+    container.innerHTML = `
+        <div class="col-span-3 space-y-6">
+            <div class="card p-6">
+                <div class="flex items-center mb-6">
+                    <i class="fa-solid fa-circle-info text-3xl mr-4 text-sky-400"></i>
+                    <div>
+                        <h2 class="text-xl font-semibold text-white">About this app</h2>
+                        <p class="text-gray-400 text-sm">Version, deployment mode, and where the UI is loaded from</p>
+                    </div>
+                </div>
+                <dl class="space-y-4 text-sm">
+                    <div>
+                        <dt class="text-gray-500 font-medium">App version</dt>
+                        <dd class="text-white font-mono mt-1">${esc(info.version)}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 font-medium">Packaged install</dt>
+                        <dd class="text-gray-300 mt-1">${info.isPackaged ? 'Yes (installer or unpacked build)' : 'No (development run from repo)'}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 font-medium">Mode</dt>
+                        <dd class="text-gray-300 mt-1"><span class="text-white font-medium">${modeLabel}</span> — ${modeDesc}</dd>
+                    </div>
+                    ${network ? `
+                    <div>
+                        <dt class="text-gray-500 font-medium">Server URL (UI source)</dt>
+                        <dd class="text-emerald-300/90 font-mono text-xs mt-1 break-all">${esc(serverUrl)}</dd>
+                    </div>` : ''}
+                    <div>
+                        <dt class="text-gray-500 font-medium">Runtime</dt>
+                        <dd class="text-gray-400 font-mono text-xs mt-1">Electron ${esc(info.electronVersion)} · Node ${esc(info.nodeVersion)}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 font-medium">User data (settings persist here)</dt>
+                        <dd class="text-gray-400 font-mono text-xs mt-1 break-all">${esc(info.userDataPath)}</dd>
+                    </div>
+                </dl>
+                <p class="text-xs text-gray-500 mt-6">Uninstalling the app usually does not delete the user data folder above. The <strong class="text-gray-400">Server URL</strong> is stored there and survives reinstall.</p>
+            </div>
+        </div>
+    `;
 }
 
 function loadBackupRestoreView() {
@@ -479,7 +578,8 @@ const routeToCategory = {
     'settings-preferences': 'settings',
     'settings-users': 'settings',
     'settings-backup': 'settings',
-    'settings-server': 'settings'
+    'settings-server': 'settings',
+    'settings-about': 'settings'
 };
 
 function checkRoutePermission(route) {
@@ -623,6 +723,7 @@ function updatePageTitle(route) {
         'settings-users': 'Users & Permissions',
         'settings-backup': 'Backup & Restore',
         'settings-server': 'Server Connection',
+        'settings-about': 'About this app',
         'settings-preferences': 'Preferences'
     };
     
@@ -1148,10 +1249,14 @@ async function initializeApp() {
         // Initialize shop branding
         ShopBranding.init();
         
-        // Show Server Connection in Settings when running in Electron
+        // Show desktop-only Settings entries when running in Electron
         const serverNav = document.getElementById('settingsServerNav');
         if (serverNav && window.electronAPI) {
             serverNav.style.display = '';
+        }
+        const aboutNav = document.getElementById('settingsAboutNav');
+        if (aboutNav && window.electronAPI?.getAppInfo) {
+            aboutNav.style.display = '';
         }
         
         // Check if user is logged in, if not show login modal

@@ -17,13 +17,14 @@
   },
   "scripts": {
     "start": "electron .",
-    "dev": "NODE_ENV=development electron .",
+    "dev": "cross-env NODE_ENV=development electron .",
     "dev:backend": "cd backend && npm run dev",
     "build": "electron-builder",
     "rebuild:backend": "node scripts/rebuild-backend-native.js",
     "build:win": "npm run backend:install && npm run rebuild:backend && electron-builder --win",
     "build:linux": "npm run backend:install && npm run rebuild:backend && electron-builder --linux",
     "pack": "electron-builder --dir",
+    "pack:win": "npm run backend:install && npm run rebuild:backend && electron-builder --win --dir",
     "postinstall": "electron-builder install-app-deps",
     "clean": "rm -rf dist dist-installers",
     "backend:install": "cd backend && npm install",
@@ -35,9 +36,10 @@
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
+    "cross-env": "^7.0.3",
     "electron": "^28.1.0",
-    "electron-builder": "^24.9.1",
-    "@electron/rebuild": "^4.0.3"
+    "electron-builder": "^24.9.1"
   },
   "build": {
     "appId": "com.brayprecision.bperp",
@@ -72,16 +74,22 @@
       {
         "from": "frontend/",
         "to": "frontend/",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asar": true,
-    "asarUnpack": ["electron/assets/**/*"],
+    "asarUnpack": [
+      "electron/assets/**/*"
+    ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico",
@@ -105,15 +113,21 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "rpm",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "electron/assets",
@@ -145,7 +159,17 @@
       "compression": "xz"
     },
     "rpm": {
-      "depends": ["gtk3", "libnotify", "nss", "libXScrnSaver", "libXtst", "xdg-utils", "at-spi2-core", "libuuid", "libsecret"],
+      "depends": [
+        "gtk3",
+        "libnotify",
+        "nss",
+        "libXScrnSaver",
+        "libXtst",
+        "xdg-utils",
+        "at-spi2-core",
+        "libuuid",
+        "libsecret"
+      ],
       "compression": "xz"
     },
     "appImage": {

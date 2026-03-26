@@ -16,7 +16,7 @@ globs:
 
 ## IPC bridge (`electron/preload.js`)
 
-Renderer uses `window.electronAPI`, e.g. `getConfig()`, `testConnection`, `runMigrations`, `completeSetup(config)`.
+Renderer uses `window.electronAPI`, e.g. `getConfig()`, `testConnection`, `runMigrations`, `completeSetup(config)`, `getAppInfo()` (version, `isPackaged`, `userDataPath`, `serverUrl`, runtime versions for Settings → About this app).
 
 ## Configuration storage
 

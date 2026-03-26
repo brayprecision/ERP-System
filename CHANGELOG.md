@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Window title** — Main window title appends `· v<version> · Standalone` or `· … · Network · UI from server` after the renderer `document.title` (shop branding) using `page-title-updated` + `preventDefault`, so branding is not overwritten and version/mode stay visible when an outdated remote `frontend/` hides newer Settings items.
+
+- **Desktop diagnostics** — IPC `get-app-info` and Settings → **About this app** (Electron only): app version, packaged vs dev, Standalone vs Network, server URL when set, runtime versions, and user data path (survives uninstall). System tray includes **About BPERP**; Help → About uses the same dialog (mode + user data path). README and `docs/NAS-SETUP.md` document why reinstall can still show an old UI and when to bump `package.json` `version` per installer build.
+
+- **Beta launcher (Windows)** — `scripts/launch-beta.ps1` (and `launch-beta.cmd` with `-ExecutionPolicy Bypass`) runs `pack:win` (or `build:win` with `-FullInstaller`) and starts `dist-installers\win-unpacked\BPERP.exe`; `-Dev` runs Electron from the repo without packaging. New npm script `pack:win` (unpacked Windows build, faster than NSIS). `npm run dev` now uses `cross-env` so `NODE_ENV=development` works on Windows.
+
+- **Server Connection (desktop)** — When a server URL is set, Settings → Server Connection explains that the UI (sidebar, pages, scripts) is loaded from that server; if Inventory items such as Products or Parts are missing, deploy the latest `frontend` folder on the server. Standalone mode shows a short note that the bundled local UI is used.
+
 - **Standalone mode** — Setup wizard now offers a choice between Standalone (Local) and Network (NAS) modes. Standalone runs the backend and SQLite database entirely on the local machine, with no NAS or network dependency. Network mode preserves the existing NAS deployment workflow.
 - **`scripts/rebuild-backend-native.js`** — Invoked by `npm run rebuild:backend`; removes stale `better-sqlite3` / `bcrypt` native build artifacts, then runs `electron-rebuild --build-from-source` for the installed Electron version.
 - **Local development workflow** — `cd backend && npm run dev` starts the full app at `http://localhost:3000` with zero configuration. A `backend/.env` with sensible defaults is provided (gitignored).

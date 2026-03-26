@@ -104,6 +104,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * @returns {Promise<string>} Version string
      */
     getVersion: () => ipcRenderer.invoke('get-version'),
+
+    /**
+     * Desktop diagnostics: version, packaged flag, userData path, server URL, runtime versions
+     * @returns {Promise<{ version: string, isPackaged: boolean, userDataPath: string, serverUrl: string, electronVersion: string, nodeVersion: string }>}
+     */
+    getAppInfo: () => ipcRenderer.invoke('get-app-info'),
     
     /**
      * Get recent application logs

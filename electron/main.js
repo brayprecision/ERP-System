@@ -79,6 +79,9 @@ let backendProcess = null;
 let tray = null;
 let isQuitting = false;
 
+/** Base window title from renderer `document.title` (shop branding); we append version and mode. */
+let lastRendererDocumentTitle = 'BPERP';
+
 // Paths
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const backendPath = isDev
@@ -116,6 +119,32 @@ function log(level, message, ...args) {
     const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message} ${args.length ? JSON.stringify(args) : ''}`;
     console.log(logMessage);
     logStream.write(logMessage + '\n');
+}
+
+/** Shared Help / tray “About” dialog (includes user data path for support). */
+function showAboutDialog() {
+    const serverUrl = (store.get('server.url') || '').trim();
+    const modeLine = serverUrl
+        ? `Mode: Network (UI loaded from server)\nServer URL: ${serverUrl}`
+        : 'Mode: Standalone (bundled UI + local backend)';
+    const detail = [
+        `Version: ${app.getVersion()}`,
+        `Packaged: ${app.isPackaged ? 'yes' : 'no'}`,
+        modeLine,
+        `Electron: ${process.versions.electron}`,
+        `Node: ${process.versions.node}`,
+        '',
+        `User data: ${app.getPath('userData')}`,
+        '',
+        '© 2026 Bray Precision LLC'
+    ].join('\n');
+    const parentWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    dialog.showMessageBox(parentWin, {
+        type: 'info',
+        title: 'About BPERP',
+        message: 'BPERP - Manufacturing ERP',
+        detail
+    });
 }
 
 // ==================== SINGLE INSTANCE LOCK ====================
@@ -180,6 +209,16 @@ function createSetupWindow() {
     });
     
     log('info', 'Setup wizard window created');
+}
+
+/** Keeps shop name in the title while appending version and Standalone vs Network (Shop Branding sets document.title, which would otherwise replace our hint). */
+function applyMainWindowTitle() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const v = app.getVersion();
+    const remote = (store.get('server.url') || '').trim();
+    const mode = remote ? 'Network · UI from server' : 'Standalone';
+    const base = lastRendererDocumentTitle || 'BPERP';
+    mainWindow.setTitle(`${base} · v${v} · ${mode}`);
 }
 
 // ==================== MAIN WINDOW ====================
@@ -272,6 +311,19 @@ function createMainWindow() {
         return { action: 'deny' };
     });
 
+    mainWindow.on('page-title-updated', (event, title) => {
+        event.preventDefault();
+        const t = title && String(title).trim() ? String(title).trim() : '';
+        if (t) {
+            lastRendererDocumentTitle = t;
+        }
+        applyMainWindowTitle();
+    });
+
+    mainWindow.webContents.on('did-finish-load', () => {
+        applyMainWindowTitle();
+    });
+
     // Dev tools in development mode
     if (isDev) {
         mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -310,6 +362,11 @@ function createTray() {
                 await stopBackend();
                 await startBackend();
             }
+        },
+        { type: 'separator' },
+        {
+            label: 'About BPERP',
+            click: () => showAboutDialog()
         },
         { type: 'separator' },
         {
@@ -473,6 +530,7 @@ function setupIpcHandlers() {
     ipcMain.handle('get-server-url', () => store.get('server.url') || '');
     ipcMain.handle('set-server-url', (event, url) => {
         store.set('server.url', (url || '').trim());
+        applyMainWindowTitle();
         return true;
     });
     ipcMain.handle('retry-connection', () => {
@@ -626,6 +684,18 @@ function setupIpcHandlers() {
     // System
     ipcMain.handle('get-version', () => {
         return app.getVersion();
+    });
+
+    ipcMain.handle('get-app-info', () => {
+        const serverUrl = (store.get('server.url') || '').trim();
+        return {
+            version: app.getVersion(),
+            isPackaged: app.isPackaged,
+            userDataPath: app.getPath('userData'),
+            serverUrl,
+            electronVersion: process.versions.electron,
+            nodeVersion: process.versions.node
+        };
     });
     
     ipcMain.handle('get-logs', () => {
@@ -853,14 +923,7 @@ function createAppMenu() {
                 { type: 'separator' },
                 {
                     label: 'About BPERP',
-                    click: () => {
-                        dialog.showMessageBox(mainWindow, {
-                            type: 'info',
-                            title: 'About BPERP',
-                            message: 'BPERP - Manufacturing ERP',
-                            detail: `Version: ${app.getVersion()}\nElectron: ${process.versions.electron}\nNode: ${process.versions.node}\n\n© 2026 Bray Precision LLC`
-                        });
-                    }
+                    click: () => showAboutDialog()
                 }
             ]
         }

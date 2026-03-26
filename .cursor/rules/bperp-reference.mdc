@@ -40,6 +40,9 @@ npx electron-builder --win --publish never
 npx electron-builder --linux deb --publish never
 npx electron-builder --linux AppImage --publish never
 
+# Beta (Windows): repack + run unpacked — `.\scripts\launch-beta.ps1` (or `-Dev` for repo-only `npm start`)
+npm run pack:win
+
 # Database
 cd backend && npm run migrate
 ```

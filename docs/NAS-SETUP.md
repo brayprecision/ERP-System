@@ -9,6 +9,10 @@ This guide explains how to run the BPERP backend on your NAS (Zorin OS or other 
 - **NAS**: Runs the backend server. SQLite database is stored locally (no network filesystem).
 - **Workstations**: Run the BPERP Electron app and connect to `http://nas-ip:3000`.
 
+### Workstations: reinstalling the desktop app
+
+Uninstalling BPERP on a PC **does not** remove Electron **user data** (where the app stores **Server URL** and other settings). After reinstall, the workstation can immediately use **Network** mode again and load the UI from the NAS. That is correct for production, but if the NAS still has an **old** `frontend/` folder, the UI will look outdated even with a fresh installer. **Update `frontend/` on the NAS** whenever you ship UI changes (see step 1 below). To test the **bundled** UI from a new installer instead, clear **Server URL** under **Settings → Server Connection** (or use Standalone) and restart the app.
+
 ## Prerequisites
 
 - Node.js 18+ installed on the NAS
