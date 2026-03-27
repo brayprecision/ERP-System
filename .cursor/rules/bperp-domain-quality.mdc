@@ -29,10 +29,11 @@ alwaysApply: true
 ### Building installers
 
 ```bash
-npm run backend:install
-npx electron-builder --win --publish never
-npx electron-builder --linux deb AppImage --publish never
+npm run build:win                  # or: npm run backend:install:prod && npm run rebuild:backend && npx electron-builder --win --publish never
+npm run build:linux                # AppImage + deb (no rpm); uses backend:install:prod + rebuild:backend
 ```
+
+Local full backend dev deps: `npm run backend:install` (after packaging, if tests/nodemon are missing).
 
 ## Manufacturing-specific patterns
 

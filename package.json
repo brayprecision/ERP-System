@@ -21,13 +21,14 @@
     "dev:backend": "cd backend && npm run dev",
     "build": "electron-builder",
     "rebuild:backend": "node scripts/rebuild-backend-native.js",
-    "build:win": "npm run backend:install && npm run rebuild:backend && electron-builder --win",
-    "build:linux": "npm run backend:install && npm run rebuild:backend && electron-builder --linux",
+    "build:win": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --win",
+    "build:linux": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --linux",
     "pack": "electron-builder --dir",
-    "pack:win": "npm run backend:install && npm run rebuild:backend && electron-builder --win --dir",
+    "pack:win": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --win --dir",
     "postinstall": "electron-builder install-app-deps",
     "clean": "rm -rf dist dist-installers",
     "backend:install": "cd backend && npm install",
+    "backend:install:prod": "cd backend && npm install --omit=dev --no-audit --no-fund && npm prune --omit=dev",
     "backend:migrate": "cd backend && npm run migrate",
     "backend:test": "cd backend && npm test",
     "setup": "npm install && npm run backend:install"
@@ -52,7 +53,6 @@
     },
     "files": [
       "electron/**/*",
-      "frontend/**/*",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/.bin",
@@ -122,12 +122,6 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "rpm",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "icon": "electron/assets",
@@ -156,20 +150,6 @@
         "libsecret-1-0"
       ],
       "priority": "optional",
-      "compression": "xz"
-    },
-    "rpm": {
-      "depends": [
-        "gtk3",
-        "libnotify",
-        "nss",
-        "libXScrnSaver",
-        "libXtst",
-        "xdg-utils",
-        "at-spi2-core",
-        "libuuid",
-        "libsecret"
-      ],
       "compression": "xz"
     },
     "appImage": {

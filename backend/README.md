@@ -6,6 +6,8 @@ Express.js API server for the BPERP ERP system. It can run **on the NAS** (or an
 
 **Electron:** Native modules must match Electron’s embedded Node. From the **repository root**, run `npm run rebuild:backend` (see `scripts/rebuild-backend-native.js`). After `npm install` in `backend/`, run that again before `npm start` at the root.
 
+**Packaging (repo root):** `npm run build:win`, `build:linux`, and `pack:win` use **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` here) so the copied `resources/backend` tree omits Jest, nodemon, TypeScript, etc. After running those, run **`npm run backend:install`** from the repo root if you need dev dependencies in `backend/` again for tests or `npm run dev`.
+
 ## Setup
 
 ### Prerequisites

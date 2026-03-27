@@ -193,8 +193,11 @@ cd backend && npm run migrate:status  # Check status
 # Testing
 cd backend && npm test             # Run Jest tests
 
-# Building installers
-npx electron-builder --win --publish never
-npx electron-builder --linux deb --publish never
-npx electron-builder --linux AppImage --publish never
+# Building installers (from repo root; backend:install:prod + rebuild:backend + electron-builder)
+npm run build:win
+npm run build:linux                  # AppImage + deb
+npm run pack:win                     # Windows unpacked only
+
+# Test unpacked Windows build: dist-installers/win-unpacked/BPERP.exe
+# After packaging, run `npm run backend:install` if backend dev deps are missing.
 ```

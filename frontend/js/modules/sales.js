@@ -311,6 +311,34 @@ export function getNextWorkflowStep(wo) {
     return null;
 }
 
+/**
+ * Next incomplete step for a work order, with the line item it belongs to (multi-part WOs).
+ * Used by Tasks "All" view so Start/Complete/Issue update the correct line item.
+ */
+export function getNextWorkflowStepWithLineItem(wo) {
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        let bestStep = null;
+        let bestOrder = Infinity;
+        let bestLineItemId = null;
+
+        for (const item of wo.lineItems) {
+            const checklist = item.checklist || getDefaultChecklist();
+            for (const step of checklist) {
+                if (!step.isCompleted && step.stepOrder < bestOrder) {
+                    bestStep = step;
+                    bestOrder = step.stepOrder;
+                    bestLineItemId = item.id;
+                }
+            }
+        }
+        if (!bestStep) return null;
+        return { step: bestStep, lineItemId: bestLineItemId };
+    }
+    const step = getNextWorkflowStep(wo);
+    if (!step) return null;
+    return { step, lineItemId: null };
+}
+
 export function getWOUrgencyColor(dueDate) {
     return getUrgencyColor(dueDate);
 }

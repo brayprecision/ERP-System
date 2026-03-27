@@ -6,10 +6,10 @@
 import { 
     debounce, showToast, showLoadingSpinner,
     formatDate, DOMCache, createModal, closeModal,
-    getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer
+    getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer, exportToCSV
 } from './common.js';
 import { storage, STORAGE_KEYS, state } from './storage.js';
-import { getWorkOrders, getNextWorkflowStep, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders, getWODocuments, showDocumentsModal, showDocumentUploadModal, getDefaultChecklist } from './sales.js';
+import { getWorkOrders, getNextWorkflowStep, getNextWorkflowStepWithLineItem, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders, getWODocuments, showDocumentsModal, showDocumentUploadModal, getDefaultChecklist } from './sales.js';
 
 // ==================== WORKFLOW STEP CONFIGURATION ====================
 const WORKFLOW_STEPS = {
@@ -577,15 +577,22 @@ function renderAllTasksView(workOrders) {
     
     // Render work order tasks
     const woTaskRows = activeWOs.map(wo => {
-        const nextStep = getNextWorkflowStep(wo);
+        const ctx = getNextWorkflowStepWithLineItem(wo);
+        const nextStep = ctx?.step;
         if (!nextStep) return '';
-        
+
+        const lineItemId = ctx.lineItemId;
+        const partLabel = wo.lineItems && wo.lineItems.length > 0 && lineItemId != null
+            ? (wo.lineItems.find(li => li.id === lineItemId)?.partNumber || wo.partNumber || 'N/A')
+            : (wo.partNumber || 'N/A');
+        const itemAttr = lineItemId != null ? ` data-item-id="${lineItemId}"` : '';
+
         const taskType = getTaskTypeFromStep(nextStep.stepKey);
         const typeConfig = TASK_TYPE_CONFIG[taskType] || TASK_TYPE_CONFIG.misc;
         const status = getWOWorkflowStatus(wo);
         const urgency = getWOUrgencyColor(wo.dueDate);
         const urgencyClass = urgency === 'red' ? 'text-red-500 font-bold' : urgency === 'yellow' ? 'text-yellow-500' : 'text-gray-400';
-        
+
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-800">
                 <td class="px-4 py-3">
@@ -595,7 +602,7 @@ function renderAllTasksView(workOrders) {
                 </td>
                 <td class="px-4 py-3">
                     <div class="font-medium">${wo.woNumber}</div>
-                    <div class="text-xs text-gray-500">${wo.partNumber} - ${nextStep.stepName}</div>
+                    <div class="text-xs text-gray-500">${partLabel} - ${nextStep.stepName}</div>
                 </td>
                 <td class="px-4 py-3 text-gray-300">${wo.customerName || '-'}</td>
                 <td class="px-4 py-3 ${urgencyClass}">${formatDate(wo.dueDate)}</td>
@@ -610,15 +617,15 @@ function renderAllTasksView(workOrders) {
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex space-x-2">
-                        <button data-action="workflow-complete" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" 
+                        <button data-action="workflow-complete" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}"${itemAttr}
                             class="text-green-500 hover:text-green-400" title="Complete Step">
                             <i class="fa-solid fa-check"></i>
                         </button>
-                        <button data-action="workflow-start" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" 
+                        <button data-action="workflow-start" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}"${itemAttr}
                             class="text-blue-500 hover:text-blue-400" title="Start Step">
                             <i class="fa-solid fa-play"></i>
                         </button>
-                        <button data-action="workflow-issue" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" 
+                        <button data-action="workflow-issue" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}"${itemAttr}
                             class="text-red-500 hover:text-red-400" title="Report Issue">
                             <i class="fa-solid fa-exclamation-triangle"></i>
                         </button>
@@ -1082,24 +1089,25 @@ function refreshCurrentView() {
 
 // ==================== ACTION HANDLERS ====================
 export function registerActionHandlers(registerFn) {
-    // Begin Process - marks step as started (supports line items)
-    registerFn('workflow-begin', (target) => {
+    // Begin Process - marks step as started (supports line items). "workflow-start" is an alias used on All Tasks rows.
+    const handleWorkflowBegin = (target) => {
         const woId = parseInt(target.dataset.woId);
         const stepId = parseInt(target.dataset.stepId);
         const stepName = target.dataset.stepName;
         const itemId = target.dataset.itemId ? parseInt(target.dataset.itemId) : null;
-        
-        // Mark step as started
+
         updateChecklistStep(woId, stepId, {
             startedAt: new Date().toISOString(),
             startedByName: 'Current User',
             inProgress: true
         }, itemId);
-        
+
         const partInfo = target.dataset.itemId ? ` (Part ID: ${target.dataset.itemId})` : '';
         showToast(`Started: ${stepName}${partInfo}`, 'info');
         refreshCurrentView();
-    });
+    };
+    registerFn('workflow-begin', handleWorkflowBegin);
+    registerFn('workflow-start', handleWorkflowBegin);
     
     // Complete Process - marks step as completed (supports line items)
     registerFn('workflow-complete', (target) => {
@@ -2018,33 +2026,41 @@ export function enableAutoRefresh() {
 }
 
 // ==================== EXPORT FUNCTIONS ====================
-function exportTasks() {
+async function exportTasks() {
     const workOrders = getWorkOrders();
     const activeWOs = workOrders.filter(wo => wo.completionPercentage < 100);
 
-    // Transform tasks data for export
     const taskData = activeWOs.map(wo => {
-        const nextStep = getNextWorkflowStep(wo);
-        const taskType = getTaskTypeFromStep(nextStep?.stepKey || '');
+        const ctx = getNextWorkflowStepWithLineItem(wo);
+        const nextStep = ctx?.step;
+        if (!nextStep) return null;
+
+        const taskType = getTaskTypeFromStep(nextStep.stepKey);
         const typeConfig = TASK_TYPE_CONFIG[taskType] || TASK_TYPE_CONFIG.misc;
         const status = getWOWorkflowStatus(wo);
         const urgency = getWOUrgencyColor(wo.dueDate);
 
+        let partNumber = wo.partNumber || '';
+        if (ctx.lineItemId != null && wo.lineItems?.length) {
+            const li = wo.lineItems.find(i => i.id === ctx.lineItemId);
+            if (li?.partNumber) partNumber = li.partNumber;
+        }
+
         return {
             woNumber: wo.woNumber,
             customerName: wo.customerName,
-            partNumber: wo.partNumber || '',
+            partNumber,
             dueDate: wo.dueDate,
             taskType: typeConfig.label,
-            nextStep: nextStep?.stepName || 'N/A',
+            nextStep: nextStep.stepName,
             status: status,
             urgency: urgency === 'red' ? 'Overdue' : urgency === 'yellow' ? 'Due Soon' : 'On Schedule',
             completionPercentage: wo.completionPercentage
         };
-    });
+    }).filter(Boolean);
 
     const headers = ['woNumber', 'customerName', 'partNumber', 'dueDate', 'taskType', 'nextStep', 'status', 'urgency', 'completionPercentage'];
-    exportToCSV(taskData, 'tasks', headers);
+    await exportToCSV(taskData, 'tasks', headers);
     showToast('Tasks exported to CSV (Google Sheets compatible)', 'success');
 }
 

@@ -23,11 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Desktop packaging trim** — Installers no longer embed `frontend/` inside `app.asar` (Express already serves UI from `resources/frontend`). `build:win`, `build:linux`, and `pack:win` use new script **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` in `backend/`) so test/tooling deps are not shipped in `resources/backend`. Linux artifacts are **AppImage + deb** only (rpm target removed). README and `scripts/launch-beta.ps1` updated; run `npm run backend:install` after a packaging build if you need backend dev/test deps locally again.
+
 - **Cursor rules** — Replaced monolithic `context files/.cursorrules.md` with focused `.mdc` rules under `.cursor/rules/` (`bperp-project-overview`, `bperp-reference`, `bperp-architecture`, `bperp-backend`, `bperp-frontend`, `bperp-electron`, `bperp-database-schema`, `bperp-domain-quality`); the old file was removed after the split. `documentation-updates.mdc` references `bperp-database-schema.mdc` for schema edits.
 - **Documentation** — README (architecture, TODO, Common Commands, end-to-end testing), `backend/README.md` (Electron + migrations), `docs/NAS-SETUP.md` (local dev vs NAS), and `context files/INTERNAL-ROADMAP.md` updated for Standalone/Network modes, native rebuild, and Electron migration spawning.
 - **NAS setup docs** — Clarified that both `backend/` and `frontend/` must be deployed side-by-side; outdated `frontend/` on the server explains missing UI such as Products/Parts under Inventory when using remote Server URL.
 
 ### Fixed
+
+- **Tasks (All Tasks)** — `workflow-start` on the combined task table now runs the same handler as `workflow-begin` (was registered only for workflow tab cards). Export uses an imported `exportToCSV` client path. Multi-part work orders pass `data-item-id` so Start/Complete/Issue target the correct line item (`getNextWorkflowStepWithLineItem` in `sales.js`).
 
 - **Migrations under Electron** — `server.js` no longer runs `spawnSync('node', ...)` for migrations (system Node could load a different ABI than the Electron-forked server). Migrations now use `process.execPath` with `ELECTRON_RUN_AS_NODE=1` when `process.versions.electron` is set, matching the embedded Node used for `initDb` and the API.
 - **Electron native rebuild** — `npm run rebuild:backend` now runs [`scripts/rebuild-backend-native.js`](scripts/rebuild-backend-native.js): clears `better-sqlite3` / `bcrypt` `build` and `prebuilds` folders, then `electron-rebuild --build-from-source` against the installed Electron version. Fixes cases where `electron-rebuild` completed but Electron still loaded a system-Node `better_sqlite3.node` (NODE_MODULE_VERSION mismatch).

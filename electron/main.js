@@ -96,10 +96,7 @@ if (!isDev) {
         module.paths.unshift(backendNodeModules);
     }
 }
-// Frontend is served by the backend, not loaded directly in production
-const frontendPath = isDev
-    ? path.join(__dirname, '..', 'frontend')
-    : path.join(process.resourcesPath, 'app.asar', 'frontend');
+// Static UI is served by the Express backend from resources/frontend (extraResources), not from app.asar.
 
 // ==================== ASSET PATHS ====================
 // In packaged builds, __dirname is inside app.asar where binary assets (icons)

@@ -33,7 +33,10 @@ Renderer uses `window.electronAPI`, e.g. `getConfig()`, `testConnection`, `runMi
 
 ## `package.json` build section
 
-- `extraResources`: `backend/`, `frontend/` (outside asar as configured)
+- `build.files`: `electron/**/*` only (static UI is **not** duplicated inside `app.asar`; Express serves `resources/frontend` from `extraResources`).
+- `extraResources`: `backend/`, `frontend/` (outside asar)
+- Release scripts (`build:win`, `build:linux`, `pack:win`) use **`npm run backend:install:prod`** so `resources/backend` omits devDependencies (Jest, nodemon, TypeScript, etc.); use `npm run backend:install` after packaging if you need full backend dev deps locally again.
+- Linux targets: AppImage + deb (no rpm)
 - `linux.category`: Office
 - SQLite via `better-sqlite3`; no separate DB server dependency
 

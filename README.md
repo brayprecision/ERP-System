@@ -121,11 +121,13 @@ On first launch, the setup wizard will ask you to choose **Standalone (Local)** 
 
 ### Building Installers
 
-`build:win` and `build:linux` automatically install backend deps and rebuild native modules for Electron:
+`build:win`, `build:linux`, and `pack:win` run **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` in `backend/`) so shipped `resources/backend` does not include Jest, nodemon, TypeScript, etc.; then they rebuild native modules for Electron.
+
+**After a packaging build**, if you need backend tests or `npm run dev` in `backend/` again, run **`npm run backend:install`** once to restore dev dependencies.
 
 ```bash
 npm run build:win        # Windows NSIS installer → dist-installers/BPERP-*-win-x64.exe
-npm run build:linux     # Linux .deb + AppImage + rpm
+npm run build:linux     # Linux .deb + AppImage (no rpm)
 npm run pack:win         # Windows unpacked app only (faster than NSIS; same packaged layout)
 ```
 
@@ -136,7 +138,7 @@ Output: `dist-installers/` (installer + unpacked app for testing).
 To avoid reinstalling the NSIS build after every change, use the PowerShell launcher from the repo root. It repackages the app, then starts `dist-installers\win-unpacked\BPERP.exe` (faster than a full installer build).
 
 ```powershell
-.\scripts\launch-beta.ps1              # backend:install + rebuild:backend + pack:win + start unpacked exe
+.\scripts\launch-beta.ps1              # backend:install:prod + rebuild:backend + pack:win + start unpacked exe
 .\scripts\launch-beta.ps1 -Dev         # fastest: Electron from source (no electron-builder)
 .\scripts\launch-beta.ps1 -FullInstaller   # same as npm run build:win, then start unpacked exe
 .\scripts\launch-beta.ps1 -SkipBackendInstall -SkipNativeRebuild   # fastest repack when only app code changed
@@ -144,7 +146,7 @@ To avoid reinstalling the NSIS build after every change, use the PowerShell laun
 
 From **cmd** or double-click: `scripts\launch-beta.cmd` (same flags). If `.ps1` is blocked, use the `.cmd` wrapper or run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
 
-`-Dev` is best for rapid UI/backend edits. The default path matches **installed** layout (asar + `resources`); use it when verifying behavior close to the shipped app.
+`-Dev` is best for rapid UI/backend edits. The default path matches **installed** layout (Electron shell in asar, **`resources/backend`** + **`resources/frontend`** — UI is served by Express from `resources/frontend`, not duplicated inside asar); use it when verifying behavior close to the shipped app.
 
 ### Why reinstalling can still show an “old” UI
 

@@ -19,7 +19,7 @@
   Skip npm run rebuild:backend (faster when only JS/HTML/CSS changed and native addons already match Electron).
 
 .PARAMETER SkipBackendInstall
-  Skip npm run backend:install (faster when backend dependencies did not change).
+  Skip npm run backend:install:prod (faster when backend production dependencies did not change).
 
 .EXAMPLE
   .\scripts\launch-beta.ps1
@@ -59,7 +59,7 @@ if ($Dev) {
 }
 
 if (-not $SkipBackendInstall) {
-    Invoke-Npm run backend:install
+    Invoke-Npm run backend:install:prod
 }
 if (-not $SkipNativeRebuild) {
     Invoke-Npm run rebuild:backend
