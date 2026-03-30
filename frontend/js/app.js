@@ -718,7 +718,7 @@ function updatePageTitle(route) {
         'tasks-inspection': 'Inspection Tasks',
         'tasks-shipping': 'Shipping & Receiving',
         'tasks-completed': 'Completed Work',
-        'tasks-maintenance': 'Machine Maintenance',
+        'tasks-maintenance': 'Machines',
         'settings-branding': 'Shop Branding',
         'settings-users': 'Users & Permissions',
         'settings-backup': 'Backup & Restore',

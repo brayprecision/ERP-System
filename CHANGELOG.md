@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tasks (UI)** — Inventory-style search, status filter, sort direction (Asc/Desc), and **Clear** on **All Tasks**, workflow step tabs, **Ordering**, and **Completed Work** (urgency filter on Completed). Removed the All Tasks banner that said tasks were derived from WIP checklists. **Misc tasks** can be **recurring** (weekly weekday, or monthly Nth weekday); completing one advances **next due** and keeps the task open. *(Tasks tab still uses localStorage + WIP data; it does not call `/api/tasks`.)*
+- **Machines** — Sidebar label **Machines** (route still `tasks-maintenance`). **WIP-style** expandable cards: chevron header toggles **Maintenance** and **Upgrades**; left border color = maintenance urgency (green / yellow / red). **Maintenance:** add modal (replaces placeholder), **Complete**, **Edit**, **Remove** (delete confirm). **Upgrades:** add / edit / complete / delete. Data: localStorage `bperp_machines`. Demo **upgrade** sample on CNC Mill 1. Card header **Edit** / History / Delete fixed (toggle target only on title row; `data-machine-id`).
+
 - **Window title** — Main window title appends `· v<version> · Standalone` or `· … · Network · UI from server` after the renderer `document.title` (shop branding) using `page-title-updated` + `preventDefault`, so branding is not overwritten and version/mode stay visible when an outdated remote `frontend/` hides newer Settings items.
 
 - **Desktop diagnostics** — IPC `get-app-info` and Settings → **About this app** (Electron only): app version, packaged vs dev, Standalone vs Network, server URL when set, runtime versions, and user data path (survives uninstall). System tray includes **About BPERP**; Help → About uses the same dialog (mode + user data path). README and `docs/NAS-SETUP.md` document why reinstall can still show an old UI and when to bump `package.json` `version` per installer build.
@@ -22,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Local development workflow** — `cd backend && npm run dev` starts the full app at `http://localhost:3000` with zero configuration. A `backend/.env` with sensible defaults is provided (gitignored).
 
 ### Changed
+
+- **Machines page** — Removed the four top summary cards (scheduled today, overdue, completed this week, upcoming this week); urgency is shown only on each card’s left border and in row copy.
 
 - **Desktop packaging trim** — Installers no longer embed `frontend/` inside `app.asar` (Express already serves UI from `resources/frontend`). `build:win`, `build:linux`, and `pack:win` use new script **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` in `backend/`) so test/tooling deps are not shipped in `resources/backend`. Linux artifacts are **AppImage + deb** only (rpm target removed). README and `scripts/launch-beta.ps1` updated; run `npm run backend:install` after a packaging build if you need backend dev/test deps locally again.
 

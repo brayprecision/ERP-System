@@ -8,7 +8,7 @@ import {
     formatDate, DOMCache, createModal, closeModal,
     getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer, exportToCSV
 } from './common.js';
-import { storage, STORAGE_KEYS, state } from './storage.js';
+import { storage, STORAGE_KEYS } from './storage.js';
 import { getWorkOrders, getNextWorkflowStep, getNextWorkflowStepWithLineItem, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders, getWODocuments, showDocumentsModal, showDocumentUploadModal, getDefaultChecklist } from './sales.js';
 
 // ==================== WORKFLOW STEP CONFIGURATION ====================
@@ -41,11 +41,274 @@ const TASK_TYPE_CONFIG = {
 };
 
 // ==================== STATE ====================
+const DEFAULT_TASKS_FILTERS = {
+    search: '',
+    status: '',
+    sortBy: 'dueDate',
+    sortDir: 'asc'
+};
+
 let tasksState = {
     currentView: 'all',
     workOrders: [],
-    isActive: false  // Track if tasks module is currently active
+    isActive: false,
+    filters: { ...DEFAULT_TASKS_FILTERS }
 };
+
+// ==================== TASK LIST FILTER / SORT (inventory-style) ====================
+function getLineItemWorkflowStatus(item) {
+    const step = item?.currentStep;
+    if (!step) return 'Complete';
+    if (step.hasIssue) return 'Issue';
+    if (step.startedAt) return 'In Progress';
+    return 'Not Started';
+}
+
+function escapeAttr(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function renderTasksFilterBar({ statusOptions, sortOptions }) {
+    const f = tasksState.filters;
+    const statusOptsHtml = (statusOptions || []).map(o =>
+        `<option value="${escapeAttr(o.value)}" ${f.status === o.value ? 'selected' : ''}>${o.label}</option>`
+    ).join('');
+    const sortOptsHtml = (sortOptions || []).map(o =>
+        `<option value="${escapeAttr(o.value)}" ${f.sortBy === o.value ? 'selected' : ''}>${o.label}</option>`
+    ).join('');
+    return `
+            <div class="flex items-center gap-2 mb-4 p-2 rounded-lg flex-wrap" style="background: var(--color-dark-bg); border: 1px solid var(--color-border);">
+                <div class="flex items-center gap-1 flex-1 min-w-[120px]">
+                    <i class="fa-solid fa-search text-gray-400 text-sm"></i>
+                    <input type="text" id="tasksSearch" placeholder="Search..."
+                        value="${escapeAttr(f.search)}"
+                        class="bg-transparent border-0 outline-none text-sm text-white placeholder-gray-400 flex-1 min-w-0">
+                </div>
+                <select id="tasksStatusFilter" class="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 min-w-[120px]">
+                    ${statusOptsHtml}
+                </select>
+                <select id="tasksSortBy" class="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 min-w-[140px]">
+                    ${sortOptsHtml}
+                </select>
+                <select id="tasksSortDir" class="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 min-w-[90px]">
+                    <option value="asc" ${f.sortDir === 'asc' ? 'selected' : ''}>Asc</option>
+                    <option value="desc" ${f.sortDir === 'desc' ? 'selected' : ''}>Desc</option>
+                </select>
+                <button type="button" data-action="clear-tasks-filters" class="text-xs px-2 py-1 rounded hover:bg-gray-600 transition-colors" style="color: var(--color-accent-primary);">
+                    <i class="fa-solid fa-times mr-1"></i>Clear
+                </button>
+            </div>`;
+}
+
+function buildAllTasksWoRows(activeWOs) {
+    const rows = [];
+    activeWOs.forEach(wo => {
+        const ctx = getNextWorkflowStepWithLineItem(wo);
+        const nextStep = ctx?.step;
+        if (!nextStep) return;
+        const lineItemId = ctx.lineItemId;
+        const partLabel = wo.lineItems && wo.lineItems.length > 0 && lineItemId != null
+            ? (wo.lineItems.find(li => li.id === lineItemId)?.partNumber || wo.partNumber || 'N/A')
+            : (wo.partNumber || 'N/A');
+        rows.push({ wo, ctx, nextStep, partLabel, lineItemId });
+    });
+    return rows;
+}
+
+function filterSortAllTasksRows(woRows, miscTasks, filters) {
+    const q = (filters.search || '').toLowerCase().trim();
+    const status = filters.status || '';
+    let fWo = woRows.filter(row => {
+        if (status && getWOWorkflowStatus(row.wo) !== status) return false;
+        if (!q) return true;
+        const typeLabel = TASK_TYPE_CONFIG[getTaskTypeFromStep(row.nextStep.stepKey)]?.label || '';
+        const blob = [row.wo.woNumber, row.wo.customerName, row.partLabel, row.nextStep.stepName, typeLabel]
+            .filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+    });
+    let fMisc = miscTasks.filter(task => {
+        if (status) {
+            if (status === 'Issue') return false;
+            if (task.status !== status) return false;
+        }
+        if (!q) return true;
+        const blob = [task.title, task.description, task.assignedTo, task.category].filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+    });
+    const dir = filters.sortDir === 'desc' ? -1 : 1;
+    const sortBy = filters.sortBy || 'dueDate';
+    const woSortKey = (row) => {
+        const wo = row.wo;
+        if (sortBy === 'dueDate') return new Date(wo.dueDate || 0).getTime();
+        if (sortBy === 'woNumber') return (wo.woNumber || '').toLowerCase();
+        if (sortBy === 'customer') return (wo.customerName || '').toLowerCase();
+        if (sortBy === 'type') return (TASK_TYPE_CONFIG[getTaskTypeFromStep(row.nextStep.stepKey)]?.label || '').toLowerCase();
+        return 0;
+    };
+    fWo.sort((a, b) => {
+        const va = woSortKey(a);
+        const vb = woSortKey(b);
+        if (typeof va === 'number' && typeof vb === 'number') return dir * (va - vb);
+        return dir * String(va).localeCompare(String(vb));
+    });
+    const miscSortKey = (task) => {
+        if (sortBy === 'dueDate') return new Date(task.dueDate || 0).getTime();
+        if (sortBy === 'woNumber') return (task.title || '').toLowerCase();
+        if (sortBy === 'customer') return (task.assignedTo || '').toLowerCase();
+        if (sortBy === 'type') return 'misc';
+        return 0;
+    };
+    fMisc.sort((a, b) => {
+        const va = miscSortKey(a);
+        const vb = miscSortKey(b);
+        if (typeof va === 'number' && typeof vb === 'number') return dir * (va - vb);
+        return dir * String(va).localeCompare(String(vb));
+    });
+    return { woRows: fWo, miscTasks: fMisc };
+}
+
+function filterSortWorkflowLineItems(items, filters) {
+    const q = (filters.search || '').toLowerCase().trim();
+    const status = filters.status || '';
+    let out = items.filter(item => {
+        if (status && getLineItemWorkflowStatus(item) !== status) return false;
+        if (!q) return true;
+        const blob = [item.woNumber, item.customerName, item.partNumber, item.description, item.currentStep?.stepName]
+            .filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+    });
+    const dir = filters.sortDir === 'desc' ? -1 : 1;
+    const sortBy = filters.sortBy || 'dueDate';
+    out = [...out].sort((a, b) => {
+        if (sortBy === 'dueDate') return dir * (new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+        if (sortBy === 'woNumber') return dir * (a.woNumber || '').localeCompare(b.woNumber || '');
+        if (sortBy === 'part') return dir * (a.partNumber || '').localeCompare(b.partNumber || '');
+        if (sortBy === 'customer') return dir * (a.customerName || '').localeCompare(b.customerName || '');
+        return 0;
+    });
+    return out;
+}
+
+function filterSortOrderingWorkOrders(wos, filters) {
+    const q = (filters.search || '').toLowerCase().trim();
+    const status = filters.status || '';
+    let out = wos.filter(wo => {
+        if (status && getWOWorkflowStatus(wo) !== status) return false;
+        if (!q) return true;
+        const part = wo.partNumber || (wo.lineItems || []).map(li => li.partNumber).filter(Boolean).join(' ') || '';
+        const blob = [wo.woNumber, wo.customerName, part].join(' ').toLowerCase();
+        return blob.includes(q);
+    });
+    const dir = filters.sortDir === 'desc' ? -1 : 1;
+    const sortBy = filters.sortBy || 'dueDate';
+    out.sort((a, b) => {
+        if (sortBy === 'dueDate') return dir * (new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+        if (sortBy === 'woNumber') return dir * (a.woNumber || '').localeCompare(b.woNumber || '');
+        if (sortBy === 'customer') return dir * (a.customerName || '').localeCompare(b.customerName || '');
+        return 0;
+    });
+    return out;
+}
+
+function filterSortCompletedWorkOrders(wos, filters) {
+    const q = (filters.search || '').toLowerCase().trim();
+    const status = filters.status || '';
+    let out = wos.filter(wo => {
+        if (status) {
+            const u = getWOUrgencyColor(wo.dueDate);
+            if (status === 'Overdue' && u !== 'red') return false;
+            if (status === 'Due Soon' && u !== 'yellow') return false;
+            if (status === 'On Schedule' && !['green', 'gray'].includes(u)) return false;
+        }
+        if (!q) return true;
+        const part = wo.partNumber || (wo.lineItems || []).map(li => li.partNumber).filter(Boolean).join(' ') || '';
+        const blob = [wo.woNumber, wo.customerName, part].join(' ').toLowerCase();
+        return blob.includes(q);
+    });
+    const dir = filters.sortDir === 'desc' ? -1 : 1;
+    const sortBy = filters.sortBy || 'dueDate';
+    out.sort((a, b) => {
+        if (sortBy === 'dueDate') return dir * (new Date(a.dueDate || 0) - new Date(b.dueDate || 0));
+        if (sortBy === 'woNumber') return dir * (a.woNumber || '').localeCompare(b.woNumber || '');
+        if (sortBy === 'customer') return dir * (a.customerName || '').localeCompare(b.customerName || '');
+        return 0;
+    });
+    return out;
+}
+
+const debouncedTasksSearch = debounce((value) => {
+    tasksState.filters.search = value;
+    rerenderCurrentTasksViewQuiet();
+}, 300);
+
+function rerenderCurrentTasksViewQuiet() {
+    const workOrders = getWorkOrders();
+    switch (tasksState.currentView) {
+        case 'all':
+            renderAllTasksView(workOrders);
+            break;
+        case 'ordering':
+            renderOrderingView(workOrders);
+            break;
+        case 'completed':
+            renderCompletedWorkView(workOrders);
+            break;
+        case 'programming':
+            renderWorkflowView(workOrders, ['part_programmed'], 'Programming Tasks', 'fa-code', 'text-pink-400');
+            break;
+        case 'processing':
+            renderWorkflowView(workOrders, ['material_processed'], 'Material Processing Tasks', 'fa-cut', 'text-yellow-400');
+            break;
+        case 'machining':
+            renderWorkflowView(workOrders, ['machining_complete'], 'Machining Tasks', 'fa-cogs', 'text-purple-400');
+            break;
+        case 'postprocessing':
+            renderWorkflowView(workOrders, ['post_processing'], 'Post Processing Tasks', 'fa-industry', 'text-orange-400');
+            break;
+        case 'inspection':
+            renderWorkflowView(workOrders, ['inspection_complete'], 'Inspection Tasks', 'fa-search-plus', 'text-cyan-400');
+            break;
+        case 'shipping':
+            renderWorkflowView(workOrders, ['ready_for_shipment'], 'Shipping Tasks', 'fa-truck', 'text-green-400');
+            break;
+        default:
+            break;
+    }
+}
+
+function setupTasksFilters() {
+    const searchInput = document.getElementById('tasksSearch');
+    const statusFilter = document.getElementById('tasksStatusFilter');
+    const sortFilter = document.getElementById('tasksSortBy');
+    const sortDir = document.getElementById('tasksSortDir');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => debouncedTasksSearch(e.target.value));
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', (e) => {
+            tasksState.filters.status = e.target.value;
+            rerenderCurrentTasksViewQuiet();
+        });
+    }
+    if (sortFilter) {
+        sortFilter.addEventListener('change', (e) => {
+            tasksState.filters.sortBy = e.target.value;
+            rerenderCurrentTasksViewQuiet();
+        });
+    }
+    if (sortDir) {
+        sortDir.addEventListener('change', (e) => {
+            tasksState.filters.sortDir = e.target.value;
+            rerenderCurrentTasksViewQuiet();
+        });
+    }
+}
+
+export function clearTasksFilters() {
+    tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
+    rerenderCurrentTasksViewQuiet();
+}
 
 // ==================== WORKFLOW HELPERS ====================
 // Filter work order line items by workflow step (returns flat list of items)
@@ -245,8 +508,22 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
     
     const keysArray = Array.isArray(stepKeys) ? stepKeys : [stepKeys];
     
-    // Filter to get individual line items at this step
-    const relevantItems = filterLineItemsByStep(workOrders, keysArray);
+    const rawItems = filterLineItemsByStep(workOrders, keysArray);
+    const relevantItems = filterSortWorkflowLineItems(rawItems, tasksState.filters);
+    const filterBar = renderTasksFilterBar({
+        statusOptions: [
+            { value: '', label: 'All status' },
+            { value: 'Not Started', label: 'Not Started' },
+            { value: 'In Progress', label: 'In Progress' },
+            { value: 'Issue', label: 'Issue' }
+        ],
+        sortOptions: [
+            { value: 'dueDate', label: 'Sort: Due date' },
+            { value: 'woNumber', label: 'Sort: Work order' },
+            { value: 'part', label: 'Sort: Part' },
+            { value: 'customer', label: 'Sort: Customer' }
+        ]
+    });
     
     // Group by urgency
     const overdue = relevantItems.filter(item => getWOUrgencyColor(item.dueDate) === 'red');
@@ -365,6 +642,8 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
                 </button>
             </div>
             
+            ${filterBar}
+            
             <div class="flex gap-4 mb-4 text-xs">
                 <span><i class="fa-solid fa-circle text-green-500 mr-1"></i>On Schedule</span>
                 <span><i class="fa-solid fa-circle text-yellow-500 mr-1"></i>Due Within 3 Days</span>
@@ -383,6 +662,7 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
             ` : ''}
         </div>
     `;
+    setupTasksFilters();
 }
 
 function renderCompletedWorkView(workOrders) {
@@ -403,12 +683,26 @@ function renderCompletedWorkView(workOrders) {
         return step?.isCompleted || false;
     };
 
-    // Filter work orders that have completed "ready_for_shipment" but not "invoicing_complete"
-    const completedWOs = workOrders.filter(wo => {
+    const completedWOsRaw = workOrders.filter(wo => {
         const isReadyForShipment = isStepCompleteForWO(wo, 'ready_for_shipment');
         const isInvoicingComplete = isStepCompleteForWO(wo, 'invoicing_complete');
 
         return isReadyForShipment && !isInvoicingComplete;
+    });
+
+    const completedWOs = filterSortCompletedWorkOrders(completedWOsRaw, tasksState.filters);
+    const filterBar = renderTasksFilterBar({
+        statusOptions: [
+            { value: '', label: 'All urgency' },
+            { value: 'Overdue', label: 'Overdue' },
+            { value: 'Due Soon', label: 'Due Soon' },
+            { value: 'On Schedule', label: 'On Schedule' }
+        ],
+        sortOptions: [
+            { value: 'dueDate', label: 'Sort: Due date' },
+            { value: 'woNumber', label: 'Sort: Work order' },
+            { value: 'customer', label: 'Sort: Customer' }
+        ]
     });
 
     // Group by urgency (though these should mostly be completed/on time)
@@ -498,6 +792,8 @@ function renderCompletedWorkView(workOrders) {
                 </button>
             </div>
 
+            ${filterBar}
+
             <div class="mb-4 p-3 rounded-lg bg-blue-900/20 border border-blue-700">
                 <p class="text-blue-300 text-sm">
                     <i class="fa-solid fa-info-circle mr-2"></i>
@@ -519,6 +815,7 @@ function renderCompletedWorkView(workOrders) {
             ` : ''}
         </div>
     `;
+    setupTasksFilters();
 }
 
 function getCurrentRefreshFn() {
@@ -537,6 +834,8 @@ function getCurrentRefreshFn() {
 
 // ==================== VIEW FUNCTIONS ====================
 export function loadAllTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'all') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'all';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -553,40 +852,48 @@ export function loadAllTasks() {
 function renderAllTasksView(workOrders) {
     const container = DOMCache.get('dashboardContent');
     if (!container) return;
-    
+
     const activeWOs = workOrders.filter(wo => wo.completionPercentage < 100);
     const miscTasks = (storage.get(STORAGE_KEYS.MISC_TASKS) || []).filter(t => t.status !== 'Completed');
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const tomorrow = new Date(today.getTime() + 24*60*60*1000);
-    
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+    const woRowsBuilt = buildAllTasksWoRows(activeWOs);
+    const { woRows, miscTasks: miscFiltered } = filterSortAllTasksRows(woRowsBuilt, miscTasks, tasksState.filters);
+
     const stats = {
-        totalOpen: activeWOs.length + miscTasks.length,
-        overdue: activeWOs.filter(wo => getWOUrgencyColor(wo.dueDate) === 'red').length + 
-                 miscTasks.filter(t => t.dueDate && getWOUrgencyColor(t.dueDate) === 'red').length,
-        dueToday: activeWOs.filter(wo => {
-            const due = new Date(wo.dueDate);
+        totalOpen: woRows.length + miscFiltered.length,
+        overdue: woRows.filter(row => getWOUrgencyColor(row.wo.dueDate) === 'red').length +
+            miscFiltered.filter(t => t.dueDate && getWOUrgencyColor(t.dueDate) === 'red').length,
+        dueToday: woRows.filter(row => {
+            const due = new Date(row.wo.dueDate);
             return due >= today && due < tomorrow;
-        }).length + miscTasks.filter(t => {
+        }).length + miscFiltered.filter(t => {
             if (!t.dueDate) return false;
             const due = new Date(t.dueDate);
             return due >= today && due < tomorrow;
         }).length,
         completed: workOrders.filter(wo => wo.completionPercentage === 100).length
     };
-    
-    // Render work order tasks
-    const woTaskRows = activeWOs.map(wo => {
-        const ctx = getNextWorkflowStepWithLineItem(wo);
-        const nextStep = ctx?.step;
-        if (!nextStep) return '';
 
-        const lineItemId = ctx.lineItemId;
-        const partLabel = wo.lineItems && wo.lineItems.length > 0 && lineItemId != null
-            ? (wo.lineItems.find(li => li.id === lineItemId)?.partNumber || wo.partNumber || 'N/A')
-            : (wo.partNumber || 'N/A');
+    const allTasksFilterBar = renderTasksFilterBar({
+        statusOptions: [
+            { value: '', label: 'All status' },
+            { value: 'Not Started', label: 'Not Started' },
+            { value: 'In Progress', label: 'In Progress' },
+            { value: 'Issue', label: 'Issue' }
+        ],
+        sortOptions: [
+            { value: 'dueDate', label: 'Sort: Due date' },
+            { value: 'woNumber', label: 'Sort: Work order' },
+            { value: 'customer', label: 'Sort: Customer' },
+            { value: 'type', label: 'Sort: Type' }
+        ]
+    });
+
+    const woTaskRows = woRows.map(({ wo, nextStep, partLabel, lineItemId }) => {
         const itemAttr = lineItemId != null ? ` data-item-id="${lineItemId}"` : '';
-
         const taskType = getTaskTypeFromStep(nextStep.stepKey);
         const typeConfig = TASK_TYPE_CONFIG[taskType] || TASK_TYPE_CONFIG.misc;
         const status = getWOWorkflowStatus(wo);
@@ -634,15 +941,15 @@ function renderAllTasksView(workOrders) {
             </tr>
         `;
     }).join('');
-    
-    // Render misc tasks
-    const miscTaskRows = miscTasks.map(task => {
+
+    const miscTaskRows = miscFiltered.map(task => {
         const typeConfig = TASK_TYPE_CONFIG.misc;
         const urgency = task.dueDate ? getWOUrgencyColor(task.dueDate) : 'gray';
         const urgencyClass = urgency === 'red' ? 'text-red-500 font-bold' : urgency === 'yellow' ? 'text-yellow-500' : 'text-gray-400';
-        const statusClass = task.status === 'In Progress' ? 'bg-blue-600 text-blue-100' : 
-                           task.status === 'Not Started' ? 'bg-gray-600 text-gray-200' : 'bg-green-600 text-green-100';
-        
+        const statusClass = task.status === 'In Progress' ? 'bg-blue-600 text-blue-100' :
+            task.status === 'Not Started' ? 'bg-gray-600 text-gray-200' : 'bg-green-600 text-green-100';
+        const recurringBadge = task.isRecurring ? '<span class="ml-2 text-xs text-purple-400"><i class="fa-solid fa-rotate mr-1"></i>Recurring</span>' : '';
+
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-800 bg-gray-800/30">
                 <td class="px-4 py-3">
@@ -651,7 +958,7 @@ function renderAllTasksView(workOrders) {
                     </span>
                 </td>
                 <td class="px-4 py-3">
-                    <div class="font-medium text-white">${task.title}</div>
+                    <div class="font-medium text-white">${task.title}${recurringBadge}</div>
                     <div class="text-xs text-gray-500">${task.description || 'No description'}</div>
                 </td>
                 <td class="px-4 py-3 text-gray-300">${task.assignedTo || '-'}</td>
@@ -664,11 +971,11 @@ function renderAllTasksView(workOrders) {
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex space-x-2">
-                        <button data-action="complete-misc-task" data-task-id="${task.id}" 
+                        <button data-action="complete-misc-task" data-task-id="${task.id}"
                             class="text-green-500 hover:text-green-400" title="Mark Complete">
                             <i class="fa-solid fa-check"></i>
                         </button>
-                        <button data-action="edit-misc-task" data-task-id="${task.id}" 
+                        <button data-action="edit-misc-task" data-task-id="${task.id}"
                             class="text-blue-500 hover:text-blue-400" title="Edit Task">
                             <i class="fa-solid fa-edit"></i>
                         </button>
@@ -681,9 +988,9 @@ function renderAllTasksView(workOrders) {
             </tr>
         `;
     }).join('');
-    
+
     const taskRows = woTaskRows + miscTaskRows;
-    
+
     container.innerHTML = `
         <div class="col-span-3">
             <div class="grid grid-cols-4 gap-4 mb-6">
@@ -704,16 +1011,12 @@ function renderAllTasksView(workOrders) {
                     <p class="text-2xl font-bold text-green-500">${stats.completed}</p>
                 </div>
             </div>
-            
-            <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-300">
-                <i class="fa-solid fa-info-circle mr-2"></i>
-                Tasks are derived from Work In Progress checklists.
-            </div>
-            
+
             <div class="card p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-gray-400 text-sm font-medium">
                         <i class="fa-solid fa-clipboard-check mr-2"></i>All Workflow Tasks
+                        <span class="text-xs text-gray-500">(${woRows.length + miscFiltered.length} shown)</span>
                     </h3>
                     <div class="flex space-x-2">
                         <button data-action="export-tasks" class="text-gray-400 hover:text-white text-sm">
@@ -727,7 +1030,9 @@ function renderAllTasksView(workOrders) {
                         </button>
                     </div>
                 </div>
-                
+
+                ${allTasksFilterBar}
+
                 <div class="table-container">
                     <table class="table w-full text-sm text-left">
                         <thead>
@@ -742,17 +1047,20 @@ function renderAllTasksView(workOrders) {
                             </tr>
                         </thead>
                         <tbody>
-                            ${taskRows || '<tr><td colspan="7" class="text-center py-8" style="color: var(--color-text-muted);">No active work orders</td></tr>'}
+                            ${taskRows || '<tr><td colspan="7" class="text-center py-8" style="color: var(--color-text-muted);">No matching tasks</td></tr>'}
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
     `;
+    setupTasksFilters();
 }
 
 // ==================== WORKFLOW TAB FUNCTIONS ====================
 export function loadOrderingTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'ordering') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'ordering';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -768,9 +1076,22 @@ function renderOrderingView(workOrders) {
     const container = DOMCache.get('dashboardContent');
     if (!container) return;
     
-    // Filter WOs that need material or tooling ordered
     const orderingSteps = ['material_ordered', 'tooling_ordered', 'material_received', 'tooling_received'];
-    const relevantWOs = filterWorkOrdersByStep(workOrders, orderingSteps);
+    const relevantWOsRaw = filterWorkOrdersByStep(workOrders, orderingSteps);
+    const relevantWOs = filterSortOrderingWorkOrders(relevantWOsRaw, tasksState.filters);
+    const orderingFilterBar = renderTasksFilterBar({
+        statusOptions: [
+            { value: '', label: 'All status' },
+            { value: 'Not Started', label: 'Not Started' },
+            { value: 'In Progress', label: 'In Progress' },
+            { value: 'Issue', label: 'Issue' }
+        ],
+        sortOptions: [
+            { value: 'dueDate', label: 'Sort: Due date' },
+            { value: 'woNumber', label: 'Sort: Work order' },
+            { value: 'customer', label: 'Sort: Customer' }
+        ]
+    });
     
     // Group by urgency
     const overdue = relevantWOs.filter(wo => getWOUrgencyColor(wo.dueDate) === 'red');
@@ -937,6 +1258,8 @@ function renderOrderingView(workOrders) {
                 </button>
             </div>
             
+            ${orderingFilterBar}
+            
             <div class="flex gap-4 mb-4 text-xs">
                 <span><i class="fa-solid fa-circle text-green-500 mr-1"></i>On Schedule</span>
                 <span><i class="fa-solid fa-circle text-yellow-500 mr-1"></i>Due Within 3 Days</span>
@@ -955,9 +1278,12 @@ function renderOrderingView(workOrders) {
             ` : ''}
         </div>
     `;
+    setupTasksFilters();
 }
 
 export function loadProgrammingTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'programming') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'programming';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -975,6 +1301,8 @@ export function loadProgrammingTasks() {
 }
 
 export function loadProcessingTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'processing') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'processing';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -992,6 +1320,8 @@ export function loadProcessingTasks() {
 }
 
 export function loadMachiningTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'machining') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'machining';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -1009,6 +1339,8 @@ export function loadMachiningTasks() {
 }
 
 export function loadPostProcessingTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'postprocessing') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'postprocessing';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -1026,6 +1358,8 @@ export function loadPostProcessingTasks() {
 }
 
 export function loadInspectionTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'inspection') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'inspection';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -1043,6 +1377,8 @@ export function loadInspectionTasks() {
 }
 
 export function loadShippingReceivingTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'shipping') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'shipping';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -1060,6 +1396,8 @@ export function loadShippingReceivingTasks() {
 }
 
 export function loadCompletedWorkTasks() {
+    const prev = tasksState.currentView;
+    if (prev !== 'completed') tasksState.filters = { ...DEFAULT_TASKS_FILTERS };
     tasksState.currentView = 'completed';
     tasksState.isActive = true;
     showLoadingSpinner();
@@ -1185,6 +1523,8 @@ export function registerActionHandlers(registerFn) {
     });
 
     registerFn('refresh-tasks', refreshCurrentView);
+
+    registerFn('clear-tasks-filters', () => clearTasksFilters());
     
     registerFn('export-tasks', () => {
         exportTasks();
@@ -1735,10 +2075,163 @@ function showIssueReportModal(woId, stepId, stepName, callback, lineItemId = nul
     });
 }
 
+// ==================== MISC TASK RECURRENCE (local dates, 0=Sun .. 6=Sat) ====================
+function miscWeekdayOptionsHtml(selected) {
+    const days = [
+        { v: 0, l: 'Sunday' }, { v: 1, l: 'Monday' }, { v: 2, l: 'Tuesday' }, { v: 3, l: 'Wednesday' },
+        { v: 4, l: 'Thursday' }, { v: 5, l: 'Friday' }, { v: 6, l: 'Saturday' }
+    ];
+    return days.map(d => `<option value="${d.v}" ${String(selected) === String(d.v) ? 'selected' : ''}>${d.l}</option>`).join('');
+}
+
+/** Nth weekday in month; if fewer than nth occurrences, use last occurrence of that weekday in the month. */
+function findNthWeekdayInMonth(year, monthIndex, nth, dayOfWeek) {
+    let count = 0;
+    let lastMatch = null;
+    for (let d = 1; d <= 31; d++) {
+        const dt = new Date(year, monthIndex, d);
+        if (dt.getMonth() !== monthIndex) break;
+        if (dt.getDay() === dayOfWeek) {
+            count++;
+            lastMatch = new Date(dt);
+            if (count === nth) return lastMatch;
+        }
+    }
+    return lastMatch;
+}
+
+function computeNextDueDate(recurrence, fromDate) {
+    if (!recurrence || recurrence.kind === 'none') return null;
+    const from = new Date(fromDate);
+    from.setHours(12, 0, 0, 0);
+
+    if (recurrence.kind === 'weekly') {
+        const target = ((recurrence.dayOfWeek ?? 5) + 7) % 7;
+        const d = new Date(from);
+        d.setDate(d.getDate() + 1);
+        let steps = 0;
+        while (d.getDay() !== target && steps < 370) {
+            d.setDate(d.getDate() + 1);
+            steps++;
+        }
+        return d.toISOString().split('T')[0];
+    }
+
+    if (recurrence.kind === 'monthlyNth') {
+        const nth = Math.min(4, Math.max(1, parseInt(recurrence.nth, 10) || 1));
+        const targetDow = ((recurrence.dayOfWeek ?? 1) + 7) % 7;
+        let y = from.getFullYear();
+        let m = from.getMonth();
+        let candidate = findNthWeekdayInMonth(y, m, nth, targetDow);
+        if (!candidate) return null;
+        let candMid = new Date(candidate);
+        candMid.setHours(12, 0, 0, 0);
+        if (candMid <= from) {
+            m += 1;
+            if (m > 11) {
+                m = 0;
+                y += 1;
+            }
+            candidate = findNthWeekdayInMonth(y, m, nth, targetDow);
+        }
+        return candidate ? candidate.toISOString().split('T')[0] : null;
+    }
+    return null;
+}
+
+function parseMiscRecurrenceFromForm(formData) {
+    const recurring = formData.get('isRecurring') === '1' || formData.get('isRecurring') === 'on';
+    if (!recurring) {
+        return { isRecurring: false, recurrence: null };
+    }
+    const kind = formData.get('recurrenceKind') || 'weekly';
+    if (kind === 'monthlyNth') {
+        return {
+            isRecurring: true,
+            recurrence: {
+                kind: 'monthlyNth',
+                nth: parseInt(formData.get('monthlyNth'), 10) || 1,
+                dayOfWeek: parseInt(formData.get('monthlyDayOfWeek'), 10) || 1
+            }
+        };
+    }
+    return {
+        isRecurring: true,
+        recurrence: {
+            kind: 'weekly',
+            dayOfWeek: parseInt(formData.get('weeklyDayOfWeek'), 10) || 5
+        }
+    };
+}
+
+function wireMiscRecurrenceUi(root, prefix) {
+    const cb = root.querySelector(`#${prefix}miscRecurring`);
+    const fields = root.querySelector(`#${prefix}miscRecurrenceFields`);
+    const kind = root.querySelector(`#${prefix}miscRecurrenceKind`);
+    const weeklyBlock = root.querySelector(`#${prefix}miscWeeklyFields`);
+    const monthlyBlock = root.querySelector(`#${prefix}miscMonthlyFields`);
+    const sync = () => {
+        const on = cb?.checked;
+        if (fields) fields.classList.toggle('hidden', !on);
+        if (!on) return;
+        const k = kind?.value || 'weekly';
+        if (weeklyBlock) weeklyBlock.classList.toggle('hidden', k !== 'weekly');
+        if (monthlyBlock) monthlyBlock.classList.toggle('hidden', k !== 'monthlyNth');
+    };
+    cb?.addEventListener('change', sync);
+    kind?.addEventListener('change', sync);
+    sync();
+}
+
+function miscRecurrenceFieldsHtml(prefix, task) {
+    const rec = task?.recurrence;
+    const isRec = task?.isRecurring && rec;
+    const kind = rec?.kind === 'monthlyNth' ? 'monthlyNth' : 'weekly';
+    const wDay = rec?.kind === 'weekly' ? (rec.dayOfWeek ?? 5) : 5;
+    const mNth = rec?.kind === 'monthlyNth' ? (rec.nth ?? 1) : 1;
+    const mDow = rec?.kind === 'monthlyNth' ? (rec.dayOfWeek ?? 1) : 1;
+    return `
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="${prefix}miscRecurring" name="isRecurring" value="1" class="rounded border-gray-600"
+                        ${isRec ? 'checked' : ''}>
+                    <label for="${prefix}miscRecurring" class="form-label mb-0">Recurring task</label>
+                </div>
+                <div id="${prefix}miscRecurrenceFields" class="space-y-3 border border-gray-600 rounded p-3 ${isRec ? '' : 'hidden'}">
+                    <div>
+                        <label class="form-label">Pattern</label>
+                        <select id="${prefix}miscRecurrenceKind" name="recurrenceKind" class="form-input w-full">
+                            <option value="weekly" ${kind === 'weekly' ? 'selected' : ''}>Every week (same weekday)</option>
+                            <option value="monthlyNth" ${kind === 'monthlyNth' ? 'selected' : ''}>Monthly (Nth weekday, e.g. 3rd Monday)</option>
+                        </select>
+                    </div>
+                    <div id="${prefix}miscWeeklyFields" class="${kind === 'weekly' ? '' : 'hidden'}">
+                        <label class="form-label">Day of week</label>
+                        <select name="weeklyDayOfWeek" class="form-input w-full">${miscWeekdayOptionsHtml(wDay)}</select>
+                    </div>
+                    <div id="${prefix}miscMonthlyFields" class="${kind === 'monthlyNth' ? '' : 'hidden'}">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="form-label">Week in month</label>
+                                <select name="monthlyNth" class="form-input w-full">
+                                    <option value="1" ${mNth === 1 ? 'selected' : ''}>1st</option>
+                                    <option value="2" ${mNth === 2 ? 'selected' : ''}>2nd</option>
+                                    <option value="3" ${mNth === 3 ? 'selected' : ''}>3rd</option>
+                                    <option value="4" ${mNth === 4 ? 'selected' : ''}>4th</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label">Day of week</label>
+                                <select name="monthlyDayOfWeek" class="form-input w-full">${miscWeekdayOptionsHtml(mDow)}</select>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+}
+
 // ==================== CREATE MISCELLANEOUS TASK MODAL ====================
 function showCreateMiscTaskModal() {
     const content = `
-        <div class="p-6">
+        <div class="p-6" id="createTaskModalRoot">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-medium text-white">
                     <i class="fa-solid fa-tasks mr-2" style="color: var(--color-accent-primary);"></i>Create Task
@@ -1784,10 +2277,11 @@ function showCreateMiscTaskModal() {
                         <input type="text" name="assignedTo" class="form-input w-full" placeholder="Employee name">
                     </div>
                     <div>
-                        <label class="form-label">Due Date</label>
+                        <label class="form-label">Due date (first occurrence)</label>
                         <input type="date" name="dueDate" class="form-input w-full">
                     </div>
                 </div>
+                ${miscRecurrenceFieldsHtml('create', null)}
                 <div>
                     <label class="form-label">Estimated Duration</label>
                     <input type="text" name="estimatedDuration" class="form-input w-full" placeholder="e.g., 2 hours">
@@ -1805,10 +2299,16 @@ function showCreateMiscTaskModal() {
     
     createModal('createTaskModal', content, { width: 'w-full max-w-lg' });
     
+    const root = document.getElementById('createTaskModalRoot');
+    if (root) {
+        wireMiscRecurrenceUi(root, 'create');
+    }
+    
     document.getElementById('createTaskForm').addEventListener('submit', (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        
+        const { isRecurring, recurrence } = parseMiscRecurrenceFromForm(formData);
+
         const task = {
             id: Date.now(),
             title: formData.get('title'),
@@ -1820,10 +2320,16 @@ function showCreateMiscTaskModal() {
             estimatedDuration: formData.get('estimatedDuration'),
             status: 'Not Started',
             type: 'miscellaneous',
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            isRecurring,
+            recurrence: isRecurring ? recurrence : null
         };
+
+        if (isRecurring && !task.dueDate) {
+            showToast('Set a due date for the first occurrence of a recurring task', 'warning');
+            return;
+        }
         
-        // Save to misc tasks storage
         let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
         miscTasks.push(task);
         storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
@@ -1831,7 +2337,6 @@ function showCreateMiscTaskModal() {
         closeModal('createTaskModal');
         showToast(`Task "${task.title}" created successfully!`, 'success');
         
-        // Refresh view if on tasks page
         if (tasksState.isActive) {
             refreshCurrentView();
         }
@@ -1849,11 +2354,24 @@ function completeMiscTask(taskId) {
     }
     
     const task = miscTasks[taskIndex];
-    task.status = 'Completed';
-    task.completedAt = new Date().toISOString();
-    storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
-    
-    showToast(`Task "${task.title}" marked as complete!`, 'success');
+    if (task.isRecurring && task.recurrence) {
+        const nextDue = computeNextDueDate(task.recurrence, new Date());
+        if (!nextDue) {
+            showToast('Could not compute next due date for recurring task', 'error');
+            return;
+        }
+        task.lastCompletedAt = new Date().toISOString();
+        task.dueDate = nextDue;
+        task.status = 'Not Started';
+        delete task.completedAt;
+        storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+        showToast(`Recurring task "${task.title}" completed — next due ${formatDate(nextDue)}`, 'success');
+    } else {
+        task.status = 'Completed';
+        task.completedAt = new Date().toISOString();
+        storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+        showToast(`Task "${task.title}" marked as complete!`, 'success');
+    }
     
     if (tasksState.isActive) {
         refreshCurrentView();
@@ -1870,7 +2388,7 @@ function editMiscTask(taskId) {
     }
     
     const content = `
-        <div class="p-6">
+        <div class="p-6" id="editTaskModalRoot">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-medium text-white">
                     <i class="fa-solid fa-edit mr-2" style="color: var(--color-accent-primary);"></i>Edit Task
@@ -1936,7 +2454,7 @@ function editMiscTask(taskId) {
                 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="form-label">Due Date</label>
+                        <label class="form-label">Due date (next / first occurrence)</label>
                         <input type="date" name="dueDate" value="${task.dueDate || ''}"
                             class="form-input w-full">
                     </div>
@@ -1946,6 +2464,7 @@ function editMiscTask(taskId) {
                             class="form-input w-full" placeholder="e.g., 2 hours">
                     </div>
                 </div>
+                ${miscRecurrenceFieldsHtml('edit', task)}
                 
                 <div class="flex space-x-3 pt-4 border-t border-gray-700">
                     <button type="button" onclick="BPERP.common.closeModal('editTaskModal')" 
@@ -1960,9 +2479,20 @@ function editMiscTask(taskId) {
     
     createModal('editTaskModal', content, { width: 'w-full max-w-lg' });
     
+    const editRoot = document.getElementById('editTaskModalRoot');
+    if (editRoot) {
+        wireMiscRecurrenceUi(editRoot, 'edit');
+    }
+    
     document.getElementById('editTaskForm').addEventListener('submit', (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
+        const { isRecurring, recurrence } = parseMiscRecurrenceFromForm(formData);
+        const dueDate = formData.get('dueDate');
+        if (isRecurring && !dueDate) {
+            showToast('Set a due date for a recurring task', 'warning');
+            return;
+        }
         
         let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
         const taskIndex = miscTasks.findIndex(t => t.id === parseInt(formData.get('taskId')));
@@ -1972,7 +2502,7 @@ function editMiscTask(taskId) {
             return;
         }
         
-        miscTasks[taskIndex] = {
+        const next = {
             ...miscTasks[taskIndex],
             title: formData.get('title'),
             description: formData.get('description'),
@@ -1980,10 +2510,16 @@ function editMiscTask(taskId) {
             priority: formData.get('priority'),
             status: formData.get('status'),
             assignedTo: formData.get('assignedTo'),
-            dueDate: formData.get('dueDate'),
+            dueDate,
             estimatedDuration: formData.get('estimatedDuration'),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            isRecurring,
+            recurrence: isRecurring ? recurrence : null
         };
+        if (!isRecurring) {
+            delete next.lastCompletedAt;
+        }
+        miscTasks[taskIndex] = next;
         
         storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
         

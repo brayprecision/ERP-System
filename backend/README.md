@@ -203,6 +203,8 @@ POST   /api/tasks/:id/issue    # Report issue
 DELETE /api/tasks/:id          # Soft delete task
 ```
 
+The **Tasks** screen in the browser/Electron UI (All Tasks, workflow tabs, Ordering, Completed Work, and **Machines**) is currently driven by **localStorage** and **work-order checklist** data, not these `/api/tasks` routes. The API above remains for future or alternate clients.
+
 ### Data Import
 
 ```

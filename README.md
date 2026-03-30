@@ -1,6 +1,6 @@
 # BPERP - Manufacturing ERP System
 
-Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, workcenters, and maintenance for the shop floor.
+Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, workcenters, and machines (maintenance/upgrades) for the shop floor.
 
 ## Status
 
@@ -9,9 +9,9 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 ### What's Working
 - Inventory Management (Products, Parts, Materials, Tooling, Misc items with low-stock alerts; Product BOM for assemblies)
 - Sales Management (Customers, Contacts, Quotes with lifecycle, Work Orders with checklists)
-- Task Management (11 workflow types, assignments, history)
-- Workcenter Management (machine queues, job routing, state tracking)
-- Maintenance Tracking (preventive/corrective scheduling, runtime tracking)
+- **Task Management** — Workflow tabs mirror WIP checklists (localStorage + work orders). **All Tasks**, workflow tabs, **Ordering**, and **Completed Work** use inventory-style **search, status filter, sort, Asc/Desc, Clear**. **Misc tasks** can be **recurring** (weekly or monthly Nth weekday); complete sets the next due date. *(The Tasks UI does not use `/api/tasks` yet.)*
+- **Workcenter Management** — Machine queues, job routing, state tracking
+- **Machines** (under Tasks sidebar) — Profiles in **localStorage** (`bperp_machines`): **WIP-style expandable cards** with urgency **left border**; **Maintenance** tasks (add, complete, **edit**, **remove**) and **Upgrade** tasks (add, edit, complete, delete). Sidebar label **Machines**; route id `tasks-maintenance`. **Note:** After `npm install` in `backend/`, run **`npm run rebuild:backend`** from the repo root before **`npm start`** (Electron) so `better-sqlite3` matches embedded Node.
 - User Management (Admin/Machinist/Operator roles, tab-level permissions)
 - Shop Branding (logo, name, tagline)
 - Data Import (CSV/Excel bulk import for all major entities)
