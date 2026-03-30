@@ -110,6 +110,7 @@ const routes = {
     'dashboard': () => loadDashboard(),
     
     // Inventory
+    'inventory-kanban': () => modules.inventory?.loadKanbanInventory(),
     'inventory-materials': () => modules.inventory?.loadMaterialInventory(),
     'inventory-tooling': () => modules.inventory?.loadToolingInventory(),
     'inventory-misc': () => modules.inventory?.loadMiscInventory(),
@@ -554,6 +555,7 @@ function updateLastBackupDate() {
 // Map routes to tab categories for permission checking
 const routeToCategory = {
     'dashboard': 'dashboard',
+    'inventory-kanban': 'inventory',
     'inventory-products': 'inventory',
     'inventory-parts': 'inventory',
     'inventory-materials': 'inventory',
@@ -699,6 +701,7 @@ function updatePageTitle(route) {
     
     const titles = {
         'dashboard': 'Dashboard',
+        'inventory-kanban': 'Kanban',
         'inventory-products': 'Products Inventory',
         'inventory-parts': 'Parts Inventory',
         'inventory-materials': 'Materials Inventory',

@@ -7,7 +7,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 **Version:** 1.0.0-beta.1 | **Internal Use Only** | **Windows & Linux**
 
 ### What's Working
-- Inventory Management (Products, Parts, Materials, Tooling, Misc items with low-stock alerts; Product BOM for assemblies)
+- Inventory Management (**Kanban** view for low-stock and critical items across all categories, with **min reorder qty** and **reorder cost** on that view only; Products, Parts, Materials, Tooling, Misc; optional **reorder link** per item with quick-open from the table; Product BOM on add and edit for assemblies)
 - Sales Management (Customers, Contacts, Quotes with lifecycle, Work Orders with checklists)
 - **Task Management** — Workflow tabs mirror WIP checklists (localStorage + work orders). **All Tasks**, workflow tabs, **Ordering**, and **Completed Work** use inventory-style **search, status filter, sort, Asc/Desc, Clear**. **Misc tasks** can be **recurring** (weekly or monthly Nth weekday); complete sets the next due date. *(The Tasks UI does not use `/api/tasks` yet.)*
 - **Workcenter Management** — Machine queues, job routing, state tracking
@@ -16,6 +16,10 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 - Shop Branding (logo, name, tagline)
 - Data Import (CSV/Excel bulk import for all major entities)
 - Electron Desktop App (Windows & Linux)
+
+### Inventory (browser UI)
+
+The Inventory sidebar (materials, tooling, misc, products, parts, and **Kanban**) stores item data in **localStorage** in the current UI; it does not call the SQLite **REST** inventory API yet (`/api/inventory/*` remains available for future wiring). Per-item fields include optional **reorder link**, **min reorder qty** (shown on Kanban with **reorder cost** = unit price × min qty), and **Bill of Materials** on product add and edit.
 
 ### Known Issues
 - **Backup/Restore** only saves browser localStorage, not a real database backup (should be a simple file copy of the SQLite DB)

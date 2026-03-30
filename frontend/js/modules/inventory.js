@@ -13,11 +13,55 @@ import { storage, STORAGE_KEYS, searchCache } from './storage.js';
 // ==================== CONSTANTS ====================
 const API_BASE = window.API_BASE || '/api';
 
-const URGENCY_THRESHOLDS = {
-    CRITICAL: 0,
-    LOW: 0.25,
-    MONITOR: 0.5
+const KANBAN_TYPE_LABELS = {
+    materials: 'Materials',
+    tooling: 'Tooling',
+    miscellaneous: 'Miscellaneous',
+    products: 'Products',
+    parts: 'Parts'
 };
+
+function escapeHtmlAttr(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;');
+}
+
+/** Returns safe http(s) href or null */
+function normalizeUserUrl(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    const candidates = [s];
+    if (!/^https?:\/\//i.test(s)) {
+        candidates.push(`https://${s.replace(/^\/+/, '')}`);
+    }
+    for (const c of candidates) {
+        try {
+            const u = new URL(c);
+            if (u.protocol === 'http:' || u.protocol === 'https:') {
+                return u.href;
+            }
+        } catch {
+            /* try next */
+        }
+    }
+    return null;
+}
+
+function getMinReorderQtyNumeric(item) {
+    const n = parseFloat(item?.minReorderQty);
+    if (!Number.isFinite(n) || n < 0) {
+        return 0;
+    }
+    return n;
+}
+
+function getReorderCostAmount(item) {
+    const unit = parseFloat(item?.unitPrice);
+    const u = Number.isFinite(unit) && unit >= 0 ? unit : 0;
+    return u * getMinReorderQtyNumeric(item);
+}
 
 // ==================== STATE ====================
 let inventoryState = {
@@ -120,18 +164,27 @@ export function getParts() {
 
 // ==================== URGENCY CALCULATIONS ====================
 function getUrgencyStatus(item) {
-    const ratio = item.quantityOnHand / (item.reorderPoint || 1);
-    if (ratio <= URGENCY_THRESHOLDS.CRITICAL) return { status: 'Critical', color: 'red', priority: 0 };
-    if (ratio <= URGENCY_THRESHOLDS.LOW) return { status: 'Low Stock', color: 'orange', priority: 1 };
-    if (ratio <= URGENCY_THRESHOLDS.MONITOR) return { status: 'Monitor', color: 'yellow', priority: 2 };
-    return { status: 'Good', color: 'green', priority: 3 };
+    const rpRaw = Number(item.reorderPoint);
+    const reorderPoint = Number.isFinite(rpRaw) && rpRaw > 0 ? rpRaw : 0;
+    if (reorderPoint === 0) {
+        return { status: 'No Kanban', color: 'gray', priority: 4 };
+    }
+    const qtyRaw = Number(item.quantityOnHand);
+    const qty = Number.isFinite(qtyRaw) ? qtyRaw : 0;
+    if (qty === 0) {
+        return { status: 'Critical', color: 'red', priority: 0 };
+    }
+    if (qty > reorderPoint) {
+        return { status: 'Good', color: 'green', priority: 3 };
+    }
+    return { status: 'Low Stock', color: 'orange', priority: 1 };
 }
 
 function getUrgencyBadgeClass(urgency) {
     const classes = {
+        'No Kanban': 'bg-gray-600 text-gray-100',
         'Critical': 'bg-red-600 text-red-100',
         'Low Stock': 'bg-orange-600 text-orange-100',
-        'Monitor': 'bg-yellow-600 text-yellow-100',
         'Good': 'bg-green-600 text-green-100'
     };
     return classes[urgency.status] || 'bg-gray-600 text-gray-200';
@@ -139,8 +192,12 @@ function getUrgencyBadgeClass(urgency) {
 
 // ==================== FILTERING & SORTING ====================
 function filterAndSortItems(items, filters) {
-    // Check cache
-    const cacheKey = JSON.stringify({ items: items.length, filters });
+    // Check cache (include view — same item count + filters was returning wrong tab's rows)
+    const cacheKey = JSON.stringify({
+        view: inventoryState.currentView,
+        items: items.length,
+        filters
+    });
     const cached = searchCache.get(cacheKey, {});
     if (cached) return cached;
 
@@ -153,7 +210,8 @@ function filterAndSortItems(items, filters) {
             item.name?.toLowerCase().includes(search) ||
             item.partNumber?.toLowerCase().includes(search) ||
             item.supplier?.toLowerCase().includes(search) ||
-            item.category?.toLowerCase().includes(search)
+            item.category?.toLowerCase().includes(search) ||
+            item.reorderLink?.toLowerCase().includes(search)
         );
     }
 
@@ -189,28 +247,52 @@ function filterAndSortItems(items, filters) {
     return filtered;
 }
 
+function getKanbanSourceItems() {
+    const merged = [
+        ...getMaterials().map((i) => ({ ...i, _inventoryCategory: 'materials' })),
+        ...getTooling().map((i) => ({ ...i, _inventoryCategory: 'tooling' })),
+        ...getMiscItems().map((i) => ({ ...i, _inventoryCategory: 'miscellaneous' })),
+        ...getProducts().map((i) => ({ ...i, _inventoryCategory: 'products' })),
+        ...getParts().map((i) => ({ ...i, _inventoryCategory: 'parts' }))
+    ];
+    return merged.filter((item) => {
+        const u = getUrgencyStatus(item);
+        return u.status === 'Low Stock' || u.status === 'Critical';
+    });
+}
+
 // ==================== RENDER FUNCTIONS ====================
-function renderInventoryTable(items, type) {
+function renderInventoryTable(items, type, options = {}) {
+    const isKanban = options.kanban === true;
     const container = DOMCache.get('dashboardContent');
     if (!container) return;
 
     const filtered = filterAndSortItems(items, inventoryState.filters);
+    const rowInventoryType = (item) =>
+        isKanban && item._inventoryCategory ? item._inventoryCategory : type.toLowerCase();
+    const emptyColspan = isKanban ? 11 : 9;
     
     // Build table using DocumentFragment for performance
     const tableHtml = `
         <div class="col-span-3 card p-6">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
-                    <i class="fa-solid fa-boxes mr-2"></i>${type} Inventory
-                    <span class="text-xs" style="color: var(--color-text-muted);">(${filtered.length} items)</span>
+                    <i class="fa-solid ${isKanban ? 'fa-columns' : 'fa-boxes'} mr-2"></i>${isKanban ? 'Kanban' : `${type} Inventory`}
+                    <span class="text-xs" style="color: var(--color-text-muted);">${isKanban ? `(Low stock & critical · ${filtered.length} items)` : `(${filtered.length} items)`}</span>
                 </h3>
                 <div class="flex space-x-2">
+                    ${isKanban ? `
+                    <button data-action="export-kanban" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
+                        <i class="fa-solid fa-download mr-1"></i>Export
+                    </button>
+                    ` : `
                     <button data-action="export-inventory" data-type="${type.toLowerCase()}" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
                         <i class="fa-solid fa-download mr-1"></i>Export
                     </button>
                     <button data-action="add-inventory" data-type="${type.toLowerCase()}" class="btn btn-primary text-sm">
                         <i class="fa-solid fa-plus mr-1"></i>Add ${type.slice(0, -1)}
                     </button>
+                    `}
                 </div>
             </div>
             
@@ -224,9 +306,9 @@ function renderInventoryTable(items, type) {
                 </div>
                 <select id="inventoryStatusFilter" class="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 min-w-[100px]">
                     <option value="">All Status</option>
+                    <option value="No Kanban" ${inventoryState.filters.status === 'No Kanban' ? 'selected' : ''}>No Kanban</option>
                     <option value="Critical" ${inventoryState.filters.status === 'Critical' ? 'selected' : ''}>Critical</option>
                     <option value="Low Stock" ${inventoryState.filters.status === 'Low Stock' ? 'selected' : ''}>Low Stock</option>
-                    <option value="Monitor" ${inventoryState.filters.status === 'Monitor' ? 'selected' : ''}>Monitor</option>
                     <option value="Good" ${inventoryState.filters.status === 'Good' ? 'selected' : ''}>Good</option>
                 </select>
                 <select id="inventorySortBy" class="bg-gray-700 text-white text-xs px-2 py-1 rounded border border-gray-600 min-w-[120px]">
@@ -246,45 +328,61 @@ function renderInventoryTable(items, type) {
                     <thead>
                         <tr>
                             <th class="px-4 py-3">Name / Part#</th>
+                            ${isKanban ? '<th class="px-4 py-3">Type</th>' : ''}
                             <th class="px-4 py-3">Category</th>
                             <th class="px-4 py-3">Qty</th>
                             <th class="px-4 py-3">Reorder Pt</th>
+                            ${isKanban ? '<th class="px-4 py-3">Min Reorder Qty</th>' : ''}
                             <th class="px-4 py-3">Status</th>
                             <th class="px-4 py-3">Supplier</th>
-                            <th class="px-4 py-3">Unit Price</th>
+                            <th class="px-4 py-3 text-center w-14" title="Reorder link"><i class="fa-solid fa-link text-gray-500"></i></th>
+                            <th class="px-4 py-3">${isKanban ? 'Reorder Cost' : 'Unit Price'}</th>
                             <th class="px-4 py-3">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${filtered.length > 0 ? filtered.map(item => {
                             const urgency = getUrgencyStatus(item);
+                            const invType = rowInventoryType(item);
+                            const typeLabel = KANBAN_TYPE_LABELS[invType] || invType;
+                            const reorderHref = normalizeUserUrl(item.reorderLink);
+                            const reorderBtn = reorderHref
+                                ? `<button type="button" data-action="open-reorder-link" data-url="${escapeHtmlAttr(reorderHref)}" class="p-1.5 rounded hover:bg-gray-600 transition-colors text-sky-400" title="Open reorder link"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>`
+                                : `<span class="text-gray-600">—</span>`;
+                            const minR = getMinReorderQtyNumeric(item);
+                            const priceCell = isKanban
+                                ? formatCurrency(getReorderCostAmount(item))
+                                : formatCurrency(item.unitPrice);
                             return `
                                 <tr data-item-id="${item.id}">
                                     <td class="px-4 py-3">
                                         <div class="font-medium text-white">${item.name}</div>
                                         <div class="text-xs" style="color: var(--color-text-muted);">${item.partNumber || '-'}</div>
                                     </td>
+                                    ${isKanban ? `<td class="px-4 py-3" style="color: var(--color-text-secondary);">${typeLabel}</td>` : ''}
                                     <td class="px-4 py-3" style="color: var(--color-text-secondary);">${item.category || '-'}</td>
-                                    <td class="px-4 py-3 font-medium ${urgency.color === 'red' ? 'text-red-400' : urgency.color === 'orange' ? 'text-orange-400' : 'text-white'}">${item.quantityOnHand}</td>
+                                    <td class="px-4 py-3 font-medium ${urgency.color === 'red' ? 'text-red-400' : urgency.color === 'orange' ? 'text-orange-400' : urgency.color === 'green' ? 'text-green-400' : urgency.color === 'gray' ? 'text-gray-400' : 'text-white'}">${item.quantityOnHand}</td>
                                     <td class="px-4 py-3" style="color: var(--color-text-muted);">${item.reorderPoint || '-'}</td>
+                                    ${isKanban ? `<td class="px-4 py-3" style="color: var(--color-text-secondary);">${minR}</td>` : ''}
                                     <td class="px-4 py-3">
                                         <span class="badge ${getUrgencyBadgeClass(urgency)}">${urgency.status}</span>
                                     </td>
                                     <td class="px-4 py-3" style="color: var(--color-text-secondary);">${item.supplier || '-'}</td>
-                                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${formatCurrency(item.unitPrice)}</td>
+                                    <td class="px-4 py-3 text-center align-middle">${reorderBtn}</td>
+                                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${priceCell}</td>
                                     <td class="px-4 py-3">
                                         <div class="flex space-x-2">
-                                            <button data-action="edit-inventory" data-type="${type.toLowerCase()}" data-id="${item.id}" style="color: var(--color-info);" class="hover:opacity-80" title="Edit">
+                                            <button data-action="edit-inventory" data-type="${invType}" data-id="${item.id}" style="color: var(--color-info);" class="hover:opacity-80" title="Edit">
                                                 <i class="fa-solid fa-edit"></i>
                                             </button>
-                                            <button data-action="delete-inventory" data-type="${type.toLowerCase()}" data-id="${item.id}" data-name="${item.name}" style="color: var(--color-error);" class="hover:opacity-80" title="Delete">
+                                            <button data-action="delete-inventory" data-type="${invType}" data-id="${item.id}" data-name="${item.name}" style="color: var(--color-error);" class="hover:opacity-80" title="Delete">
                                                 <i class="fa-solid fa-trash"></i>
                                             </button>
                                         </div>
                                     </td>
                                 </tr>
                             `;
-                        }).join('') : '<tr><td colspan="8" class="text-center py-8" style="color: var(--color-text-muted);">No items found</td></tr>'}
+                        }).join('') : `<tr><td colspan="${emptyColspan}" class="text-center py-8" style="color: var(--color-text-muted);">No items found</td></tr>`}
                     </tbody>
                 </table>
             </div>
@@ -328,6 +426,7 @@ function setupInventoryFilters() {
 
 function refreshCurrentView() {
     switch (inventoryState.currentView) {
+        case 'kanban': loadKanbanInventory(); break;
         case 'materials': loadMaterialInventory(); break;
         case 'tooling': loadToolingInventory(); break;
         case 'misc': loadMiscInventory(); break;
@@ -337,6 +436,21 @@ function refreshCurrentView() {
 }
 
 // ==================== PUBLIC FUNCTIONS ====================
+export function loadKanbanInventory() {
+    inventoryState.currentView = 'kanban';
+    if (inventoryState.filters.status === 'Good' || inventoryState.filters.status === 'No Kanban') {
+        inventoryState.filters.status = '';
+    }
+    showLoadingSpinner();
+
+    safeExecute(() => {
+        const items = getKanbanSourceItems();
+        renderInventoryTable(items, 'Kanban', { kanban: true });
+    }, () => {
+        showToast('Error loading Kanban', 'error');
+    }, 'loadKanbanInventory');
+}
+
 export function loadMaterialInventory() {
     inventoryState.currentView = 'materials';
     showLoadingSpinner();
@@ -399,6 +513,10 @@ export function loadPartsInventory() {
 
 // ==================== CRUD OPERATIONS ====================
 export function showAddInventoryModal(type) {
+    if (type === 'products') {
+        showAddProductModal();
+        return;
+    }
     // Capitalize and singularize the type for display
     const displayType = type.charAt(0).toUpperCase() + type.slice(1).replace(/s$/, '');
     const sourceField = type === 'parts' ? `
@@ -442,7 +560,7 @@ export function showAddInventoryModal(type) {
                         <input type="text" name="supplier" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-4">
+                <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Quantity</label>
                         <input type="number" name="quantityOnHand" min="0" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
@@ -452,9 +570,17 @@ export function showAddInventoryModal(type) {
                         <input type="number" name="reorderPoint" min="0" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                     <div>
+                        <label class="block text-sm text-gray-400 mb-1">Min reorder qty</label>
+                        <input type="number" name="minReorderQty" min="0" step="any" value="0" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
                         <label class="block text-sm text-gray-400 mb-1">Unit Price</label>
                         <input type="number" name="unitPrice" min="0" step="0.01" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Reorder link (optional)</label>
+                    <input type="url" name="reorderLink" placeholder="https://..." autocomplete="url" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                 </div>
                 <div class="flex space-x-3 pt-4">
                     <button type="button" onclick="BPERP.common.closeModal('inventoryModal')" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
@@ -475,6 +601,11 @@ export function showAddInventoryModal(type) {
         data.quantityOnHand = parseInt(data.quantityOnHand) || 0;
         data.reorderPoint = parseInt(data.reorderPoint) || 0;
         data.unitPrice = parseFloat(data.unitPrice) || 0;
+        {
+            const m = parseFloat(data.minReorderQty);
+            data.minReorderQty = Number.isFinite(m) && m >= 0 ? m : 0;
+        }
+        data.reorderLink = (data.reorderLink || '').trim();
         
         addInventoryItem(type, data);
     });
@@ -569,7 +700,7 @@ function showEditInventoryModalGeneric(item, key, type) {
                         <input type="text" name="supplier" value="${item.supplier || ''}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-4">
+                <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Quantity</label>
                         <input type="number" name="quantityOnHand" min="0" value="${item.quantityOnHand || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
@@ -579,9 +710,17 @@ function showEditInventoryModalGeneric(item, key, type) {
                         <input type="number" name="reorderPoint" min="0" value="${item.reorderPoint || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                     <div>
+                        <label class="block text-sm text-gray-400 mb-1">Min reorder qty</label>
+                        <input type="number" name="minReorderQty" min="0" step="any" value="${escapeHtmlAttr(String(item.minReorderQty != null ? item.minReorderQty : 0))}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
                         <label class="block text-sm text-gray-400 mb-1">Unit Price</label>
                         <input type="number" name="unitPrice" min="0" step="0.01" value="${item.unitPrice || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Reorder link (optional)</label>
+                    <input type="url" name="reorderLink" placeholder="https://..." autocomplete="url" value="${escapeHtmlAttr(item.reorderLink || '')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                 </div>
                 <div class="flex space-x-3 pt-4">
                     <button type="button" onclick="BPERP.common.closeModal('inventoryModal')" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
@@ -602,6 +741,11 @@ function showEditInventoryModalGeneric(item, key, type) {
         data.quantityOnHand = parseInt(data.quantityOnHand) || 0;
         data.reorderPoint = parseInt(data.reorderPoint) || 0;
         data.unitPrice = parseFloat(data.unitPrice) || 0;
+        {
+            const m = parseFloat(data.minReorderQty);
+            data.minReorderQty = Number.isFinite(m) && m >= 0 ? m : 0;
+        }
+        data.reorderLink = (data.reorderLink || '').trim();
         
         storage.updateItem(key, data.id, data);
         closeModal('inventoryModal');
@@ -653,7 +797,11 @@ function showEditPartModal(item, key) {
                         <input type="text" name="supplier" value="${(item.supplier || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Reorder link (optional)</label>
+                    <input type="url" name="reorderLink" placeholder="https://..." autocomplete="url" value="${escapeHtmlAttr(item.reorderLink || '')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Quantity</label>
                         <input type="number" name="quantityOnHand" min="0" value="${item.quantityOnHand || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
@@ -661,6 +809,10 @@ function showEditPartModal(item, key) {
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Reorder Point</label>
                         <input type="number" name="reorderPoint" min="0" value="${item.reorderPoint || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Min reorder qty</label>
+                        <input type="number" name="minReorderQty" min="0" step="any" value="${escapeHtmlAttr(String(item.minReorderQty != null ? item.minReorderQty : 0))}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Unit Price</label>
@@ -683,7 +835,12 @@ function showEditPartModal(item, key) {
         data.quantityOnHand = parseInt(data.quantityOnHand) || 0;
         data.reorderPoint = parseInt(data.reorderPoint) || 0;
         data.unitPrice = parseFloat(data.unitPrice) || 0;
+        {
+            const m = parseFloat(data.minReorderQty);
+            data.minReorderQty = Number.isFinite(m) && m >= 0 ? m : 0;
+        }
         data.source = data.source || 'purchased';
+        data.reorderLink = (data.reorderLink || '').trim();
         storage.updateItem(key, data.id, data);
         closeModal('inventoryModal');
         showToast('Part updated successfully', 'success');
@@ -692,8 +849,30 @@ function showEditPartModal(item, key) {
     });
 }
 
+export function showAddProductModal() {
+    showProductFormModal({ key: STORAGE_KEYS.PRODUCTS, isAdd: true });
+}
+
 function showEditProductModal(item, key) {
-    const bom = item.bom || [];
+    showProductFormModal({ item, key, isAdd: false });
+}
+
+function showProductFormModal({ item, key, isAdd }) {
+    const d = isAdd
+        ? {
+              name: '',
+              partNumber: '',
+              category: '',
+              supplier: '',
+              quantityOnHand: 0,
+              reorderPoint: 0,
+              minReorderQty: 0,
+              unitPrice: 0,
+              reorderLink: '',
+              bom: []
+          }
+        : item;
+    const bom = d.bom || [];
     const bomRows = bom.map(b => `
         <tr data-part-id="${b.partId}">
             <td class="px-3 py-2 text-sm text-white">${(b.partName || '').replace(/</g, '&lt;')}</td>
@@ -710,46 +889,54 @@ function showEditProductModal(item, key) {
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-medium text-white">
-                    <i class="fa-solid fa-edit mr-2 text-blue-400"></i>Edit Product
+                    <i class="fa-solid ${isAdd ? 'fa-plus-circle mr-2 text-accentGreen' : 'fa-edit mr-2 text-blue-400'}"></i>${isAdd ? 'Add Product' : 'Edit Product'}
                 </h3>
                 <button onclick="BPERP.common.closeModal('inventoryModal')" class="text-gray-400 hover:text-white">
                     <i class="fa-solid fa-times"></i>
                 </button>
             </div>
             <form id="inventoryForm" class="space-y-4">
-                <input type="hidden" name="id" value="${item.id}">
+                ${isAdd ? '' : `<input type="hidden" name="id" value="${d.id}">`}
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Name *</label>
-                        <input type="text" name="name" required value="${(item.name || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                        <input type="text" name="name" required value="${(d.name || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Part Number</label>
-                        <input type="text" name="partNumber" value="${(item.partNumber || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                        <input type="text" name="partNumber" value="${(d.partNumber || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Category</label>
-                        <input type="text" name="category" value="${(item.category || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                        <input type="text" name="category" value="${(d.category || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Supplier</label>
-                        <input type="text" name="supplier" value="${(item.supplier || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                        <input type="text" name="supplier" value="${(d.supplier || '').replace(/"/g, '&quot;')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Reorder link (optional)</label>
+                    <input type="url" name="reorderLink" placeholder="https://..." autocomplete="url" value="${escapeHtmlAttr(d.reorderLink || '')}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Quantity</label>
-                        <input type="number" name="quantityOnHand" min="0" value="${item.quantityOnHand || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                        <input type="number" name="quantityOnHand" min="0" value="${d.quantityOnHand || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Reorder Point</label>
-                        <input type="number" name="reorderPoint" min="0" value="${item.reorderPoint || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                        <input type="number" name="reorderPoint" min="0" value="${d.reorderPoint || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Min reorder qty</label>
+                        <input type="number" name="minReorderQty" min="0" step="any" value="${escapeHtmlAttr(String(d.minReorderQty != null ? d.minReorderQty : 0))}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                     <div>
                         <label class="block text-sm text-gray-400 mb-1">Unit Price</label>
-                        <input type="number" name="unitPrice" min="0" step="0.01" value="${item.unitPrice || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
+                        <input type="number" name="unitPrice" min="0" step="0.01" value="${d.unitPrice || 0}" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">
                     </div>
                 </div>
                 <div class="mt-4">
@@ -777,7 +964,7 @@ function showEditProductModal(item, key) {
                 </div>
                 <div class="flex space-x-3 pt-4">
                     <button type="button" onclick="BPERP.common.closeModal('inventoryModal')" class="flex-1 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
-                    <button type="submit" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Save Changes</button>
+                    <button type="submit" class="flex-1 ${isAdd ? 'bg-accentGreen hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'} text-white px-4 py-2 rounded">${isAdd ? 'Add Product' : 'Save Changes'}</button>
                 </div>
             </form>
         </div>
@@ -863,7 +1050,8 @@ function showEditProductModal(item, key) {
         document.getElementById('bomPartCancel')?.addEventListener('click', () => closeModal('bomAddModal'));
     });
     
-    tbody?.querySelectorAll('[data-action="remove-bom-part"]').forEach(btn => {
+    const bomTbodyInit = document.getElementById('productBomTableBody');
+    bomTbodyInit?.querySelectorAll('[data-action="remove-bom-part"]').forEach(btn => {
         btn.addEventListener('click', () => {
             const partId = parseInt(btn.dataset.partId);
             const idx = bomData.findIndex(b => b.partId === partId);
@@ -876,14 +1064,26 @@ function showEditProductModal(item, key) {
         e.preventDefault();
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData);
-        data.id = parseInt(data.id);
         data.quantityOnHand = parseInt(data.quantityOnHand) || 0;
         data.reorderPoint = parseInt(data.reorderPoint) || 0;
         data.unitPrice = parseFloat(data.unitPrice) || 0;
+        {
+            const m = parseFloat(data.minReorderQty);
+            data.minReorderQty = Number.isFinite(m) && m >= 0 ? m : 0;
+        }
+        data.reorderLink = (data.reorderLink || '').trim();
         data.bom = bomData;
-        storage.updateItem(key, data.id, data);
-        closeModal('inventoryModal');
-        showToast('Product updated successfully', 'success');
+        if (isAdd) {
+            delete data.id;
+            storage.addItem(key, data);
+            closeModal('inventoryModal');
+            showToast('Product added successfully', 'success');
+        } else {
+            data.id = parseInt(data.id);
+            storage.updateItem(key, data.id, data);
+            closeModal('inventoryModal');
+            showToast('Product updated successfully', 'success');
+        }
         searchCache.clear();
         refreshCurrentView();
     });
@@ -926,6 +1126,30 @@ export async function exportInventory(type) {
     await exportToCSV(null, `${type}_inventory`, null, endpoint);
 }
 
+export async function exportKanbanInventory() {
+    const source = getKanbanSourceItems();
+    const filtered = filterAndSortItems(source, inventoryState.filters);
+    if (!filtered.length) {
+        showToast('No data to export', 'error');
+        return;
+    }
+    const rows = filtered.map((item) => ({
+        Type: KANBAN_TYPE_LABELS[item._inventoryCategory] || item._inventoryCategory,
+        Name: item.name,
+        PartNumber: item.partNumber,
+        Category: item.category,
+        Quantity: item.quantityOnHand,
+        ReorderPoint: item.reorderPoint,
+        Status: getUrgencyStatus(item).status,
+        Supplier: item.supplier,
+        ReorderLink: item.reorderLink || '',
+        MinReorderQty: getMinReorderQtyNumeric(item),
+        UnitPrice: item.unitPrice,
+        ReorderCost: getReorderCostAmount(item)
+    }));
+    await exportToCSV(rows, 'kanban_inventory', null, null);
+}
+
 export function clearFilters() {
     inventoryState.filters = {
         search: '',
@@ -963,6 +1187,19 @@ export function registerActionHandlers(registerFn) {
     
     registerFn('export-inventory', (target) => {
         exportInventory(target.dataset.type);
+    });
+
+    registerFn('export-kanban', () => {
+        exportKanbanInventory();
+    });
+
+    registerFn('open-reorder-link', (target) => {
+        const href = normalizeUserUrl(target.dataset.url);
+        if (!href) {
+            showToast('Invalid reorder link', 'error');
+            return;
+        }
+        window.open(href, '_blank', 'noopener,noreferrer');
     });
     
     registerFn('clear-inventory-filters', () => {

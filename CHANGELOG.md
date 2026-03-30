@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Inventory — Kanban** — Sidebar entry **Kanban** (above Products) lists all inventory categories combined, showing only **Low Stock** and **Critical** items (same status rules as other inventory views). Includes a **Type** column, edit/delete routed to the correct store, search/sort filters, and client-side **Export**.
+
+- **Inventory — Reorder link** — Optional **Reorder link** (URL) on add/edit for all inventory types; table column between **Supplier** and **Unit Price** opens the link in a new tab (http/https only). Included in Kanban CSV export and in search matching.
+
+- **Inventory — Add Product** — **Add Product** opens the same modal as edit, including **Bill of Materials** (add/remove parts, qty per assembly), not the generic add form.
+
+- **Inventory — Min reorder qty** — **Min reorder qty** on add/edit for all types (stored per item). Shown only on the **Kanban** table (after **Reorder Pt**). Kanban **Unit Price** column is **Reorder Cost** = unit price × min reorder qty; other inventory tabs still show **Unit Price** only.
+
 - **Tasks (UI)** — Inventory-style search, status filter, sort direction (Asc/Desc), and **Clear** on **All Tasks**, workflow step tabs, **Ordering**, and **Completed Work** (urgency filter on Completed). Removed the All Tasks banner that said tasks were derived from WIP checklists. **Misc tasks** can be **recurring** (weekly weekday, or monthly Nth weekday); completing one advances **next due** and keeps the task open. *(Tasks tab still uses localStorage + WIP data; it does not call `/api/tasks`.)*
 - **Machines** — Sidebar label **Machines** (route still `tasks-maintenance`). **WIP-style** expandable cards: chevron header toggles **Maintenance** and **Upgrades**; left border color = maintenance urgency (green / yellow / red). **Maintenance:** add modal (replaces placeholder), **Complete**, **Edit**, **Remove** (delete confirm). **Upgrades:** add / edit / complete / delete. Data: localStorage `bperp_machines`. Demo **upgrade** sample on CNC Mill 1. Card header **Edit** / History / Delete fixed (toggle target only on title row; `data-machine-id`).
 
@@ -26,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Inventory (UI)** — Status is derived from reorder point and quantity: **No Kanban** when reorder point is zero; **Good** when stock is above reorder; **Low Stock** when at or below reorder (with stock); **Critical** when stock is zero and reorder is set. Removed ratio-based **Monitor** status.
+
+- **README** — New **Inventory (browser UI)** subsection: Inventory tab uses **localStorage** (not the REST inventory API yet); summarizes Kanban, reorder link, min reorder qty / reorder cost on Kanban, and BOM on product add/edit.
+
 - **Machines page** — Removed the four top summary cards (scheduled today, overdue, completed this week, upcoming this week); urgency is shown only on each card’s left border and in row copy.
 
 - **Desktop packaging trim** — Installers no longer embed `frontend/` inside `app.asar` (Express already serves UI from `resources/frontend`). `build:win`, `build:linux`, and `pack:win` use new script **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` in `backend/`) so test/tooling deps are not shipped in `resources/backend`. Linux artifacts are **AppImage + deb** only (rpm target removed). README and `scripts/launch-beta.ps1` updated; run `npm run backend:install` after a packaging build if you need backend dev/test deps locally again.
@@ -35,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **NAS setup docs** — Clarified that both `backend/` and `frontend/` must be deployed side-by-side; outdated `frontend/` on the server explains missing UI such as Products/Parts under Inventory when using remote Server URL.
 
 ### Fixed
+
+- **Inventory (UI)** — Filter/sort results were cached by item count and filters only, so switching tabs (e.g. Kanban vs Products) could show the wrong list when counts matched. Cache key now includes the active inventory view.
 
 - **Tasks (All Tasks)** — `workflow-start` on the combined task table now runs the same handler as `workflow-begin` (was registered only for workflow tab cards). Export uses an imported `exportToCSV` client path. Multi-part work orders pass `data-item-id` so Start/Complete/Issue target the correct line item (`getNextWorkflowStepWithLineItem` in `sales.js`).
 
