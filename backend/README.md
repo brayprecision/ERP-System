@@ -203,7 +203,7 @@ POST   /api/tasks/:id/issue    # Report issue
 DELETE /api/tasks/:id          # Soft delete task
 ```
 
-The **Tasks** screen in the browser/Electron UI (All Tasks, workflow tabs, Ordering, Completed Work, and **Machines**) is currently driven by **localStorage** and **work-order checklist** data, not these `/api/tasks` routes. The API above remains for future or alternate clients.
+The **Tasks** screen in the browser/Electron UI (All Tasks, workflow tabs, Ordering, Completed Work) is currently driven by **localStorage** and **work-order checklist** data, not these `/api/tasks` routes. **Machines** (`tasks-maintenance`) is implemented in `frontend/js/modules/maintenance.js` (same localStorage / WIP patterns). The API above remains for future or alternate clients. SPA routing and module deactivation are described in the root **README** (Frontend routing).
 
 ### Data Import
 

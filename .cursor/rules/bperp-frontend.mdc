@@ -51,6 +51,11 @@ window.BPERP = {
 };
 ```
 
+## Routing (`app.js`)
+
+- `navigate(route)` resolves `routes[route]` and updates sidebar active state.
+- **`tasks-maintenance`** (**Machines**) uses `maintenance.loadMaintenanceTasks()`, not the tasks module. `navigate()` must call `modules.tasks.deactivate()` when entering **Machines** (and when leaving `tasks-*` for non-task routes) so the tasks module’s `masterTimer` refresh does not repaint `#dashboardContent` after the user has navigated away.
+
 ## Event delegation
 
 Use `data-action` for clicks:

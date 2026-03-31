@@ -8,6 +8,7 @@ import {
     formatDate, DOMCache, createModal, closeModal, safeExecute, getUrgencyColor
 } from './common.js';
 import { storage } from './storage.js';
+import { getWorkOrders } from './sales.js';
 
 // ==================== STORAGE KEYS ====================
 const MACHINES_KEY = 'bperp_machines';
@@ -69,7 +70,7 @@ function normalizeMachine(m) {
     return m;
 }
 
-function getMachines() {
+export function getMachines() {
     let data = storage.get(MACHINES_KEY);
     if (!data) {
         data = getDefaultMachines();
@@ -81,6 +82,42 @@ function getMachines() {
 
 function saveMachines(machines) {
     storage.set(MACHINES_KEY, machines, true);
+}
+
+/** Active machining (started, not complete) tied to this machine profile id or matching display name. */
+function getMachiningJobsForMachine(machine, machineId) {
+    const mid = Number(machineId);
+    const woList = getWorkOrders();
+    const out = [];
+    const matches = (step) => {
+        if (!step?.startedAt || step.isCompleted) return false;
+        if (Number(step.machiningMachineId) === mid) return true;
+        const name = (step.machiningMachineName || '').trim();
+        if (name && machine.machineName && name === machine.machineName.trim()) return true;
+        return false;
+    };
+    const push = (wo, partLabel, step) => {
+        if (!matches(step)) return;
+        out.push({
+            woNumber: wo.woNumber,
+            partLabel,
+            customerName: wo.customerName || '',
+            startedAt: step.startedAt
+        });
+    };
+    for (const wo of woList) {
+        if (wo.lineItems?.length) {
+            for (const li of wo.lineItems) {
+                const step = li.checklist?.find(s => s.stepKey === 'machining_complete');
+                push(wo, li.partNumber || '—', step);
+            }
+        } else {
+            const step = wo.checklist?.find(s => s.stepKey === 'machining_complete');
+            push(wo, wo.partNumber || '—', step);
+        }
+    }
+    out.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
+    return out;
 }
 
 function getMaintenanceHistory() {
@@ -220,6 +257,19 @@ function renderMaintenanceView(machines) {
         const nextDueLabel = earliestDueStr ? formatDate(earliestDueStr) : 'None';
         const urgencyForDue = maintList.length ? getUrgencyColor(earliestDueStr) : 'gray';
 
+        const machiningJobs = getMachiningJobsForMachine(m, m.id);
+        const jobsRowsHtml = machiningJobs.length > 0 ? machiningJobs.map(j => `
+                <div class="flex justify-between items-center py-2 text-sm border-b border-gray-700 gap-2">
+                    <div class="min-w-0">
+                        <span class="text-gray-200 font-medium">${escAttr(j.woNumber)}</span>
+                        <span class="text-gray-400 mx-1">·</span>
+                        <span class="text-gray-300">${escAttr(j.partLabel)}</span>
+                        <div class="text-xs text-gray-500 truncate">${escAttr(j.customerName)}</div>
+                    </div>
+                    <span class="text-xs text-gray-500 shrink-0" title="Machining started">Started ${formatDate(j.startedAt)}</span>
+                </div>
+            `).join('') : '<div class="text-sm text-gray-500 py-3">No active machining jobs on this machine</div>';
+
         return `
             <div class="card mb-4 border-l-4 border-l-${borderColor}-500" style="background: var(--color-card-bg);" data-machine-card-id="${m.id}">
                 <div class="flex items-center justify-between p-4 gap-2">
@@ -266,6 +316,15 @@ function renderMaintenanceView(machines) {
                 ${isExpanded ? `
                 <div class="border-t" style="border-color: var(--color-border); background: var(--color-dark-bg);">
                     <div class="p-4 pl-12 space-y-6">
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <h5 class="text-xs font-medium uppercase" style="color: var(--color-text-muted);">Current jobs (machining)</h5>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2">Work orders with <strong class="text-gray-400">Machining</strong> in progress on this machine (started from the Machining workcenter).</p>
+                            <div class="rounded-lg border border-gray-700/80 overflow-hidden px-3 bg-gray-900/20">
+                                ${jobsRowsHtml}
+                            </div>
+                        </div>
                         <div>
                             <div class="flex justify-between items-center mb-2">
                                 <h5 class="text-xs font-medium uppercase" style="color: var(--color-text-muted);">Maintenance</h5>

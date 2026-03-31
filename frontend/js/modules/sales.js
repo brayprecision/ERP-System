@@ -363,26 +363,46 @@ export function batchUpdateWorkOrders(updates) {
     return workOrders;
 }
 
-export function updateChecklistStep(woId, stepId, updates, lineItemId = null) {
+/**
+ * @param {number|null} stepId - Checklist step id (may mismatch after import if coerced)
+ * @param {string|null} [stepKeyFallback] - If id lookup fails, match by stepKey (e.g. material_received)
+ */
+export function updateChecklistStep(woId, stepId, updates, lineItemId = null, stepKeyFallback = null) {
     const workOrders = getWorkOrders();
     const woIndex = workOrders.findIndex(wo => wo.id === woId);
     
     if (woIndex === -1) return null;
     
     const wo = workOrders[woIndex];
+
+    function resolveStepIndex(checklist) {
+        if (!checklist?.length) return -1;
+        let idx = checklist.findIndex(s => s.id === stepId);
+        if (idx === -1 && stepId != null && stepId !== '') {
+            const n = Number(stepId);
+            if (!Number.isNaN(n)) {
+                idx = checklist.findIndex(s => Number(s.id) === n);
+            }
+        }
+        if (idx === -1 && stepKeyFallback) {
+            idx = checklist.findIndex(s => s.stepKey === stepKeyFallback);
+        }
+        return idx;
+    }
     
     // Handle multi-part work orders (new structure)
     if (wo.lineItems && wo.lineItems.length > 0) {
-        // Find the line item
-        const itemIndex = lineItemId 
+        // Find the line item (lineItemId 0 is valid — do not use truthy check)
+        const lineItemSpecified = lineItemId != null && lineItemId !== '';
+        const itemIndex = lineItemSpecified
             ? wo.lineItems.findIndex(item => item.id === lineItemId)
-            : 0; // Default to first item if not specified
+            : 0;
         
         if (itemIndex === -1) return null;
         
         const lineItem = wo.lineItems[itemIndex];
         const checklist = lineItem.checklist || getDefaultChecklist();
-        const stepIndex = checklist.findIndex(s => s.id === stepId);
+        const stepIndex = resolveStepIndex(checklist);
         
         if (stepIndex === -1) return null;
         
@@ -398,7 +418,7 @@ export function updateChecklistStep(woId, stepId, updates, lineItemId = null) {
     } else {
         // Legacy single-part structure
         const checklist = wo.checklist || getDefaultChecklist();
-        const stepIndex = checklist.findIndex(s => s.id === stepId);
+        const stepIndex = resolveStepIndex(checklist);
         
         if (stepIndex === -1) return null;
         
@@ -413,6 +433,121 @@ export function updateChecklistStep(woId, stepId, updates, lineItemId = null) {
     saveWorkOrders(workOrders);
     
     return wo;
+}
+
+/**
+ * Roll back workflow by one step for a work order (or one line item on multi-part WOs).
+ * 1) If the current (first incomplete) step was started but not completed, clears started/in-progress.
+ * 2) Otherwise un-completes the highest stepOrder step that is still marked complete.
+ * @param {number|null|undefined} lineItemId - Target line item; null/undefined resolves from next incomplete step (or furthest-complete line if all done).
+ * @returns {{ ok: boolean, message: string }}
+ */
+export function rollBackOneWorkflowStep(woId, lineItemId) {
+    const workOrders = getWorkOrders();
+    const wo = workOrders.find(w => w.id === woId);
+    if (!wo) {
+        return { ok: false, message: 'Work order not found' };
+    }
+
+    const findLineItemForRollbackWhenNoNext = () => {
+        if (!wo.lineItems?.length) return null;
+        let bestId = null;
+        let bestMaxOrder = -1;
+        for (const item of wo.lineItems) {
+            const checklist = item.checklist || getDefaultChecklist();
+            const completed = checklist.filter(s => s.isCompleted);
+            if (!completed.length) continue;
+            const maxO = Math.max(...completed.map(s => s.stepOrder));
+            if (maxO > bestMaxOrder) {
+                bestMaxOrder = maxO;
+                bestId = item.id;
+            }
+        }
+        return bestId;
+    };
+
+    let resolvedLineItemId = lineItemId;
+    const hasExplicitLine =
+        lineItemId !== undefined &&
+        lineItemId !== null &&
+        lineItemId !== '' &&
+        !(typeof lineItemId === 'number' && Number.isNaN(lineItemId));
+
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        if (!hasExplicitLine) {
+            const ctx = getNextWorkflowStepWithLineItem(wo);
+            if (ctx?.lineItemId != null) {
+                resolvedLineItemId = ctx.lineItemId;
+            } else {
+                const fallback = findLineItemForRollbackWhenNoNext();
+                if (fallback == null) {
+                    return { ok: false, message: 'Nothing to roll back' };
+                }
+                resolvedLineItemId = fallback;
+            }
+        } else {
+            resolvedLineItemId = Number(lineItemId);
+        }
+    } else {
+        resolvedLineItemId = null;
+    }
+
+    let checklist;
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        const item = wo.lineItems.find(li => li.id === resolvedLineItemId);
+        if (!item) {
+            return { ok: false, message: 'Line item not found' };
+        }
+        checklist = item.checklist || getDefaultChecklist();
+    } else {
+        checklist = wo.checklist || getDefaultChecklist();
+    }
+
+    const sorted = [...checklist].sort((a, b) => a.stepOrder - b.stepOrder);
+    const firstIncomplete = sorted.find(s => !s.isCompleted);
+
+    if (firstIncomplete && (firstIncomplete.startedAt || firstIncomplete.inProgress)) {
+        const clearStart = {
+            startedAt: null,
+            startedByName: null,
+            inProgress: false
+        };
+        if (firstIncomplete.stepKey === 'machining_complete') {
+            clearStart.machiningMachineId = null;
+            clearStart.machiningMachineName = null;
+        }
+        updateChecklistStep(woId, firstIncomplete.id, clearStart, resolvedLineItemId, firstIncomplete.stepKey);
+        return { ok: true, message: `Cleared start on: ${firstIncomplete.stepName}` };
+    }
+
+    const completed = sorted.filter(s => s.isCompleted);
+    if (completed.length === 0) {
+        return { ok: false, message: 'Nothing to roll back' };
+    }
+
+    const toUndo = completed.reduce((a, b) => (a.stepOrder >= b.stepOrder ? a : b));
+    const undoUpdates = {
+        isCompleted: false,
+        completedAt: null,
+        completedByName: null,
+        notes: null,
+        referenceNumber: null,
+        inProgress: false,
+        startedAt: null,
+        startedByName: null,
+        hasIssue: false,
+        issueType: null,
+        issueSeverity: null,
+        issueDescription: null,
+        issueReportedAt: null
+    };
+    if (toUndo.stepKey === 'machining_complete') {
+        undoUpdates.machiningMachineId = null;
+        undoUpdates.machiningMachineName = null;
+    }
+    updateChecklistStep(woId, toUndo.id, undoUpdates, resolvedLineItemId, toUndo.stepKey);
+
+    return { ok: true, message: `Rolled back: ${toUndo.stepName}` };
 }
 
 // Get all line items at a specific workflow step across all work orders
@@ -997,6 +1132,7 @@ function renderLineItemChecklist(woId, lineItem) {
                                     data-wo-id="${woId}" 
                                     data-item-id="${lineItem.id}" 
                                     data-step-id="${step.id}" 
+                                    data-step-key="${step.stepKey}"
                                     data-step-name="${step.stepName}"
                                     class="w-4 h-4 cursor-pointer" 
                                     style="accent-color: var(--color-accent-primary);">
@@ -2745,15 +2881,19 @@ export function registerActionHandlers(registerFn) {
     
     // Step completion with line item support
     registerFn('complete-step', (target) => {
-        const woId = parseInt(target.dataset.woId);
-        const stepId = parseInt(target.dataset.stepId);
-        const itemId = target.dataset.itemId ? parseInt(target.dataset.itemId) : null;
-        
+        const woId = parseInt(target.dataset.woId, 10);
+        const stepId = parseInt(target.dataset.stepId, 10);
+        const itemId = target.dataset.itemId !== undefined && target.dataset.itemId !== ''
+            ? parseInt(target.dataset.itemId, 10)
+            : null;
+        const stepKeyFb = target.dataset.stepKey || null;
+
         const result = updateChecklistStep(
             woId, 
             stepId, 
             { isCompleted: true, completedAt: new Date().toISOString(), completedByName: 'Current User' },
-            itemId
+            itemId,
+            stepKeyFb
         );
         if (result) {
             showToast(`Step "${target.dataset.stepName}" completed!`, 'success');

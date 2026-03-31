@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tasks — Machining + Machines** — Starting **Machining** (Begin) opens a prompt to choose the **machine profile** (or enter a name if none exist). That choice is stored on the step and drives **Machines** → each profile’s expanded view: **Current jobs (machining)** lists work orders with that step in progress on that machine (above **Maintenance**).
+
+- **Tasks — Rollback step** — **Rollback step** (light purple) appears above **Issue** on each workflow workcenter card and on **Ordering** (next to cert / New Task). It clears **Begin** / in-progress on the current step when set, otherwise un-completes the latest completed checklist step for that part (or the resolved line on multi-part WOs).
+
+- **Tasks — Work order follow-up** — On each workcenter card (workflow tabs and **Ordering**), **New Task** opens a modal with work order context; the task is stored with the work order and part/step reference and appears on **All Tasks** with that reference under the title.
+
 - **Inventory — Kanban** — Sidebar entry **Kanban** (above Products) lists all inventory categories combined, showing only **Low Stock** and **Critical** items (same status rules as other inventory views). Includes a **Type** column, edit/delete routed to the correct store, search/sort filters, and client-side **Export**.
 
 - **Inventory — Reorder link** — Optional **Reorder link** (URL) on add/edit for all inventory types; table column between **Supplier** and **Unit Price** opens the link in a new tab (http/https only). Included in Kanban CSV export and in search matching.
@@ -34,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Tasks (workcenter buttons)** — **Rollback step** uses **light purple**; **New Task** uses **orange** (including the WO-linked task modal title icon).
+
+- **Tasks — Workcenter cards** — Per-part **Part Progress** percentage bar is removed from individual workcenter workflow tabs (Programming, Processing, Machining, etc.). The **Current** line now shows whether that operation is **Started** or **not started** (e.g. “Programming Started”). **Work In Progress** still shows overall order progress.
+
+- **Dashboard** — Removed the top summary metric cards; **Quick Actions** is now directly under the page title. The former **Inventory** quick action is **Kanban** and navigates to the Inventory Kanban view (`inventory-kanban`).
+
 - **Inventory (UI)** — Status is derived from reorder point and quantity: **No Kanban** when reorder point is zero; **Good** when stock is above reorder; **Low Stock** when at or below reorder (with stock); **Critical** when stock is zero and reorder is set. Removed ratio-based **Monitor** status.
 
 - **README** — New **Inventory (browser UI)** subsection: Inventory tab uses **localStorage** (not the REST inventory API yet); summarizes Kanban, reorder link, min reorder qty / reorder cost on Kanban, and BOM on product add/edit.
@@ -48,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tasks — Ordering** — Multi-part work orders used OR when aggregating “material/tooling ordered/received,” so if **any** line had received, **Receive Material / Receive All** were disabled for the whole job while other lines still needed receiving; aggregation now uses **every line item** (`every()`). Checklist updates also resolve steps by **`stepKey`** when `id` does not match (e.g. after import), and line item id **0** is handled when updating steps.
+
 - **Inventory (UI)** — Filter/sort results were cached by item count and filters only, so switching tabs (e.g. Kanban vs Products) could show the wrong list when counts matched. Cache key now includes the active inventory view.
 
 - **Tasks (All Tasks)** — `workflow-start` on the combined task table now runs the same handler as `workflow-begin` (was registered only for workflow tab cards). Export uses an imported `exportToCSV` client path. Multi-part work orders pass `data-item-id` so Start/Complete/Issue target the correct line item (`getNextWorkflowStepWithLineItem` in `sales.js`).
@@ -55,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migrations under Electron** — `server.js` no longer runs `spawnSync('node', ...)` for migrations (system Node could load a different ABI than the Electron-forked server). Migrations now use `process.execPath` with `ELECTRON_RUN_AS_NODE=1` when `process.versions.electron` is set, matching the embedded Node used for `initDb` and the API.
 - **Electron native rebuild** — `npm run rebuild:backend` now runs [`scripts/rebuild-backend-native.js`](scripts/rebuild-backend-native.js): clears `better-sqlite3` / `bcrypt` `build` and `prebuilds` folders, then `electron-rebuild --build-from-source` against the installed Electron version. Fixes cases where `electron-rebuild` completed but Electron still loaded a system-Node `better_sqlite3.node` (NODE_MODULE_VERSION mismatch).
 - **Routing** — `inventory-products` and `inventory-parts` are included in permission category mapping and page titles (was inconsistent with other inventory routes).
+
+- **Machines** — Navigating to **Machines** (`tasks-maintenance`) now deactivates the Tasks module auto-refresh. Previously, after visiting a Tasks workcenter, the periodic Tasks refresh could repaint the main area with the old workcenter while the sidebar still showed **Machines**.
 
 ### Added
 

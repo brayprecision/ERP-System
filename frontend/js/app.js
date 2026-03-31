@@ -614,7 +614,8 @@ function navigate(route) {
         try {
             // Deactivate modules when navigating away from them
             // This prevents auto-refresh from running on inactive modules
-            if (!route.startsWith('tasks-')) {
+            // tasks-maintenance (Machines) is served by maintenance.js, not tasks.js — still deactivate tasks
+            if (!route.startsWith('tasks-') || route === 'tasks-maintenance') {
                 modules.tasks?.deactivate?.();
             }
             if (!route.startsWith('sales-')) {
@@ -738,7 +739,6 @@ function loadDashboard() {
     const container = document.getElementById('dashboardContent');
     if (!container) return;
     
-    // Get stats from various sources
     let workOrders = [];
     try {
         workOrders = modules.sales?.getWorkOrders() || [];
@@ -746,92 +746,11 @@ function loadDashboard() {
         console.warn('Could not get work orders:', e);
     }
     
-    // Get inventory data to count low stock items
-    let lowStockCount = 0;
-    try {
-        const materials = modules.inventory?.getMaterials() || [];
-        const tools = modules.inventory?.getTooling() || [];
-        const misc = modules.inventory?.getMiscItems() || [];
-        
-        const countLowStock = (items) => items.filter(item => {
-            const qty = item.quantityOnHand ?? item.qtyOnHand ?? 0;
-            const reorderPoint = item.reorderPoint ?? item.minimumQty ?? 0;
-            return qty <= reorderPoint && reorderPoint > 0;
-        }).length;
-        
-        lowStockCount = countLowStock(materials) + countLowStock(tools) + countLowStock(misc);
-    } catch (e) {
-        console.warn('Could not get inventory data:', e);
-    }
-    
     const activeWOs = workOrders.filter(wo => wo.completionPercentage < 100);
-    const overdueCount = activeWOs.filter(wo => {
-        try {
-            return modules.common?.getUrgencyColor(wo.dueDate) === 'red';
-        } catch (e) {
-            return false;
-        }
-    }).length;
-    const dueSoonCount = activeWOs.filter(wo => {
-        try {
-            return modules.common?.getUrgencyColor(wo.dueDate) === 'yellow';
-        } catch (e) {
-            return false;
-        }
-    }).length;
     
     container.innerHTML = `
         <div class="col-span-3">
             <h2 class="text-2xl font-bold text-white mb-6">Dashboard</h2>
-            
-            <!-- Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                <div class="card p-6 cursor-pointer" data-route="workcenter-wip">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Active Work Orders</p>
-                            <p class="text-3xl font-bold text-white">${activeWOs.length}</p>
-                        </div>
-                        <i class="fa-solid fa-clipboard-list text-4xl opacity-50" style="color: var(--color-info);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="tasks-all">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Overdue</p>
-                            <p class="text-3xl font-bold" style="color: var(--color-error);">${overdueCount}</p>
-                        </div>
-                        <i class="fa-solid fa-exclamation-circle text-4xl opacity-50" style="color: var(--color-error);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="tasks-all">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Due Soon</p>
-                            <p class="text-3xl font-bold" style="color: var(--color-warning);">${dueSoonCount}</p>
-                        </div>
-                        <i class="fa-solid fa-clock text-4xl opacity-50" style="color: var(--color-warning);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="workcenter-wip">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Completed</p>
-                            <p class="text-3xl font-bold" style="color: var(--color-success);">${workOrders.filter(wo => wo.completionPercentage === 100).length}</p>
-                        </div>
-                        <i class="fa-solid fa-check-circle text-4xl opacity-50" style="color: var(--color-success);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="inventory-materials">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Low Stock</p>
-                            <p class="text-3xl font-bold" style="color: ${lowStockCount > 0 ? 'var(--color-warning)' : 'var(--color-success)'};">${lowStockCount}</p>
-                        </div>
-                        <i class="fa-solid fa-box-open text-4xl opacity-50" style="color: ${lowStockCount > 0 ? 'var(--color-warning)' : 'var(--color-success)'};"></i>
-                    </div>
-                </div>
-            </div>
             
             <!-- Quick Actions -->
             <div class="card p-6 mb-6">
@@ -845,9 +764,9 @@ function loadDashboard() {
                         <i class="fa-solid fa-tasks text-2xl mb-2 block" style="color: var(--color-accent-secondary);"></i>
                         <p class="text-sm" style="color: var(--color-text-secondary);">All Tasks</p>
                     </button>
-                    <button data-route="inventory-materials" class="card p-4 text-center transition-colors">
-                        <i class="fa-solid fa-boxes text-2xl mb-2 block" style="color: var(--color-warning);"></i>
-                        <p class="text-sm" style="color: var(--color-text-secondary);">Inventory</p>
+                    <button data-route="inventory-kanban" class="card p-4 text-center transition-colors">
+                        <i class="fa-solid fa-table-columns text-2xl mb-2 block" style="color: var(--color-warning);"></i>
+                        <p class="text-sm" style="color: var(--color-text-secondary);">Kanban</p>
                     </button>
                     <button data-route="tasks-maintenance" class="card p-4 text-center transition-colors">
                         <i class="fa-solid fa-wrench text-2xl mb-2 block" style="color: var(--color-error);"></i>

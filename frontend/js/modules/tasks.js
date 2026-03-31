@@ -9,7 +9,8 @@ import {
     getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer, exportToCSV
 } from './common.js';
 import { storage, STORAGE_KEYS } from './storage.js';
-import { getWorkOrders, getNextWorkflowStep, getNextWorkflowStepWithLineItem, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders, getWODocuments, showDocumentsModal, showDocumentUploadModal, getDefaultChecklist } from './sales.js';
+import { getWorkOrders, getNextWorkflowStep, getNextWorkflowStepWithLineItem, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders, getWODocuments, showDocumentsModal, showDocumentUploadModal, getDefaultChecklist, rollBackOneWorkflowStep } from './sales.js';
+import { getMachines } from './maintenance.js';
 
 // ==================== WORKFLOW STEP CONFIGURATION ====================
 const WORKFLOW_STEPS = {
@@ -25,6 +26,22 @@ const WORKFLOW_STEPS = {
     ready_for_shipment: { stepName: 'Ready For Shipment', icon: 'fa-truck', color: 'text-green-400', tab: 'shipping' },
     invoicing_complete: { stepName: 'Invoicing Complete', icon: 'fa-file-invoice-dollar', color: 'text-emerald-400', tab: 'completed' }
 };
+
+/** Short label for workcenter cards: "{Label} Started" / "{Label} not started" */
+const WORKCENTER_OPERATION_LABEL = {
+    part_programmed: 'Programming',
+    material_processed: 'Processing',
+    machining_complete: 'Machining',
+    post_processing: 'Post Processing',
+    inspection_complete: 'Inspection',
+    ready_for_shipment: 'Shipping'
+};
+
+function getWorkcenterOperationLabel(stepKey) {
+    if (WORKCENTER_OPERATION_LABEL[stepKey]) return WORKCENTER_OPERATION_LABEL[stepKey];
+    const meta = WORKFLOW_STEPS[stepKey];
+    return meta?.stepName || 'Work';
+}
 
 // Task type config for display
 const TASK_TYPE_CONFIG = {
@@ -132,7 +149,15 @@ function filterSortAllTasksRows(woRows, miscTasks, filters) {
             if (task.status !== status) return false;
         }
         if (!q) return true;
-        const blob = [task.title, task.description, task.assignedTo, task.category].filter(Boolean).join(' ').toLowerCase();
+        const blob = [
+            task.title,
+            task.description,
+            task.assignedTo,
+            task.category,
+            task.linkedWorkOrderNumber,
+            task.linkedPartNumber,
+            task.linkedWorkflowStepName
+        ].filter(Boolean).join(' ').toLowerCase();
         return blob.includes(q);
     });
     const dir = filters.sortDir === 'desc' ? -1 : 1;
@@ -153,7 +178,7 @@ function filterSortAllTasksRows(woRows, miscTasks, filters) {
     });
     const miscSortKey = (task) => {
         if (sortBy === 'dueDate') return new Date(task.dueDate || 0).getTime();
-        if (sortBy === 'woNumber') return (task.title || '').toLowerCase();
+        if (sortBy === 'woNumber') return (task.linkedWorkOrderNumber || task.title || '').toLowerCase();
         if (sortBy === 'customer') return (task.assignedTo || '').toLowerCase();
         if (sortBy === 'type') return 'misc';
         return 0;
@@ -496,8 +521,103 @@ function executeWorkflowAction(woId, stepId, stepName, action, notes, refNumber)
         updates.issueReportedAt = new Date().toISOString();
         showToast(`Issue reported for "${stepName}"`, 'warning');
     }
-    
-    updateChecklistStep(woId, stepId, updates);
+
+    const stepKeyFb = resolveStepKeyForWoStep(woId, stepId);
+    updateChecklistStep(woId, stepId, updates, null, stepKeyFb);
+}
+
+/** Find stepKey for a checklist step id (handles id type mismatch across line items). */
+function resolveStepKeyForWoStep(woId, stepId) {
+    const wo = getWorkOrders().find(w => w.id === woId);
+    if (!wo) return null;
+    const match = (c) => {
+        const list = c || getDefaultChecklist();
+        const st = list.find(s => s.id === stepId || Number(s.id) === Number(stepId));
+        return st?.stepKey || null;
+    };
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        for (const item of wo.lineItems) {
+            const k = match(item.checklist);
+            if (k) return k;
+        }
+        return null;
+    }
+    return match(wo.checklist);
+}
+
+/** Prompt for machine when starting Machining; calls onConfirm(machineId|null, machineName). */
+function showMachiningMachinePickerModal(onConfirm, onCancel) {
+    const machines = getMachines() || [];
+    const options = machines
+        .filter(m => (m.status || 'Active') === 'Active')
+        .map(m =>
+            `<option value="${escapeAttr(m.id)}">${escapeAttr(m.machineName)} (${escapeAttr(m.machineId || '')})</option>`
+        )
+        .join('');
+
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-gears mr-2 text-purple-400"></i>Select machine
+                </h3>
+                <button type="button" onclick="BPERP.common.closeModal('machiningMachineModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <p class="text-sm mb-4" style="color: var(--color-text-muted);">Which machine is this job running on for machining?</p>
+            ${machines.length > 0 ? `
+                <div class="mb-4">
+                    <label class="form-label">Machine *</label>
+                    <select id="machiningMachineSelect" class="form-input w-full" required>
+                        <option value="">Select a machine…</option>
+                        ${options}
+                    </select>
+                </div>
+            ` : `
+                <div class="mb-4">
+                    <label class="form-label">Machine name *</label>
+                    <input type="text" id="machiningMachineManual" class="form-input w-full" placeholder="e.g. CNC Mill 1">
+                    <p class="text-xs mt-1 text-gray-500">No machine profiles yet — add one under Machines or enter a name.</p>
+                </div>
+            `}
+            <div class="flex gap-3 pt-2">
+                <button type="button" id="machiningMachineCancel" class="btn btn-secondary flex-1">Cancel</button>
+                <button type="button" id="machiningMachineOk" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded flex-1">
+                    <i class="fa-solid fa-play mr-2"></i>Start machining
+                </button>
+            </div>
+        </div>
+    `;
+
+    createModal('machiningMachineModal', content, { width: 'w-full max-w-md' });
+
+    document.getElementById('machiningMachineCancel').addEventListener('click', () => {
+        closeModal('machiningMachineModal');
+        if (onCancel) onCancel();
+    });
+
+    document.getElementById('machiningMachineOk').addEventListener('click', () => {
+        if (machines.length > 0) {
+            const sel = document.getElementById('machiningMachineSelect');
+            const id = sel?.value;
+            if (!id) {
+                showToast('Select a machine', 'warning');
+                return;
+            }
+            const m = machines.find(x => String(x.id) === String(id));
+            closeModal('machiningMachineModal');
+            onConfirm(Number(id), m ? m.machineName : '');
+        } else {
+            const raw = document.getElementById('machiningMachineManual')?.value?.trim();
+            if (!raw) {
+                showToast('Enter a machine name', 'warning');
+                return;
+            }
+            closeModal('machiningMachineModal');
+            onConfirm(null, raw);
+        }
+    });
 }
 
 // ==================== UNIFIED WORKFLOW VIEW RENDERER ====================
@@ -543,7 +663,11 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
         const docCount = getWODocuments(item.woId).length;
         
         // Data attributes for action buttons
-        const dataAttrs = `data-wo-id="${item.woId}" data-step-id="${step.id}" data-step-name="${step.stepName}" data-item-id="${item.lineItemId || ''}"`;
+        const dataAttrs = `data-wo-id="${item.woId}" data-step-id="${step.id}" data-step-name="${escapeAttr(step.stepName)}" data-step-key="${escapeAttr(step.stepKey)}" data-item-id="${item.lineItemId || ''}"`;
+        const operationLabel = getWorkcenterOperationLabel(step.stepKey);
+        const statusLineText = isStarted
+            ? `${operationLabel} Started`
+            : `${operationLabel} not started`;
         
         return `
             <div class="card p-4 border-l-4 ${borderColor}">
@@ -579,38 +703,36 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
                     <i class="fa-solid fa-building mr-1"></i>${item.customerName}
                 </div>
                 
-                <!-- Progress bar -->
-                <div class="mb-3">
-                    <div class="flex justify-between text-xs mb-1">
-                        <span style="color: var(--color-text-muted);">Part Progress</span>
-                        <span style="color: var(--color-accent-secondary);">${item.completionPercentage}%</span>
-                    </div>
-                    <div class="w-full bg-gray-700 rounded-full h-1.5">
-                        <div class="h-1.5 rounded-full transition-all" 
-                             style="width: ${item.completionPercentage}%; background: var(--color-accent-secondary);"></div>
-                    </div>
-                </div>
-                
                 <div class="text-xs mb-3" style="color: var(--color-text-muted);">
                     <i class="fa-solid ${WORKFLOW_STEPS[step.stepKey]?.icon || 'fa-circle'} mr-1"></i>
-                    Current: <span class="text-white">${step.stepName}</span>
+                    Current: <span class="text-white">${statusLineText}</span>
                     ${hasIssue ? '<span class="text-red-400 ml-2"><i class="fa-solid fa-exclamation-triangle"></i> Issue</span>' : ''}
                 </div>
                 
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
                     ${!isStarted ? `
                         <button data-action="workflow-begin" ${dataAttrs}
-                            class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs hover:bg-blue-700 flex-1">
+                            class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs hover:bg-blue-700 flex-1 min-w-[120px]">
                             <i class="fa-solid fa-play mr-1"></i>Begin Process
                         </button>
                     ` : `
                         <button data-action="workflow-complete" ${dataAttrs}
-                            class="bg-green-600 text-white px-3 py-1.5 rounded text-xs hover:bg-green-700 flex-1">
+                            class="bg-green-600 text-white px-3 py-1.5 rounded text-xs hover:bg-green-700 flex-1 min-w-[120px]">
                             <i class="fa-solid fa-check mr-1"></i>Complete Process
                         </button>
                     `}
+                    <button data-action="create-wo-task" ${dataAttrs}
+                        class="bg-orange-600 text-white px-3 py-1.5 rounded text-xs hover:bg-orange-700">
+                        <i class="fa-solid fa-plus mr-1"></i>New Task
+                    </button>
+                </div>
+                <div class="flex gap-2">
+                    <button data-action="workflow-rollback" ${dataAttrs}
+                        class="bg-purple-400 text-white px-3 py-1.5 rounded text-xs hover:bg-purple-300 flex-1">
+                        <i class="fa-solid fa-rotate-left mr-1"></i>Rollback step
+                    </button>
                     <button data-action="workflow-issue" ${dataAttrs}
-                        class="bg-red-600 text-white px-3 py-1.5 rounded text-xs hover:bg-red-700">
+                        class="bg-red-600 text-white px-3 py-1.5 rounded text-xs hover:bg-red-700 flex-1">
                         <i class="fa-solid fa-exclamation-triangle mr-1"></i>Issue
                     </button>
                 </div>
@@ -924,11 +1046,11 @@ function renderAllTasksView(workOrders) {
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex space-x-2">
-                        <button data-action="workflow-complete" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}"${itemAttr}
+                        <button data-action="workflow-complete" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
                             class="text-green-500 hover:text-green-400" title="Complete Step">
                             <i class="fa-solid fa-check"></i>
                         </button>
-                        <button data-action="workflow-start" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}"${itemAttr}
+                        <button data-action="workflow-start" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
                             class="text-blue-500 hover:text-blue-400" title="Start Step">
                             <i class="fa-solid fa-play"></i>
                         </button>
@@ -949,6 +1071,12 @@ function renderAllTasksView(workOrders) {
         const statusClass = task.status === 'In Progress' ? 'bg-blue-600 text-blue-100' :
             task.status === 'Not Started' ? 'bg-gray-600 text-gray-200' : 'bg-green-600 text-green-100';
         const recurringBadge = task.isRecurring ? '<span class="ml-2 text-xs text-purple-400"><i class="fa-solid fa-rotate mr-1"></i>Recurring</span>' : '';
+        const linkedRef = task.linkedWorkOrderNumber
+            ? [task.linkedWorkOrderNumber, task.linkedPartNumber, task.linkedWorkflowStepName].filter(Boolean).join(' · ')
+            : '';
+        const subLines = linkedRef
+            ? `<div class="text-xs text-gray-400">${linkedRef}</div>${task.description ? `<div class="text-xs text-gray-500">${escapeAttr(task.description)}</div>` : ''}`
+            : `<div class="text-xs text-gray-500">${task.description ? escapeAttr(task.description) : 'No description'}</div>`;
 
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-800 bg-gray-800/30">
@@ -958,8 +1086,8 @@ function renderAllTasksView(workOrders) {
                     </span>
                 </td>
                 <td class="px-4 py-3">
-                    <div class="font-medium text-white">${task.title}${recurringBadge}</div>
-                    <div class="text-xs text-gray-500">${task.description || 'No description'}</div>
+                    <div class="font-medium text-white">${escapeAttr(task.title)}${recurringBadge}</div>
+                    ${subLines}
                 </td>
                 <td class="px-4 py-3 text-gray-300">${task.assignedTo || '-'}</td>
                 <td class="px-4 py-3 ${urgencyClass}">${task.dueDate ? formatDate(task.dueDate) : '-'}</td>
@@ -1117,34 +1245,29 @@ function renderOrderingView(workOrders) {
         let toolingReceiveStep = null;
         let hasIssue = false;
 
-        // Handle multi-part work orders
+        // Handle multi-part work orders — use .every() so one line cannot block receiving on another
+        // (OR was wrong: if any line had material received, Receive was disabled for the whole WO.)
         if (wo.lineItems && wo.lineItems.length > 0) {
-            // Check all line items for ordering steps
-            for (const item of wo.lineItems) {
+            const items = wo.lineItems;
+            const getC = (item) => item.checklist || getDefaultChecklist();
+            materialOrdered = items.every(item => getC(item).find(s => s.stepKey === 'material_ordered')?.isCompleted);
+            toolingOrdered = items.every(item => getC(item).find(s => s.stepKey === 'tooling_ordered')?.isCompleted);
+            materialReceived = items.every(item => getC(item).find(s => s.stepKey === 'material_received')?.isCompleted);
+            toolingReceived = items.every(item => getC(item).find(s => s.stepKey === 'tooling_received')?.isCompleted);
+
+            const firstC = getC(items[0]);
+            materialOrderStep = firstC.find(s => s.stepKey === 'material_ordered');
+            toolingOrderStep = firstC.find(s => s.stepKey === 'tooling_ordered');
+            materialReceiveStep = firstC.find(s => s.stepKey === 'material_received');
+            toolingReceiveStep = firstC.find(s => s.stepKey === 'tooling_received');
+
+            for (const item of items) {
                 const checklist = item.checklist || [];
-                materialOrdered = materialOrdered || checklist.find(s => s.stepKey === 'material_ordered')?.isCompleted || false;
-                toolingOrdered = toolingOrdered || checklist.find(s => s.stepKey === 'tooling_ordered')?.isCompleted || false;
-                materialReceived = materialReceived || checklist.find(s => s.stepKey === 'material_received')?.isCompleted || false;
-                toolingReceived = toolingReceived || checklist.find(s => s.stepKey === 'tooling_received')?.isCompleted || false;
-
-                if (!materialOrderStep) {
-                    materialOrderStep = checklist.find(s => s.stepKey === 'material_ordered');
-                }
-                if (!toolingOrderStep) {
-                    toolingOrderStep = checklist.find(s => s.stepKey === 'tooling_ordered');
-                }
-                if (!materialReceiveStep) {
-                    materialReceiveStep = checklist.find(s => s.stepKey === 'material_received');
-                }
-                if (!toolingReceiveStep) {
-                    toolingReceiveStep = checklist.find(s => s.stepKey === 'tooling_received');
-                }
-
                 hasIssue = hasIssue || checklist.some(s => s.hasIssue);
             }
         } else {
             // Handle single-part work orders (legacy)
-            const checklist = wo.checklist || [];
+            const checklist = wo.checklist || getDefaultChecklist();
             materialOrdered = checklist.find(s => s.stepKey === 'material_ordered')?.isCompleted || false;
             toolingOrdered = checklist.find(s => s.stepKey === 'tooling_ordered')?.isCompleted || false;
             materialReceived = checklist.find(s => s.stepKey === 'material_received')?.isCompleted || false;
@@ -1219,15 +1342,25 @@ function renderOrderingView(workOrders) {
                     </div>
                     
                     <!-- Material Cert & Documents Row -->
-                    <div class="flex gap-2 pt-1 border-t" style="border-color: var(--color-border);">
+                    <div class="flex gap-2 pt-1 border-t flex-wrap items-start" style="border-color: var(--color-border);">
                         <button data-action="add-material-cert" data-wo-id="${wo.id}" data-wo-number="${wo.woNumber}"
-                            class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs flex-1">
+                            class="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs flex-1 min-w-[140px]">
                             <i class="fa-solid fa-certificate mr-1"></i>Add Material Cert
                         </button>
-                        <button data-action="workflow-issue" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="Ordering"
-                            class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700">
-                            <i class="fa-solid fa-exclamation-triangle"></i>
+                        <button data-action="create-wo-task" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${escapeAttr(nextStep.stepName)}" data-step-key="${escapeAttr(nextStep.stepKey)}" data-item-id=""
+                            class="bg-orange-600 hover:bg-orange-700 text-white px-2 py-1 rounded text-xs">
+                            <i class="fa-solid fa-plus mr-1"></i>New Task
                         </button>
+                        <div class="flex flex-col gap-1">
+                            <button data-action="workflow-rollback" data-wo-id="${wo.id}" data-item-id=""
+                                class="bg-purple-400 hover:bg-purple-300 text-white px-2 py-1 rounded text-xs whitespace-nowrap" title="Roll back one workflow step">
+                                <i class="fa-solid fa-rotate-left mr-1"></i>Rollback
+                            </button>
+                            <button data-action="workflow-issue" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="Ordering"
+                                class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700" title="Report Issue">
+                                <i class="fa-solid fa-exclamation-triangle"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1429,43 +1562,85 @@ function refreshCurrentView() {
 export function registerActionHandlers(registerFn) {
     // Begin Process - marks step as started (supports line items). "workflow-start" is an alias used on All Tasks rows.
     const handleWorkflowBegin = (target) => {
-        const woId = parseInt(target.dataset.woId);
-        const stepId = parseInt(target.dataset.stepId);
+        const woId = parseInt(target.dataset.woId, 10);
+        const stepId = parseInt(target.dataset.stepId, 10);
         const stepName = target.dataset.stepName;
-        const itemId = target.dataset.itemId ? parseInt(target.dataset.itemId) : null;
+        const itemId = target.dataset.itemId !== undefined && target.dataset.itemId !== ''
+            ? parseInt(target.dataset.itemId, 10)
+            : null;
+        const stepKeyFb = target.dataset.stepKey || resolveStepKeyForWoStep(woId, stepId);
 
-        updateChecklistStep(woId, stepId, {
-            startedAt: new Date().toISOString(),
-            startedByName: 'Current User',
-            inProgress: true
-        }, itemId);
+        const applyStart = (extra = {}) => {
+            updateChecklistStep(woId, stepId, {
+                startedAt: new Date().toISOString(),
+                startedByName: 'Current User',
+                inProgress: true,
+                ...extra
+            }, itemId, stepKeyFb);
 
-        const partInfo = target.dataset.itemId ? ` (Part ID: ${target.dataset.itemId})` : '';
-        showToast(`Started: ${stepName}${partInfo}`, 'info');
-        refreshCurrentView();
+            const partInfo = target.dataset.itemId ? ` (Part ID: ${target.dataset.itemId})` : '';
+            showToast(`Started: ${stepName}${partInfo}`, 'info');
+            refreshCurrentView();
+        };
+
+        if (stepKeyFb === 'machining_complete') {
+            showMachiningMachinePickerModal((machineId, machineName) => {
+                applyStart({
+                    machiningMachineId: machineId != null ? machineId : null,
+                    machiningMachineName: machineName || ''
+                });
+            });
+            return;
+        }
+
+        applyStart();
     };
     registerFn('workflow-begin', handleWorkflowBegin);
     registerFn('workflow-start', handleWorkflowBegin);
     
     // Complete Process - marks step as completed (supports line items)
     registerFn('workflow-complete', (target) => {
-        const woId = parseInt(target.dataset.woId);
-        const stepId = parseInt(target.dataset.stepId);
+        const woId = parseInt(target.dataset.woId, 10);
+        const stepId = parseInt(target.dataset.stepId, 10);
         const stepName = target.dataset.stepName;
-        const itemId = target.dataset.itemId ? parseInt(target.dataset.itemId) : null;
-        
-        updateChecklistStep(woId, stepId, {
+        const itemId = target.dataset.itemId !== undefined && target.dataset.itemId !== ''
+            ? parseInt(target.dataset.itemId, 10)
+            : null;
+        const stepKeyFb = target.dataset.stepKey || resolveStepKeyForWoStep(woId, stepId);
+
+        const updates = {
             isCompleted: true,
             inProgress: false,
             completedAt: new Date().toISOString(),
             completedByName: 'Current User'
-        }, itemId);
+        };
+        if (stepKeyFb === 'machining_complete') {
+            updates.machiningMachineId = null;
+            updates.machiningMachineName = null;
+        }
+        updateChecklistStep(woId, stepId, updates, itemId, stepKeyFb);
         
         const partInfo = target.dataset.itemId ? ` (Part ID: ${target.dataset.itemId})` : '';
         showToast(`Completed: ${stepName}${partInfo}`, 'success');
         refreshCurrentView();
     });
     
+    registerFn('workflow-rollback', (target) => {
+        const woId = parseInt(target.dataset.woId, 10);
+        let lineItemId;
+        if (target.dataset.itemId !== undefined && target.dataset.itemId !== '') {
+            const p = parseInt(target.dataset.itemId, 10);
+            if (!Number.isNaN(p)) lineItemId = p;
+        }
+        const result = rollBackOneWorkflowStep(woId, lineItemId);
+        if (result.ok) {
+            showToast(result.message, 'success');
+            refreshCurrentView();
+        } else {
+            showToast(result.message, 'warning');
+        }
+    });
+
     registerFn('workflow-issue', (target) => {
         const itemId = target.dataset.itemId ? parseInt(target.dataset.itemId) : null;
         showIssueReportModal(
@@ -1474,6 +1649,19 @@ export function registerActionHandlers(registerFn) {
             target.dataset.stepName,
             refreshCurrentView,
             itemId
+        );
+    });
+
+    registerFn('create-wo-task', (target) => {
+        const itemId = target.dataset.itemId ? parseInt(target.dataset.itemId) : null;
+        const idParsed = itemId && !Number.isNaN(itemId) ? itemId : null;
+        showCreateWoLinkedTaskModal(
+            parseInt(target.dataset.woId, 10),
+            parseInt(target.dataset.stepId, 10),
+            target.dataset.stepName,
+            idParsed,
+            target.dataset.stepKey || '',
+            refreshCurrentView
         );
     });
     
@@ -1581,7 +1769,7 @@ function markOrderingStepComplete(woId, stepKey, stepName) {
                     isCompleted: true,
                     completedAt: new Date().toISOString(),
                     completedByName: 'Current User'
-                }, item.id);
+                }, item.id, stepKey);
                 updated = true;
             }
         }
@@ -1602,7 +1790,7 @@ function markOrderingStepComplete(woId, stepKey, stepName) {
             isCompleted: true,
             completedAt: new Date().toISOString(),
             completedByName: 'Current User'
-        });
+        }, null, stepKey);
 
         if (!result) {
             return;
@@ -1634,7 +1822,7 @@ function markAllOrderingComplete(woId) {
                     isCompleted: true,
                     completedAt: timestamp,
                     completedByName: 'Current User'
-                }, item.id);
+                }, item.id, 'material_ordered');
                 updated = true;
             }
 
@@ -1643,7 +1831,7 @@ function markAllOrderingComplete(woId) {
                     isCompleted: true,
                     completedAt: timestamp,
                     completedByName: 'Current User'
-                }, item.id);
+                }, item.id, 'tooling_ordered');
                 updated = true;
             }
         }
@@ -1659,7 +1847,7 @@ function markAllOrderingComplete(woId) {
                 isCompleted: true,
                 completedAt: timestamp,
                 completedByName: 'Current User'
-            });
+            }, null, 'material_ordered');
             updated = true;
         }
 
@@ -1668,7 +1856,7 @@ function markAllOrderingComplete(woId) {
                 isCompleted: true,
                 completedAt: timestamp,
                 completedByName: 'Current User'
-            });
+            }, null, 'tooling_ordered');
             updated = true;
         }
     }
@@ -1702,7 +1890,7 @@ function markReceivingStepComplete(woId, stepKey, stepName) {
                     isCompleted: true,
                     completedAt: new Date().toISOString(),
                     completedByName: 'Current User'
-                }, item.id);
+                }, item.id, stepKey);
                 updated = true;
             }
         }
@@ -1723,7 +1911,7 @@ function markReceivingStepComplete(woId, stepKey, stepName) {
             isCompleted: true,
             completedAt: new Date().toISOString(),
             completedByName: 'Current User'
-        });
+        }, null, stepKey);
 
         if (!result) {
             return;
@@ -1755,7 +1943,7 @@ function markAllReceivingComplete(woId) {
                     isCompleted: true,
                     completedAt: timestamp,
                     completedByName: 'Current User'
-                }, item.id);
+                }, item.id, 'material_received');
                 updated = true;
             }
 
@@ -1764,7 +1952,7 @@ function markAllReceivingComplete(woId) {
                     isCompleted: true,
                     completedAt: timestamp,
                     completedByName: 'Current User'
-                }, item.id);
+                }, item.id, 'tooling_received');
                 updated = true;
             }
         }
@@ -1780,7 +1968,7 @@ function markAllReceivingComplete(woId) {
                 isCompleted: true,
                 completedAt: timestamp,
                 completedByName: 'Current User'
-            });
+            }, null, 'material_received');
             updated = true;
         }
 
@@ -1789,7 +1977,7 @@ function markAllReceivingComplete(woId) {
                 isCompleted: true,
                 completedAt: timestamp,
                 completedByName: 'Current User'
-            });
+            }, null, 'tooling_received');
             updated = true;
         }
     }
@@ -1823,7 +2011,7 @@ function markInvoicingComplete(woId) {
                     isCompleted: true,
                     completedAt: new Date().toISOString(),
                     completedByName: 'Current User'
-                }, item.id);
+                }, item.id, 'invoicing_complete');
                 updated = true;
             }
         }
@@ -1844,7 +2032,7 @@ function markInvoicingComplete(woId) {
             isCompleted: true,
             completedAt: new Date().toISOString(),
             completedByName: 'Current User'
-        });
+        }, null, 'invoicing_complete');
 
         if (!result) {
             return;
@@ -2061,17 +2249,156 @@ function showIssueReportModal(woId, stepId, stepName, callback, lineItemId = nul
         storage.set('bperp_issues', issues);
         
         // Mark the step as having an issue (with line item support)
+        let issueStepKey = null;
+        if (lineItemId != null && wo.lineItems) {
+            const li = wo.lineItems.find(i => i.id === lineItemId);
+            const lc = li?.checklist || getDefaultChecklist();
+            const st = lc.find(s => s.id === stepId || Number(s.id) === Number(stepId));
+            issueStepKey = st?.stepKey || null;
+        } else {
+            const c = wo.checklist || getDefaultChecklist();
+            const st = c.find(s => s.id === stepId || Number(s.id) === Number(stepId));
+            issueStepKey = st?.stepKey || null;
+        }
         updateChecklistStep(woId, stepId, {
             hasIssue: true,
             issueType: issue.issueType,
             issueSeverity: issue.severity,
             issueDescription: issue.description,
             issueReportedAt: issue.reportedAt
-        }, lineItemId);
+        }, lineItemId, issueStepKey);
         
         closeModal('issueModal');
         showToast(`Issue reported for ${wo.woNumber} - ${partNumber}`, 'warning');
         if (callback) callback();
+    });
+}
+
+// ==================== WO-LINKED TASK MODAL (from workcenter) ====================
+function showCreateWoLinkedTaskModal(woId, stepId, stepName, lineItemId, stepKey, onDone) {
+    const workOrders = getWorkOrders();
+    const wo = workOrders.find(w => w.id === woId);
+    if (!wo) return;
+
+    let partNumber = wo.partNumber || 'N/A';
+    let partDescription = '';
+    if (lineItemId && wo.lineItems) {
+        const lineItem = wo.lineItems.find(item => item.id === lineItemId);
+        if (lineItem) {
+            partNumber = lineItem.partNumber;
+            partDescription = lineItem.description || '';
+        }
+    }
+
+    const defaultTitle = `${wo.woNumber} — ${partNumber}`;
+
+    const content = `
+        <div class="p-6" id="woLinkedTaskModalRoot">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-plus mr-2 text-orange-400"></i>New Task from Work Order
+                </h3>
+                <button onclick="BPERP.common.closeModal('woLinkedTaskModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <div class="mb-4 p-3 rounded" style="background: var(--color-dark-bg);">
+                <div class="font-medium text-white">${wo.woNumber}</div>
+                <div class="text-sm text-white">${partNumber}${partDescription ? ` - ${partDescription}` : ''}</div>
+                <div class="text-sm" style="color: var(--color-text-muted);">${wo.customerName}</div>
+                <div class="text-sm" style="color: var(--color-text-muted);">Step: ${stepName}</div>
+            </div>
+            <form id="woLinkedTaskForm" class="space-y-4">
+                <div>
+                    <label class="form-label">Title *</label>
+                    <input type="text" name="title" required class="form-input w-full" value="${escapeAttr(defaultTitle)}" placeholder="Task title">
+                </div>
+                <div>
+                    <label class="form-label">Description / instructions</label>
+                    <textarea name="description" class="form-input w-full" rows="4" placeholder="Notes or instructions..."></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Category</label>
+                        <select name="category" class="form-input w-full">
+                            <option value="General">General</option>
+                            <option value="Tooling">Tooling</option>
+                            <option value="Purchasing">Purchasing</option>
+                            <option value="Quality">Quality</option>
+                            <option value="Safety">Safety</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Priority</label>
+                        <select name="priority" class="form-input w-full">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Assigned To</label>
+                        <input type="text" name="assignedTo" class="form-input w-full" placeholder="Employee name">
+                    </div>
+                    <div>
+                        <label class="form-label">Due date</label>
+                        <input type="date" name="dueDate" class="form-input w-full">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Estimated Duration</label>
+                    <input type="text" name="estimatedDuration" class="form-input w-full" placeholder="e.g., 2 hours">
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('woLinkedTaskModal')"
+                        class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex-1">
+                        <i class="fa-solid fa-plus mr-2"></i>Create Task
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    createModal('woLinkedTaskModal', content, { width: 'w-full max-w-lg' });
+
+    document.getElementById('woLinkedTaskForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+
+        const task = {
+            id: Date.now(),
+            title: formData.get('title'),
+            description: formData.get('description'),
+            category: formData.get('category'),
+            priority: formData.get('priority'),
+            assignedTo: formData.get('assignedTo'),
+            dueDate: formData.get('dueDate'),
+            estimatedDuration: formData.get('estimatedDuration'),
+            status: 'Not Started',
+            type: 'miscellaneous',
+            createdAt: new Date().toISOString(),
+            isRecurring: false,
+            recurrence: null,
+            source: 'workcenter',
+            linkedWorkOrderId: woId,
+            linkedWorkOrderNumber: wo.woNumber,
+            linkedLineItemId: lineItemId,
+            linkedWorkflowStepKey: stepKey || null,
+            linkedWorkflowStepName: stepName,
+            linkedPartNumber: partNumber
+        };
+
+        let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+        miscTasks.push(task);
+        storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+
+        closeModal('woLinkedTaskModal');
+        showToast(`Task "${task.title}" created`, 'success');
+        if (onDone) onDone();
     });
 }
 

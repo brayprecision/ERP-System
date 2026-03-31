@@ -74,6 +74,9 @@ See `docs/NAS-SETUP.md` for NAS deployment.
 ### Auto-Update
 The app should auto-refresh data so each workcenter always displays current information. When one user creates a work order or updates inventory, other workstations reflect the change without manual refresh.
 
+### Frontend routing (SPA)
+Routes are handled in `frontend/js/app.js` (`navigate`, route → handler map). Most **`tasks-*`** routes load the **tasks** module; **`tasks-maintenance`** (**Machines**) loads the **maintenance** module instead. On navigation, `navigate()` calls `modules.tasks.deactivate()` when leaving the workflow task screens or when opening **Machines**, so the tasks module’s periodic refresh does not overwrite the main content after the user has switched to another screen (sidebar and content stay aligned).
+
 ## Tech Stack
 
 - **Backend**: Node.js + Express.js (port 3000)
