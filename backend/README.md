@@ -99,6 +99,7 @@ backend/
 │   ├── customers.js
 │   ├── import.js        # Data import API
 │   ├── inventory.js
+│   ├── labor.js         # Shop shifts + WO + misc-task process time segments
 │   ├── machines.js
 │   ├── maintenance.js
 │   ├── orders.js
@@ -204,6 +205,22 @@ DELETE /api/tasks/:id          # Soft delete task
 ```
 
 The **Tasks** screen in the browser/Electron UI (All Tasks, workflow tabs, Ordering, Completed Work) is currently driven by **localStorage** and **work-order checklist** data, not these `/api/tasks` routes. **Machines** (`tasks-maintenance`) is implemented in `frontend/js/modules/maintenance.js` (same localStorage / WIP patterns). The API above remains for future or alternate clients. SPA routing and module deactivation are described in the root **README** (Frontend routing).
+
+### Labor / time tracking
+
+```
+GET    /api/labor/status              # Open shift + active WO + misc segments for current user
+POST   /api/labor/clock-in            # Start shop shift
+POST   /api/labor/clock-out           # End shift and close all open segments (WO + misc)
+PATCH  /api/labor/shift/:id           # Body: startedAt, endedAt (optional/null) — manual edit; Operator own shift only
+POST   /api/labor/segment/start       # Body: workOrderId, workflowStepKey, lineItemId? — auto clock-in if no shift; closes other open segments on same shift
+POST   /api/labor/segment/stop        # Body: workOrderId, workflowStepKey, lineItemId? — end one process segment
+POST   /api/labor/misc-segment/start # Body: miscTaskId, miscTaskTitle? — misc task timer; closes WO + other misc on shift
+POST   /api/labor/misc-segment/stop   # Body: miscTaskId — end open misc segment for current shift
+GET    /api/labor/history             # Query: userId, from, to (ISO dates) — shifts, WO segments, misc segments
+GET    /api/labor/presence            # Users on shift + active WO segment or misc segment (Dashboard); Operator sees self only
+GET    /api/labor/team                # Users listed on Time Tracking screen (role-based)
+```
 
 ### Data Import
 

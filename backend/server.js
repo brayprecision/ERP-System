@@ -73,6 +73,7 @@ const workcentersRoutes = require('./routes/workcenters')(pool);
 const machinesRoutes = require('./routes/machines')(pool);
 const maintenanceRoutes = require('./routes/maintenance')(pool);
 const ordersRoutes = require('./routes/orders')(pool);
+const laborRoutes = require('./routes/labor')(pool);
 
 // Data import routes
 const importRoutes = require('./routes/import')(pool);
@@ -92,6 +93,7 @@ app.use('/api/workcenters', workcentersRoutes);
 app.use('/api/machines', machinesRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/orders', ordersRoutes);
+app.use('/api/labor', laborRoutes);
 
 // Data import routes
 app.use('/api/import', importRoutes);

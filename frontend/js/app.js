@@ -14,6 +14,79 @@ const CONFIG = {
 
 // Import backup/restore functions from common
 import { createBackup, restoreFromBackup } from './modules/common.js';
+import { initLaborClockUI, refreshLaborClockUI } from './modules/laborClock.js';
+import { getLaborPresence } from './modules/laborApi.js';
+
+/** Cleared when leaving the Dashboard route */
+let dashboardPresencePollInterval = null;
+
+function clearDashboardPresencePoll() {
+    if (dashboardPresencePollInterval) {
+        clearInterval(dashboardPresencePollInterval);
+        dashboardPresencePollInterval = null;
+    }
+}
+
+function formatWorkflowStepLabel(key) {
+    if (!key) return '—';
+    return String(key).replace(/_/g, ' ');
+}
+
+function formatPresenceShort(iso) {
+    if (!iso) return '—';
+    try {
+        const d = new Date(iso);
+        return d.toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        });
+    } catch {
+        return iso;
+    }
+}
+
+async function refreshDashboardPresenceCard() {
+    const el = document.getElementById('dashboardPresenceCard');
+    if (!el) return;
+    try {
+        const rows = await getLaborPresence();
+        const list = Array.isArray(rows) ? rows : [];
+        if (list.length === 0) {
+            el.innerHTML =
+                '<p class="text-sm" style="color: var(--color-text-muted);">No one is clocked in right now.</p>';
+            return;
+        }
+        el.innerHTML = `
+            <div class="space-y-1">
+                ${list
+                    .map((p) => {
+                        const seg = p.currentSegment;
+                        const misc = p.currentMiscSegment;
+                        const workLine = seg
+                            ? `<span class="text-white font-medium">${seg.woNumber || `WO ${seg.workOrderId}`}</span> · <span style="color: var(--color-text-muted);">${formatWorkflowStepLabel(seg.workflowStepKey)}</span>${seg.lineItemId != null ? ` <span class="text-xs text-gray-500">(line ${seg.lineItemId})</span>` : ''}`
+                            : misc
+                              ? `<span class="text-white font-medium">Misc</span> · <span style="color: var(--color-text-muted);">${misc.miscTaskTitle || misc.miscTaskId || 'Task'}</span>`
+                              : '<span style="color: var(--color-text-muted);">On shift — no active job timer</span>';
+                        return `
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 py-2 border-b border-gray-700/60 last:border-0">
+                        <div class="min-w-0">
+                            <span class="font-medium text-white">${p.name || p.username}</span>
+                            <span class="text-xs ml-2" style="color: var(--color-text-muted);">${p.role}</span>
+                        </div>
+                        <div class="text-sm min-w-0 break-words">${workLine}</div>
+                        <div class="text-xs whitespace-nowrap" style="color: var(--color-text-muted);">Shift since ${formatPresenceShort(p.shiftStartedAt)}</div>
+                    </div>`;
+                    })
+                    .join('')}
+            </div>`;
+    } catch (e) {
+        console.warn('Dashboard presence:', e);
+        el.innerHTML =
+            '<p class="text-sm text-amber-500/90">Could not load who is clocked in.</p>';
+    }
+}
 
 // Expose API_BASE globally for modules
 window.API_BASE = CONFIG.API_BASE;
@@ -40,7 +113,8 @@ const modules = {
     sales: null,
     tasks: null,
     maintenance: null,
-    users: null
+    users: null,
+    timeTracking: null
 };
 
 // ==================== MODULE LOADER ====================
@@ -64,13 +138,14 @@ async function loadModules() {
         console.log('BPERP: Core modules loaded');
         
         // Load feature modules
-        const [inventory, sales, tasks, maintenance, search, users] = await Promise.all([
+        const [inventory, sales, tasks, maintenance, search, users, timeTracking] = await Promise.all([
             import('./modules/inventory.js'),
             import('./modules/sales.js'),
             import('./modules/tasks.js'),
             import('./modules/maintenance.js'),
             import('./modules/search.js'),
-            import('./modules/users.js')
+            import('./modules/users.js'),
+            import('./modules/timeTracking.js')
         ]);
         
         modules.inventory = inventory;
@@ -79,6 +154,7 @@ async function loadModules() {
         modules.maintenance = maintenance;
         modules.search = search;
         modules.users = users;
+        modules.timeTracking = timeTracking;
         
         console.log('BPERP: Feature modules loaded');
         return true;
@@ -137,6 +213,7 @@ const routes = {
     'tasks-shipping': () => modules.tasks?.loadShippingReceivingTasks(),
     'tasks-completed': () => modules.tasks?.loadCompletedWorkTasks(),
     'tasks-maintenance': () => modules.maintenance?.loadMaintenanceTasks(),
+    'tasks-time-tracking': () => modules.timeTracking?.loadTimeTrackingView(),
     
     // Settings
     'settings-branding': () => ShopBranding.showSettings(),
@@ -576,6 +653,7 @@ const routeToCategory = {
     'tasks-shipping': 'tasks',
     'tasks-completed': 'tasks',
     'tasks-maintenance': 'tasks',
+    'tasks-time-tracking': 'tasks',
     'settings-branding': 'settings',
     'settings-preferences': 'settings',
     'settings-users': 'settings',
@@ -602,6 +680,20 @@ function navigate(route) {
         console.warn('BPERP: App not initialized yet');
         return;
     }
+
+    if (route !== 'dashboard') {
+        clearDashboardPresencePoll();
+    }
+
+    const tasksClockBar = document.getElementById('tasksLaborClockBar');
+    if (tasksClockBar) {
+        const showContextLaborClock =
+            route.startsWith('tasks-') || route === 'workcenter-wip';
+        tasksClockBar.classList.toggle('hidden', !showContextLaborClock);
+        if (showContextLaborClock) {
+            import('./modules/laborClock.js').then((m) => m.refreshLaborClockUI?.());
+        }
+    }
     
     // Check permission before navigating
     if (!checkRoutePermission(route)) {
@@ -615,8 +707,11 @@ function navigate(route) {
             // Deactivate modules when navigating away from them
             // This prevents auto-refresh from running on inactive modules
             // tasks-maintenance (Machines) is served by maintenance.js, not tasks.js — still deactivate tasks
-            if (!route.startsWith('tasks-') || route === 'tasks-maintenance') {
+            if (!route.startsWith('tasks-') || route === 'tasks-maintenance' || route === 'tasks-time-tracking') {
                 modules.tasks?.deactivate?.();
+            }
+            if (route !== 'tasks-time-tracking') {
+                modules.timeTracking?.deactivate?.();
             }
             if (!route.startsWith('sales-')) {
                 modules.sales?.deactivate?.();
@@ -666,6 +761,8 @@ function updateSidebarPermissions() {
         if (userNameEl) userNameEl.textContent = user.name;
         if (userRoleEl) userRoleEl.textContent = user.role;
     }
+
+    refreshLaborClockUI();
 }
 
 function updateSidebarActiveState(route) {
@@ -723,6 +820,7 @@ function updatePageTitle(route) {
         'tasks-shipping': 'Shipping & Receiving',
         'tasks-completed': 'Completed Work',
         'tasks-maintenance': 'Machines',
+        'tasks-time-tracking': 'Time Tracking',
         'settings-branding': 'Shop Branding',
         'settings-users': 'Users & Permissions',
         'settings-backup': 'Backup & Restore',
@@ -738,6 +836,8 @@ function updatePageTitle(route) {
 function loadDashboard() {
     const container = document.getElementById('dashboardContent');
     if (!container) return;
+
+    clearDashboardPresencePoll();
     
     let workOrders = [];
     try {
@@ -751,6 +851,17 @@ function loadDashboard() {
     container.innerHTML = `
         <div class="col-span-3">
             <h2 class="text-2xl font-bold text-white mb-6">Dashboard</h2>
+
+            <!-- Who is clocked in -->
+            <div class="card p-6 mb-6" style="background: var(--color-card-bg, #1f2937);">
+                <h3 class="text-lg font-medium text-white mb-3">
+                    <i class="fa-solid fa-users-viewfinder mr-2" style="color: var(--color-accent-primary);"></i>On the floor
+                </h3>
+                <p class="text-xs mb-3" style="color: var(--color-text-muted);">Users currently on shop shift and their active job timer (if any).</p>
+                <div id="dashboardPresenceCard">
+                    <p class="text-sm" style="color: var(--color-text-muted);">Loading…</p>
+                </div>
+            </div>
             
             <!-- Quick Actions -->
             <div class="card p-6 mb-6">
@@ -801,6 +912,15 @@ function loadDashboard() {
             </div>
         </div>
     `;
+
+    void refreshDashboardPresenceCard();
+    dashboardPresencePollInterval = setInterval(() => {
+        if (document.getElementById('dashboardPresenceCard')) {
+            void refreshDashboardPresenceCard();
+        } else {
+            clearDashboardPresencePoll();
+        }
+    }, CONFIG.AUTO_REFRESH_INTERVAL);
 }
 
 // ==================== QUICK ADD DROPDOWN ====================
@@ -1077,6 +1197,7 @@ async function initializeApp() {
             maintenance: modules.maintenance,
             search: modules.search,
             users: modules.users,
+            timeTracking: modules.timeTracking,
             config: CONFIG,
             navigate,
             isInitialized: false
@@ -1143,6 +1264,8 @@ async function initializeApp() {
         
         // Mark as initialized
         window.BPERP.isInitialized = true;
+
+        initLaborClockUI();
         
         // Load initial view (dashboard)
         loadDashboard();

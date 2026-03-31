@@ -523,7 +523,9 @@ export async function createBackup() {
             // Shop branding (logo, name, tagline)
             shop_branding: JSON.parse(localStorage.getItem('bperp_shop_branding') || 'null'),
             // Current user session (for reference, not for restore)
-            current_user: JSON.parse(localStorage.getItem('bperp_current_user') || 'null')
+            current_user: JSON.parse(localStorage.getItem('bperp_current_user') || 'null'),
+            // Local labor when offline / demo session (mirrors API shapes)
+            labor_local: JSON.parse(localStorage.getItem('bperp_labor_local') || 'null')
         };
     
     try {
@@ -632,7 +634,8 @@ export async function restoreFromBackup(fileInput) {
                 misc_tasks: 'bperp_misc_tasks',
                 users_list: 'bperp_users_list',
                 theme_preferences: 'bperp_theme_preferences',
-                shop_branding: 'bperp_shop_branding'
+                shop_branding: 'bperp_shop_branding',
+                labor_local: 'bperp_labor_local'
             };
             
             for (const [key, storageKey] of Object.entries(storageKeys)) {

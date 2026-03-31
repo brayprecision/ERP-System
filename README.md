@@ -10,6 +10,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 - Inventory Management (**Kanban** view for low-stock and critical items across all categories, with **min reorder qty** and **reorder cost** on that view only; Products, Parts, Materials, Tooling, Misc; optional **reorder link** per item with quick-open from the table; Product BOM on add and edit for assemblies)
 - Sales Management (Customers, Contacts, Quotes with lifecycle, Work Orders with checklists)
 - **Task Management** — Workflow tabs mirror WIP checklists (localStorage + work orders). **All Tasks**, workflow tabs, **Ordering**, and **Completed Work** use inventory-style **search, status filter, sort, Asc/Desc, Clear**. **Misc tasks** can be **recurring** (weekly or monthly Nth weekday); complete sets the next due date. *(The Tasks UI does not use `/api/tasks` yet.)*
+- **Labor / time tracking** — Sidebar **Time clock** and a **Shop shift** bar above the main area on **Tasks** screens and **Work In Progress** (same clock in/out as the sidebar). **Tasks → Time Tracking** shows per-user history, including **clock in / clock out** per shop shift, with **Edit** to manually correct shift times (role-based), plus **work order process segments** and **misc task** labor rows. The clock shows **on shift · since …** when clocked in, or **last clock out / last clock in** when not. **Dashboard** shows **On the floor**: who is clocked in and their current WO step, **misc task** title when timing a misc task, or “no job timer”. **Begin Process** on a workcenter tab starts a **process timer** for that WO + step (auto **clock-in** if needed); **Clock Out** stops the timer only; **Complete Process** stops the timer and completes the step. On **All Tasks**, misc task rows have **Start** / **Stop** labor (same shift rules as WO timers). With a **real server session**, data is in SQLite via `/api/labor/*`. With **offline or demo login** (`offline_token_*`), the same UI uses **localStorage** (`bperp_labor_local`) only—no sync to SQLite. **Electron** does **not** auto clock-out on app exit (closing the window leaves your shift open). Non–work-order time (quoting, design) is [planned](docs/FUTURE-LABOR-EXPANSION.md).
 - **Workcenter Management** — Machine queues, job routing, state tracking
 - **Machines** (under Tasks sidebar) — Profiles in **localStorage** (`bperp_machines`): **WIP-style expandable cards** with urgency **left border**; **Maintenance** tasks (add, complete, **edit**, **remove**) and **Upgrade** tasks (add, edit, complete, delete). Sidebar label **Machines**; route id `tasks-maintenance`. **Note:** After `npm install` in `backend/`, run **`npm run rebuild:backend`** from the repo root before **`npm start`** (Electron) so `better-sqlite3` matches embedded Node.
 - User Management (Admin/Machinist/Operator roles, tab-level permissions)
@@ -236,6 +237,14 @@ All endpoints (except login) require `Authorization: Bearer <token>` header.
 | `GET /api/quotes` | List quotes |
 | `GET /api/work-orders` | List work orders |
 | `GET /api/tasks` | List tasks (supports filtering) |
+| `GET /api/labor/status` | Current shift + active WO segments + active misc-task segments |
+| `POST /api/labor/clock-in` / `POST /api/labor/clock-out` | Shop shift |
+| `PATCH /api/labor/shift/:id` | Manually edit shop shift clock in/out (`startedAt`, `endedAt`; Operator own shift only) |
+| `POST /api/labor/segment/start` / `POST /api/labor/segment/stop` | WO process timer (workcenter step + optional line item) |
+| `POST /api/labor/misc-segment/start` / `POST /api/labor/misc-segment/stop` | Misc task timer (`miscTaskId`, optional `miscTaskTitle`; closes other open segments on shift) |
+| `GET /api/labor/history` | Shifts + WO segments + misc segments for a user (date range) |
+| `GET /api/labor/presence` | Who is clocked in + active WO step or misc task (Dashboard) |
+| `GET /api/labor/team` | Users visible on Time Tracking (role-based) |
 | `POST /api/import/preview` | Preview CSV/Excel import |
 | `POST /api/import/:entityType` | Import data (customers, materials, tooling, products, parts, etc.) |
 | `GET /api/import/template/:type` | Download CSV import template |

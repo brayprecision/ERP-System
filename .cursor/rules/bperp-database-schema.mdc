@@ -47,6 +47,9 @@ When you add or rename tables, update this file, `README.md`, `backend/README.md
 | `machines` | Individual machines |
 | `tasks` | Workflow tasks with assignments |
 | `maintenance_tasks` | Scheduled maintenance |
+| `labor_shifts` | User shop shifts (clock in/out) |
+| `labor_work_order_segments` | Time on a work order at a workflow step (optional `line_item_id`) |
+| `labor_misc_task_segments` | Time on a misc task (`misc_task_id` text, optional title snapshot) within a shift |
 
 ## Naming
 

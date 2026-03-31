@@ -118,6 +118,9 @@ export function init() {
         try {
             currentUser = JSON.parse(savedUser);
             authToken = savedToken;
+            if (savedToken && String(savedToken).startsWith('offline_token_')) {
+                isOfflineMode = true;
+            }
         } catch (e) {
             console.warn('Could not restore user session:', e);
         }
@@ -232,6 +235,15 @@ export function getCurrentUser() {
  */
 export function isLoggedIn() {
     return currentUser !== null;
+}
+
+/**
+ * True when session is offline/demo (fake token not in SQLite). Labor API and other DB-backed routes will reject.
+ */
+export function isOfflineAuth() {
+    if (isOfflineMode) return true;
+    const t = localStorage.getItem(USER_STORAGE_KEYS.AUTH_TOKEN);
+    return Boolean(t && String(t).startsWith('offline_token_'));
 }
 
 /**

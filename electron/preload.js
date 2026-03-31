@@ -134,6 +134,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * Quit the application
      */
     quit: () => ipcRenderer.invoke('quit-app'),
+
+    /**
+     * Legacy: main process no longer sends request-labor-clock-out (no auto clock-out on quit).
+     * Kept so older code calling onRequestLaborClockOut does not throw.
+     */
+    onRequestLaborClockOut: (callback) => {
+        ipcRenderer.on('request-labor-clock-out', () => {
+            Promise.resolve(callback()).catch(() => {});
+        });
+    },
+
+    /** Legacy no-op IPC handler in main. */
+    notifyLaborClockOutDone: () => ipcRenderer.invoke('labor-clock-out-done'),
     
     /**
      * Minimize the main window

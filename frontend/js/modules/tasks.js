@@ -11,6 +11,31 @@ import {
 import { storage, STORAGE_KEYS } from './storage.js';
 import { getWorkOrders, getNextWorkflowStep, getNextWorkflowStepWithLineItem, updateChecklistStep, getWOUrgencyColor, getLineItemsByWorkflowStep, getNextWorkflowStepForLineItem, saveWorkOrders, getWODocuments, showDocumentsModal, showDocumentUploadModal, getDefaultChecklist, rollBackOneWorkflowStep } from './sales.js';
 import { getMachines } from './maintenance.js';
+import {
+    getLaborStatus,
+    postLaborSegmentStart,
+    postLaborSegmentStop,
+    postLaborMiscSegmentStart,
+    postLaborMiscSegmentStop,
+    laborSegmentMatches,
+    laborMiscSegmentMatches
+} from './laborApi.js';
+
+/** Active WO + misc labor segments for workcenter / All Tasks UI (empty if not logged in or on error). */
+async function fetchLaborSegmentsForUi() {
+    let segments = [];
+    let miscSegments = [];
+    try {
+        if (window.BPERP?.users?.isLoggedIn?.()) {
+            const st = await getLaborStatus();
+            segments = st.activeSegments || [];
+            miscSegments = st.activeMiscSegments || [];
+        }
+    } catch (e) {
+        console.warn('Labor status:', e);
+    }
+    return { segments, miscSegments };
+}
 
 // ==================== WORKFLOW STEP CONFIGURATION ====================
 const WORKFLOW_STEPS = {
@@ -622,7 +647,7 @@ function showMachiningMachinePickerModal(onConfirm, onCancel) {
 
 // ==================== UNIFIED WORKFLOW VIEW RENDERER ====================
 // Updated to track individual parts/line items through workflow
-function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
+function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor, laborActiveSegments = []) {
     const container = DOMCache.get('dashboardContent');
     if (!container) return;
     
@@ -658,6 +683,9 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
         const step = item.currentStep;
         const isStarted = step.startedAt ? true : false;
         const hasIssue = step.hasIssue || false;
+        const hasActiveLabor = laborActiveSegments.some((s) =>
+            laborSegmentMatches(s, item.woId, step.stepKey, item.lineItemId)
+        );
         
         // Get document count for this WO
         const docCount = getWODocuments(item.woId).length;
@@ -715,10 +743,19 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor) {
                             class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs hover:bg-blue-700 flex-1 min-w-[120px]">
                             <i class="fa-solid fa-play mr-1"></i>Begin Process
                         </button>
-                    ` : `
+                    ` : hasActiveLabor ? `
+                        <button data-action="workflow-process-clock-out" ${dataAttrs} title="Stop time on this process (job stays here)"
+                            class="bg-amber-600 text-white px-3 py-1.5 rounded text-xs hover:bg-amber-700 flex-1 min-w-[100px]">
+                            <i class="fa-solid fa-stopwatch mr-1"></i>Clock Out
+                        </button>
                         <button data-action="workflow-complete" ${dataAttrs}
-                            class="bg-green-600 text-white px-3 py-1.5 rounded text-xs hover:bg-green-700 flex-1 min-w-[120px]">
+                            class="bg-green-600 text-white px-3 py-1.5 rounded text-xs hover:bg-green-700 flex-1 min-w-[100px]">
                             <i class="fa-solid fa-check mr-1"></i>Complete Process
+                        </button>
+                    ` : `
+                        <button data-action="workflow-resume" ${dataAttrs}
+                            class="bg-blue-600 text-white px-3 py-1.5 rounded text-xs hover:bg-blue-700 flex-1 min-w-[120px]">
+                            <i class="fa-solid fa-play mr-1"></i>Resume Process
                         </button>
                     `}
                     <button data-action="create-wo-task" ${dataAttrs}
@@ -962,16 +999,18 @@ export function loadAllTasks() {
     tasksState.isActive = true;
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
         const workOrders = getWorkOrders();
         tasksState.workOrders = workOrders;
-        renderAllTasksView(workOrders);
+        const { segments: laborActiveSegments, miscSegments: laborActiveMiscSegments } =
+            await fetchLaborSegmentsForUi();
+        renderAllTasksView(workOrders, laborActiveSegments, laborActiveMiscSegments);
     }, () => {
         showToast('Error loading tasks', 'error');
     }, 'loadAllTasks');
 }
 
-function renderAllTasksView(workOrders) {
+function renderAllTasksView(workOrders, laborActiveSegments = [], laborActiveMiscSegments = []) {
     const container = DOMCache.get('dashboardContent');
     if (!container) return;
 
@@ -1021,6 +1060,35 @@ function renderAllTasksView(workOrders) {
         const status = getWOWorkflowStatus(wo);
         const urgency = getWOUrgencyColor(wo.dueDate);
         const urgencyClass = urgency === 'red' ? 'text-red-500 font-bold' : urgency === 'yellow' ? 'text-yellow-500' : 'text-gray-400';
+        const isStarted = nextStep.startedAt ? true : false;
+        const hasActiveLabor = laborActiveSegments.some((s) =>
+            laborSegmentMatches(s, wo.id, nextStep.stepKey, lineItemId)
+        );
+
+        let actionRow = '';
+        if (!isStarted) {
+            actionRow = `
+                        <button data-action="workflow-start" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
+                            class="text-blue-500 hover:text-blue-400" title="Begin Process">
+                            <i class="fa-solid fa-play"></i>
+                        </button>`;
+        } else if (hasActiveLabor) {
+            actionRow = `
+                        <button data-action="workflow-process-clock-out" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
+                            class="text-amber-500 hover:text-amber-400" title="Process Clock Out">
+                            <i class="fa-solid fa-stopwatch"></i>
+                        </button>
+                        <button data-action="workflow-complete" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
+                            class="text-green-500 hover:text-green-400" title="Complete Step">
+                            <i class="fa-solid fa-check"></i>
+                        </button>`;
+        } else {
+            actionRow = `
+                        <button data-action="workflow-resume" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
+                            class="text-blue-500 hover:text-blue-400" title="Resume Process">
+                            <i class="fa-solid fa-play"></i>
+                        </button>`;
+        }
 
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-800">
@@ -1046,14 +1114,7 @@ function renderAllTasksView(workOrders) {
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex space-x-2">
-                        <button data-action="workflow-complete" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
-                            class="text-green-500 hover:text-green-400" title="Complete Step">
-                            <i class="fa-solid fa-check"></i>
-                        </button>
-                        <button data-action="workflow-start" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}" data-step-key="${escapeAttr(nextStep.stepKey)}"${itemAttr}
-                            class="text-blue-500 hover:text-blue-400" title="Start Step">
-                            <i class="fa-solid fa-play"></i>
-                        </button>
+                        ${actionRow}
                         <button data-action="workflow-issue" data-wo-id="${wo.id}" data-step-id="${nextStep.id}" data-step-name="${nextStep.stepName}"${itemAttr}
                             class="text-red-500 hover:text-red-400" title="Report Issue">
                             <i class="fa-solid fa-exclamation-triangle"></i>
@@ -1077,6 +1138,18 @@ function renderAllTasksView(workOrders) {
         const subLines = linkedRef
             ? `<div class="text-xs text-gray-400">${linkedRef}</div>${task.description ? `<div class="text-xs text-gray-500">${escapeAttr(task.description)}</div>` : ''}`
             : `<div class="text-xs text-gray-500">${task.description ? escapeAttr(task.description) : 'No description'}</div>`;
+        const hasActiveMiscLabor = laborActiveMiscSegments.some((m) =>
+            laborMiscSegmentMatches(m, task.id)
+        );
+        const laborBtn = hasActiveMiscLabor
+            ? `<button data-action="misc-labor-stop" data-task-id="${task.id}"
+                            class="text-amber-500 hover:text-amber-400" title="Stop labor timer">
+                            <i class="fa-solid fa-stopwatch"></i>
+                        </button>`
+            : `<button data-action="misc-labor-start" data-task-id="${task.id}" data-task-title="${escapeAttr(task.title)}"
+                            class="text-blue-500 hover:text-blue-400" title="Start labor timer">
+                            <i class="fa-solid fa-play"></i>
+                        </button>`;
 
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-800 bg-gray-800/30">
@@ -1099,6 +1172,7 @@ function renderAllTasksView(workOrders) {
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex space-x-2">
+                        ${laborBtn}
                         <button data-action="complete-misc-task" data-task-id="${task.id}"
                             class="text-green-500 hover:text-green-400" title="Mark Complete">
                             <i class="fa-solid fa-check"></i>
@@ -1421,14 +1495,16 @@ export function loadProgrammingTasks() {
     tasksState.isActive = true;
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
         const workOrders = getWorkOrders();
+        const { segments: laborActiveSegments } = await fetchLaborSegmentsForUi();
         renderWorkflowView(
-            workOrders, 
+            workOrders,
             ['part_programmed'],
             'Programming Tasks',
             'fa-code',
-            'text-pink-400'
+            'text-pink-400',
+            laborActiveSegments
         );
     }, null, 'loadProgrammingTasks');
 }
@@ -1440,14 +1516,16 @@ export function loadProcessingTasks() {
     tasksState.isActive = true;
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
         const workOrders = getWorkOrders();
+        const { segments: laborActiveSegments } = await fetchLaborSegmentsForUi();
         renderWorkflowView(
-            workOrders, 
+            workOrders,
             ['material_processed'],
             'Material Processing Tasks',
             'fa-cut',
-            'text-yellow-400'
+            'text-yellow-400',
+            laborActiveSegments
         );
     }, null, 'loadProcessingTasks');
 }
@@ -1459,14 +1537,16 @@ export function loadMachiningTasks() {
     tasksState.isActive = true;
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
         const workOrders = getWorkOrders();
+        const { segments: laborActiveSegments } = await fetchLaborSegmentsForUi();
         renderWorkflowView(
-            workOrders, 
+            workOrders,
             ['machining_complete'],
             'Machining Tasks',
             'fa-cogs',
-            'text-purple-400'
+            'text-purple-400',
+            laborActiveSegments
         );
     }, null, 'loadMachiningTasks');
 }
@@ -1478,14 +1558,16 @@ export function loadPostProcessingTasks() {
     tasksState.isActive = true;
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
         const workOrders = getWorkOrders();
+        const { segments: laborActiveSegments } = await fetchLaborSegmentsForUi();
         renderWorkflowView(
-            workOrders, 
+            workOrders,
             ['post_processing'],
             'Post Processing Tasks',
             'fa-industry',
-            'text-orange-400'
+            'text-orange-400',
+            laborActiveSegments
         );
     }, null, 'loadPostProcessingTasks');
 }
@@ -1497,14 +1579,16 @@ export function loadInspectionTasks() {
     tasksState.isActive = true;
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
         const workOrders = getWorkOrders();
+        const { segments: laborActiveSegments } = await fetchLaborSegmentsForUi();
         renderWorkflowView(
-            workOrders, 
+            workOrders,
             ['inspection_complete'],
             'Inspection Tasks',
             'fa-search-plus',
-            'text-cyan-400'
+            'text-cyan-400',
+            laborActiveSegments
         );
     }, null, 'loadInspectionTasks');
 }
@@ -1516,14 +1600,16 @@ export function loadShippingReceivingTasks() {
     tasksState.isActive = true;
     showLoadingSpinner();
 
-    safeExecute(() => {
+    safeExecute(async () => {
         const workOrders = getWorkOrders();
+        const { segments: laborActiveSegments } = await fetchLaborSegmentsForUi();
         renderWorkflowView(
             workOrders,
             ['ready_for_shipment'],
             'Shipping Tasks',
             'fa-truck',
-            'text-green-400'
+            'text-green-400',
+            laborActiveSegments
         );
     }, null, 'loadShippingReceivingTasks');
 }
@@ -1559,8 +1645,9 @@ function refreshCurrentView() {
 }
 
 // ==================== ACTION HANDLERS ====================
+
 export function registerActionHandlers(registerFn) {
-    // Begin Process - marks step as started (supports line items). "workflow-start" is an alias used on All Tasks rows.
+    // Begin Process - labor segment first, then checklist (supports line items). "workflow-start" is an alias used on All Tasks rows.
     const handleWorkflowBegin = (target) => {
         const woId = parseInt(target.dataset.woId, 10);
         const stepId = parseInt(target.dataset.stepId, 10);
@@ -1570,7 +1657,13 @@ export function registerActionHandlers(registerFn) {
             : null;
         const stepKeyFb = target.dataset.stepKey || resolveStepKeyForWoStep(woId, stepId);
 
-        const applyStart = (extra = {}) => {
+        const applyStart = async (extra = {}) => {
+            try {
+                await postLaborSegmentStart(woId, stepKeyFb, itemId);
+            } catch (e) {
+                showToast(e.message || 'Could not start labor timer', 'error');
+                return;
+            }
             updateChecklistStep(woId, stepId, {
                 startedAt: new Date().toISOString(),
                 startedByName: 'Current User',
@@ -1585,7 +1678,7 @@ export function registerActionHandlers(registerFn) {
 
         if (stepKeyFb === 'machining_complete') {
             showMachiningMachinePickerModal((machineId, machineName) => {
-                applyStart({
+                void applyStart({
                     machiningMachineId: machineId != null ? machineId : null,
                     machiningMachineName: machineName || ''
                 });
@@ -1593,12 +1686,48 @@ export function registerActionHandlers(registerFn) {
             return;
         }
 
-        applyStart();
+        void applyStart();
     };
     registerFn('workflow-begin', handleWorkflowBegin);
     registerFn('workflow-start', handleWorkflowBegin);
-    
-    // Complete Process - marks step as completed (supports line items)
+
+    registerFn('workflow-resume', (target) => {
+        const woId = parseInt(target.dataset.woId, 10);
+        const stepId = parseInt(target.dataset.stepId, 10);
+        const itemId = target.dataset.itemId !== undefined && target.dataset.itemId !== ''
+            ? parseInt(target.dataset.itemId, 10)
+            : null;
+        const stepKeyFb = target.dataset.stepKey || resolveStepKeyForWoStep(woId, stepId);
+        void (async () => {
+            try {
+                await postLaborSegmentStart(woId, stepKeyFb, itemId);
+                showToast('Process resumed — timer running', 'info');
+                refreshCurrentView();
+            } catch (e) {
+                showToast(e.message || 'Could not resume labor timer', 'error');
+            }
+        })();
+    });
+
+    registerFn('workflow-process-clock-out', (target) => {
+        const woId = parseInt(target.dataset.woId, 10);
+        const stepId = parseInt(target.dataset.stepId, 10);
+        const itemId = target.dataset.itemId !== undefined && target.dataset.itemId !== ''
+            ? parseInt(target.dataset.itemId, 10)
+            : null;
+        const stepKeyFb = target.dataset.stepKey || resolveStepKeyForWoStep(woId, stepId);
+        void (async () => {
+            try {
+                await postLaborSegmentStop(woId, stepKeyFb, itemId);
+                showToast('Timer stopped for this process', 'info');
+                refreshCurrentView();
+            } catch (e) {
+                showToast(e.message || 'Could not stop labor timer', 'error');
+            }
+        })();
+    });
+
+    // Complete Process - stop labor segment then complete step (supports line items)
     registerFn('workflow-complete', (target) => {
         const woId = parseInt(target.dataset.woId, 10);
         const stepId = parseInt(target.dataset.stepId, 10);
@@ -1608,21 +1737,30 @@ export function registerActionHandlers(registerFn) {
             : null;
         const stepKeyFb = target.dataset.stepKey || resolveStepKeyForWoStep(woId, stepId);
 
-        const updates = {
-            isCompleted: true,
-            inProgress: false,
-            completedAt: new Date().toISOString(),
-            completedByName: 'Current User'
-        };
-        if (stepKeyFb === 'machining_complete') {
-            updates.machiningMachineId = null;
-            updates.machiningMachineName = null;
-        }
-        updateChecklistStep(woId, stepId, updates, itemId, stepKeyFb);
-        
-        const partInfo = target.dataset.itemId ? ` (Part ID: ${target.dataset.itemId})` : '';
-        showToast(`Completed: ${stepName}${partInfo}`, 'success');
-        refreshCurrentView();
+        void (async () => {
+            try {
+                await postLaborSegmentStop(woId, stepKeyFb, itemId);
+            } catch (e) {
+                showToast(e.message || 'Could not stop labor timer', 'error');
+                return;
+            }
+
+            const updates = {
+                isCompleted: true,
+                inProgress: false,
+                completedAt: new Date().toISOString(),
+                completedByName: 'Current User'
+            };
+            if (stepKeyFb === 'machining_complete') {
+                updates.machiningMachineId = null;
+                updates.machiningMachineName = null;
+            }
+            updateChecklistStep(woId, stepId, updates, itemId, stepKeyFb);
+
+            const partInfo = target.dataset.itemId ? ` (Part ID: ${target.dataset.itemId})` : '';
+            showToast(`Completed: ${stepName}${partInfo}`, 'success');
+            refreshCurrentView();
+        })();
     });
     
     registerFn('workflow-rollback', (target) => {
@@ -1724,6 +1862,33 @@ export function registerActionHandlers(registerFn) {
     
     registerFn('complete-misc-task', (target) => {
         completeMiscTask(target.dataset.taskId);
+    });
+
+    registerFn('misc-labor-start', (target) => {
+        const taskId = target.dataset.taskId;
+        const taskTitle = target.dataset.taskTitle || '';
+        void (async () => {
+            try {
+                await postLaborMiscSegmentStart(taskId, taskTitle);
+                showToast('Misc task timer started', 'info');
+                refreshCurrentView();
+            } catch (e) {
+                showToast(e.message || 'Could not start labor timer', 'error');
+            }
+        })();
+    });
+
+    registerFn('misc-labor-stop', (target) => {
+        const taskId = target.dataset.taskId;
+        void (async () => {
+            try {
+                await postLaborMiscSegmentStop(taskId);
+                showToast('Misc task timer stopped', 'info');
+                refreshCurrentView();
+            } catch (e) {
+                showToast(e.message || 'Could not stop labor timer', 'error');
+            }
+        })();
     });
     
     registerFn('edit-misc-task', (target) => {

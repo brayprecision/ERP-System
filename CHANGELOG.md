@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Labor — misc task timers** — **All Tasks** misc rows: **Start** / **Stop** labor tied to the task id (same shift rules as WO: one active timer; switching stops the other). SQLite table `labor_misc_task_segments`; API `POST /api/labor/misc-segment/start|stop`, `activeMiscSegments` on status, `miscSegments` on history, `currentMiscSegment` on presence. **Time Tracking** expanded days include a misc-task table; **Dashboard** “On the floor” shows misc title when no WO segment. Offline: `bperp_labor_local` stores `miscSegments` (schema v2).
+
+- **Time Tracking — edit shop shift** — In each expanded **Shop shift — clock in / clock out** table, **Edit** opens a modal to correct times (datetime-local). **Operators** may edit their own shifts only; **Administrators** and **Machinists** may edit anyone visible on the list. **PATCH `/api/labor/shift/:id`** with a server session; **`laborLocal.updateShiftTimes`** when offline. Closing an open shift from the editor ends open WO segments on that shift at the new clock-out time; WO rows are not otherwise auto-adjusted.
+
+- **Tasks — Shop shift bar** — A **Shop shift** bar appears above the main content on any **Tasks** route (`tasks-*`) and on **Work In Progress** (`workcenter-wip`), with the same **Clock In / Clock Out** control and hints as the sidebar time clock.
+
+- **Time clock — shift hints** — When **on shift**, the hint shows **On shift · since …** (with time). When **not on shift**, it shows **Last clock out: …** or **Last clock in: …** (or **No shifts recorded yet**), from recent history (`getLaborShiftSummary` / `laborLocal.getLastShiftSummary`).
+
+- **Electron — no auto clock-out on quit** — Closing the main window no longer runs labor clock-out or waits on the renderer; **open shifts stay open** so time is not ended just because the app closes (e.g. while developing). Legacy IPC `labor-clock-out-done` remains a no-op in main.
+
+- **Dashboard — On the floor** — Card above **Quick Actions** lists users currently on shop shift, shift start time, and active WO process step (or no job timer). Uses **`GET /api/labor/presence`** with a server session, or **`laborLocal.getShopPresence()`** when offline. Refreshes on the same interval as other auto-refresh (30s). Operators see themselves only; Administrators and Machinists see everyone on shift.
+
+- **Time Tracking — shift times** — Each day’s expanded history includes a **Shop shift — clock in / clock out** table so saved shift start/end times are explicit (open shifts show “On shift” for clock out).
+
+- **Docs** — [`docs/FUTURE-LABOR-EXPANSION.md`](docs/FUTURE-LABOR-EXPANSION.md) outlines future **quoting** and **product design** time tracking (not implemented).
+
+- **Labor — localStorage when no server session** — If the auth token is `offline_token_*` (demo/offline login), shifts and WO segments are stored in **`bperp_labor_local`** with the same shapes as `/api/labor/*`. **Time clock**, **Time Tracking**, and workcenter process timers use the same code paths as online mode. Included in client-side backup/restore. No automatic sync to SQLite when the user later signs in with a real session.
+
+- **Labor / time tracking** — SQLite tables `labor_shifts` and `labor_work_order_segments`; REST `/api/labor/*` (shift clock-in/out, segment start/stop with auto shift, history, team list). Sidebar **Time clock**; **Tasks → Time Tracking** (expandable user cards, last 30 days). Workcenter **Begin Process** starts a segment before updating the checklist; **Clock Out** / **Complete Process** stop the segment; **Resume Process** after a process clock-out. **Administrator** and **Machinist** see all users on Time Tracking; **Operator** sees self only. With a real JWT, labor persists to SQLite; 401 messages clarify invalid session.
+
 - **Tasks — Machining + Machines** — Starting **Machining** (Begin) opens a prompt to choose the **machine profile** (or enter a name if none exist). That choice is stored on the step and drives **Machines** → each profile’s expanded view: **Current jobs (machining)** lists work orders with that step in progress on that machine (above **Maintenance**).
 
 - **Tasks — Rollback step** — **Rollback step** (light purple) appears above **Issue** on each workflow workcenter card and on **Ordering** (next to cert / New Task). It clears **Begin** / in-progress on the current step when set, otherwise un-completes the latest completed checklist step for that part (or the resolved line on multi-part WOs).

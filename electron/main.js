@@ -78,6 +78,8 @@ let setupWindow = null;
 let backendProcess = null;
 let tray = null;
 let isQuitting = false;
+/** When false, next main window `close` completes the quit (no labor clock-out on exit — shift stays open). */
+let allowMainWindowClose = false;
 
 /** Base window title from renderer `document.title` (shop branding); we append version and mode. */
 let lastRendererDocumentTitle = 'BPERP';
@@ -220,6 +222,7 @@ function applyMainWindowTitle() {
 
 // ==================== MAIN WINDOW ====================
 function createMainWindow() {
+    allowMainWindowClose = false;
     const windowConfig = store.get('window');
     
     mainWindow = new BrowserWindow({
@@ -292,10 +295,18 @@ function createMainWindow() {
         store.set('window.maximized', false);
     });
 
-    // Handle close - quit the app completely
-    mainWindow.on('close', () => {
+    // Close immediately — do not auto clock-out on quit (users may leave the app open while developing).
+    mainWindow.on('close', (e) => {
+        if (allowMainWindowClose) {
+            isQuitting = true;
+            return;
+        }
+        e.preventDefault();
+        allowMainWindowClose = true;
         isQuitting = true;
-        app.quit();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.close();
+        }
     });
 
     mainWindow.on('closed', () => {
@@ -422,39 +433,73 @@ function startBackend() {
         });
         
         let started = false;
+        let startupSettled = false;
+
+        function failStartup(message) {
+            if (startupSettled) return;
+            startupSettled = true;
+            clearTimeout(timeout);
+            log('error', message);
+            reject(new Error(message));
+        }
+
         const timeout = setTimeout(() => {
             if (!started) {
-                log('error', 'Backend startup timeout');
-                reject(new Error('Backend startup timeout'));
+                failStartup(
+                    'Backend startup timeout (no "Server running" on stdout). ' +
+                    'If the log shows better-sqlite3 / NODE_MODULE_VERSION, run from repo root: npm run rebuild:backend'
+                );
             }
         }, 30000);
-        
+
         backendProcess.stdout.on('data', (data) => {
             const output = data.toString();
             log('backend', output.trim());
-            
+
             if (output.includes('Server running') || output.includes('listening')) {
                 started = true;
+                startupSettled = true;
                 clearTimeout(timeout);
                 log('info', 'Backend server started successfully');
                 resolve();
             }
         });
-        
+
         backendProcess.stderr.on('data', (data) => {
-            log('backend-error', data.toString().trim());
+            const text = data.toString();
+            log('backend-error', text.trim());
+            // Fail fast: migration or native module errors never reach stdout
+            if (
+                !started &&
+                (text.includes('ERR_DLOPEN_FAILED') ||
+                    text.includes('NODE_MODULE_VERSION') ||
+                    text.includes('Migrations failed') ||
+                    text.includes('better_sqlite3'))
+            ) {
+                failStartup(
+                    'Backend failed to start (native SQLite module or migration). ' +
+                    'Rebuild for Electron: from repo root run npm run rebuild:backend, then npm start.'
+                );
+            }
         });
-        
+
         backendProcess.on('error', (error) => {
             log('error', 'Backend process error:', error.message);
-            clearTimeout(timeout);
-            reject(error);
+            failStartup(error.message);
         });
-        
+
         backendProcess.on('exit', (code) => {
             log('info', `Backend process exited with code: ${code}`);
             backendProcess = null;
-            
+
+            if (!started && code !== 0) {
+                failStartup(
+                    `Backend exited with code ${code} before listening. ` +
+                    'If you use npm install in backend/ with system Node, run: npm run rebuild:backend (repo root) so better-sqlite3 matches Electron.'
+                );
+                return;
+            }
+
             // Restart if unexpected exit and not quitting
             if (code !== 0 && !isQuitting && mainWindow) {
                 log('info', 'Attempting to restart backend...');
@@ -717,6 +762,9 @@ function setupIpcHandlers() {
         isQuitting = true;
         app.quit();
     });
+
+    /** Legacy: auto clock-out on quit is disabled; kept for older renderers that still invoke it. */
+    ipcMain.handle('labor-clock-out-done', () => true);
     
     ipcMain.handle('minimize-app', () => {
         if (mainWindow) mainWindow.minimize();
