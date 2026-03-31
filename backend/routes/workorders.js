@@ -14,8 +14,8 @@ const validateWorkOrder = (data, isUpdate = false) => {
         if (!data.partNumber || data.partNumber.trim().length === 0) {
             errors.push({ field: 'partNumber', message: 'Part number is required' });
         }
-        if (!data.quantity || data.quantity < 1) {
-            errors.push({ field: 'quantity', message: 'Quantity must be at least 1' });
+        if (data.quantity == null || Number(data.quantity) <= 0) {
+            errors.push({ field: 'quantity', message: 'Quantity must be positive' });
         }
         if (!data.dueDate) {
             errors.push({ field: 'dueDate', message: 'Due date is required' });
@@ -115,17 +115,27 @@ const transformWorkOrder = (row) => {
     };
 };
 
+const parseStepData = (raw) => {
+    if (raw == null || raw === '') return {};
+    if (typeof raw === 'object') return raw;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return {};
+    }
+};
+
 const transformChecklistItem = (row) => ({
     id: row.id,
     workOrderId: row.work_order_id,
     stepOrder: row.step_order,
     stepName: row.step_name,
     stepKey: row.step_key,
-    isCompleted: row.is_completed,
+    isCompleted: !!row.is_completed,
     completedAt: row.completed_at,
     completedBy: row.completed_by,
     completedByName: row.completed_by_name,
-    stepData: row.step_data || {},
+    stepData: parseStepData(row.step_data),
     dateValue: row.date_value,
     referenceNumber: row.reference_number,
     vendorSupplier: row.vendor_supplier,
@@ -134,6 +144,31 @@ const transformChecklistItem = (row) => ({
     createdAt: row.created_at,
     updatedAt: row.updated_at
 });
+
+/** Default WIP checklist rows (matches frontend getDefaultChecklist). */
+const DEFAULT_WO_CHECKLIST_TEMPLATE = [
+    { order: 1, key: 'part_programmed', name: 'Part Programmed' },
+    { order: 2, key: 'material_ordered', name: 'Material Ordered' },
+    { order: 3, key: 'tooling_ordered', name: 'Tooling Ordered' },
+    { order: 4, key: 'material_received', name: 'Material Received' },
+    { order: 5, key: 'tooling_received', name: 'Tooling Received' },
+    { order: 6, key: 'material_processed', name: 'Material Sawn/Processed' },
+    { order: 7, key: 'machining_complete', name: 'Machining Complete' },
+    { order: 8, key: 'post_processing', name: 'Post Processing Complete' },
+    { order: 9, key: 'inspection_complete', name: 'Inspection Complete' },
+    { order: 10, key: 'ready_for_shipment', name: 'Ready For Shipment' },
+    { order: 11, key: 'invoicing_complete', name: 'Invoicing Complete' }
+];
+
+async function seedDefaultWorkOrderChecklist(pool, workOrderId) {
+    for (const row of DEFAULT_WO_CHECKLIST_TEMPLATE) {
+        await pool.query(
+            `INSERT INTO wo_checklist (work_order_id, step_number, step_order, step_name, step_key, is_completed)
+             VALUES ($1, $2, $3, $4, $5, 0)`,
+            [workOrderId, row.order, row.order, row.name, row.key]
+        );
+    }
+}
 
 module.exports = (pool) => {
     const { requireAuth } = require('../middleware/auth')(pool);
@@ -173,9 +208,10 @@ module.exports = (pool) => {
             
             if (status) {
                 const statuses = Array.isArray(status) ? status : [status];
-                query += ` AND wo.status = ANY($${paramIndex}::text[])`;
-                params.push(statuses);
-                paramIndex++;
+                const ph = statuses.map((_, i) => `$${paramIndex + i}`).join(', ');
+                query += ` AND wo.status IN (${ph})`;
+                statuses.forEach((s) => params.push(s));
+                paramIndex += statuses.length;
             }
             
             if (dueDateFrom) {
@@ -191,11 +227,11 @@ module.exports = (pool) => {
             }
             
             if (isOverdue === 'true') {
-                query += ` AND wo.due_date < CURRENT_DATE AND wo.status NOT IN ('Complete', 'Shipped', 'Cancelled')`;
+                query += ` AND wo.due_date < date('now') AND wo.status NOT IN ('Complete', 'Shipped', 'Cancelled')`;
             }
             
-            // Count
-            const countQuery = query.replace(/SELECT wo\.\*.*?FROM work_orders wo/, 'SELECT COUNT(*) FROM work_orders wo');
+            // Count (preserve JOINs)
+            const countQuery = `SELECT COUNT(*) as count ${query.substring(query.indexOf('FROM work_orders wo'))}`;
             const countResult = await pool.query(countQuery, params);
             const total = parseInt(countResult.rows[0].count);
             
@@ -219,10 +255,24 @@ module.exports = (pool) => {
             params.push(parseInt(limit), offset);
             
             const result = await pool.query(query, params);
-            
+            const expandChecklist = req.query.expand === 'checklist';
+
+            const data = [];
+            for (const row of result.rows) {
+                const wo = transformWorkOrder(row);
+                if (expandChecklist) {
+                    const chk = await pool.query(
+                        'SELECT * FROM wo_checklist WHERE work_order_id = $1 ORDER BY step_order ASC',
+                        [wo.id]
+                    );
+                    wo.checklist = chk.rows.map(transformChecklistItem);
+                }
+                data.push(wo);
+            }
+
             res.json({
                 success: true,
-                data: result.rows.map(transformWorkOrder),
+                data,
                 pagination: {
                     page: parseInt(page),
                     limit: parseInt(limit),
@@ -241,25 +291,32 @@ module.exports = (pool) => {
         try {
             const result = await pool.query(`
                 SELECT wo.*, c.name as customer_name,
-                    (SELECT COUNT(*) FROM wo_checklist WHERE work_order_id = wo.id AND is_completed = TRUE) as completed_steps,
+                    (SELECT COUNT(*) FROM wo_checklist WHERE work_order_id = wo.id AND is_completed = 1) as completed_steps,
                     (SELECT COUNT(*) FROM wo_checklist WHERE work_order_id = wo.id) as total_steps
                 FROM work_orders wo
                 LEFT JOIN customers c ON wo.customer_id = c.id
                 WHERE wo.status IN ('Open', 'In Progress', 'On Hold') AND wo.deleted_at IS NULL
                 ORDER BY 
                     CASE 
-                        WHEN wo.due_date < CURRENT_DATE THEN 0
-                        WHEN wo.due_date <= CURRENT_DATE + INTERVAL '3 days' THEN 1
+                        WHEN wo.due_date < date('now') THEN 0
+                        WHEN wo.due_date <= date('now', '+3 days') THEN 1
                         ELSE 2
                     END,
                     wo.due_date ASC NULLS LAST
             `);
             
-            const workOrders = result.rows.map(row => ({
-                ...transformWorkOrder(row),
-                completedSteps: parseInt(row.completed_steps),
-                totalSteps: parseInt(row.total_steps)
-            }));
+            const workOrders = [];
+            for (const row of result.rows) {
+                const wo = transformWorkOrder(row);
+                wo.completedSteps = parseInt(row.completed_steps, 10);
+                wo.totalSteps = parseInt(row.total_steps, 10);
+                const chk = await pool.query(
+                    'SELECT * FROM wo_checklist WHERE work_order_id = $1 ORDER BY step_order ASC',
+                    [wo.id]
+                );
+                wo.checklist = chk.rows.map(transformChecklistItem);
+                workOrders.push(wo);
+            }
             
             sendSuccess(res, workOrders);
         } catch (err) {
@@ -326,17 +383,17 @@ module.exports = (pool) => {
             const result = await pool.query(`
                 INSERT INTO work_orders (wo_number, customer_id, quote_id, quote_item_id, part_number,
                     revision, description, quantity, unit, material, due_date, priority, customer_po,
-                    quoted_price, notes, internal_notes)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    quoted_price, notes, internal_notes, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'Open')
                 RETURNING *
             `, [
                 woNumber, customerId, quoteId, quoteItemId, partNumber, revision, description,
                 quantity, unit || 'EA', material, dueDate, priority || 'Normal', customerPo,
                 quotedPrice, notes, internalNotes
             ]);
-            
-            // Note: The trigger will auto-create the checklist items
-            
+
+            await seedDefaultWorkOrderChecklist(pool, result.rows[0].id);
+
             // Get the full work order with checklist
             const fullResult = await pool.query(`
                 SELECT wo.*, c.name as customer_name
@@ -488,30 +545,31 @@ module.exports = (pool) => {
                 console.log(`Checklist item ${itemId} being unchecked - would require supervisor permission`);
             }
             
-            // Merge step data
-            const newStepData = {
-                ...(current.step_data || {}),
+            // Merge step data (DB may store JSON string)
+            const mergedStepData = {
+                ...parseStepData(current.step_data),
                 ...(stepData || {})
             };
-            
-            // Update item
+            const stepDataJson = JSON.stringify(mergedStepData);
+            const icParam = isCompleted === undefined ? null : (isCompleted ? 1 : 0);
+
             const result = await pool.query(`
                 UPDATE wo_checklist SET 
                     is_completed = COALESCE($1, is_completed),
-                    completed_at = CASE WHEN $1 = TRUE AND is_completed = FALSE THEN NOW() ELSE completed_at END,
-                    completed_by_name = CASE WHEN $1 = TRUE THEN $2 ELSE completed_by_name END,
+                    completed_at = CASE WHEN $1 = 1 AND is_completed = 0 THEN datetime('now') ELSE completed_at END,
+                    completed_by_name = CASE WHEN $1 = 1 THEN $2 ELSE completed_by_name END,
                     date_value = COALESCE($3, date_value),
                     reference_number = COALESCE($4, reference_number),
                     vendor_supplier = COALESCE($5, vendor_supplier),
                     operator_name = COALESCE($6, operator_name),
                     notes = COALESCE($7, notes),
                     step_data = $8,
-                    updated_at = NOW()
+                    updated_at = datetime('now')
                 WHERE id = $9
                 RETURNING *
             `, [
-                isCompleted, userName || 'System', dateValue, referenceNumber, 
-                vendorSupplier, operatorName, notes, newStepData, itemId
+                icParam, userName || 'System', dateValue, referenceNumber,
+                vendorSupplier, operatorName, notes, stepDataJson, itemId
             ]);
             
             // Log to audit trail
@@ -529,7 +587,7 @@ module.exports = (pool) => {
             // Update work order completion percentage and status
             const completionResult = await pool.query(`
                 SELECT 
-                    COUNT(*) FILTER (WHERE is_completed = TRUE) as completed,
+                    COUNT(*) FILTER (WHERE is_completed = 1) as completed,
                     COUNT(*) as total
                 FROM wo_checklist WHERE work_order_id = $1
             `, [woId]);
@@ -655,9 +713,9 @@ module.exports = (pool) => {
             const stats = await pool.query(`
                 SELECT 
                     COUNT(*) FILTER (WHERE status IN ('Open', 'In Progress', 'On Hold')) as active_count,
-                    COUNT(*) FILTER (WHERE status IN ('Open', 'In Progress') AND due_date < CURRENT_DATE) as overdue_count,
-                    COUNT(*) FILTER (WHERE status = 'Complete' AND DATE_TRUNC('month', completed_date) = DATE_TRUNC('month', CURRENT_DATE)) as completed_this_month,
-                    COUNT(*) FILTER (WHERE due_date <= CURRENT_DATE + INTERVAL '3 days' AND due_date >= CURRENT_DATE AND status NOT IN ('Complete', 'Shipped', 'Cancelled')) as due_soon
+                    COUNT(*) FILTER (WHERE status IN ('Open', 'In Progress') AND due_date < date('now')) as overdue_count,
+                    COUNT(*) FILTER (WHERE status = 'Complete' AND strftime('%Y-%m', completed_date) = strftime('%Y-%m', 'now')) as completed_this_month,
+                    COUNT(*) FILTER (WHERE due_date <= date('now', '+3 days') AND due_date >= date('now') AND status NOT IN ('Complete', 'Shipped', 'Cancelled')) as due_soon
                 FROM work_orders
                 WHERE deleted_at IS NULL
             `);

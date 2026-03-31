@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Settings → Archive** — Single place under Settings for **Archived quotes**, **Archived work**, and **Archived customers**. Sales sidebar no longer lists archived quotes/work. **Delete customer** from the active list soft-deletes (API already did); archived customers appear in Archive. **Permanent delete** (administrators only, double confirmation) via `DELETE /api/customers/:id/permanent` or offline localStorage.
+
+### Documentation
+
+- **Electron native modules** — README (`Native modules (Electron vs system Node)`), `backend/README.md`, and `.cursor/rules/bperp-reference.mdc` explain why `better-sqlite3` / `bcrypt` hit `NODE_MODULE_VERSION` / `ERR_DLOPEN_FAILED` under Electron, when to run `npm run rebuild:backend` from the repo root, and that root `postinstall` does not replace that step for `backend/` installs.
+
+### Changed
+
+- **Sales — API-backed when signed in** — Customers, quotes, and work orders load and mutate via `/api/customers`, `/api/quotes`, `/api/work-orders` (Bearer token). Offline/demo login still uses localStorage demo data for those entities. Checklist step completion calls `PUT /api/work-orders/:woId/checklist/:itemId` and refreshes from the server.
+- **SQLite — sales schema alignment** — Migration `20260401_000000_sales_api_schema_alignment.js` adds columns expected by sales routes (customers address fields, quotes header fields, `quote_items` extras, `work_orders` part fields, `wo_checklist` step metadata, etc.).
+- **SQLite SQL** — `db.js` translates `CURRENT_DATE` and `date('now') + INTERVAL 'N days'`; list routes use `IN (...)` instead of PostgreSQL `ANY($1::text[])`. Work order stats and WIP queries use SQLite-friendly date functions.
+- **Quotes / work orders** — Zod and inline validators allow **positive decimal** quantities (not only integers). `GET /quotes` supports `expand=items`; `GET /work-orders` supports `expand=checklist`. New work orders **seed default checklist** rows on create.
+
+### Added
+
 - **Labor — misc task timers** — **All Tasks** misc rows: **Start** / **Stop** labor tied to the task id (same shift rules as WO: one active timer; switching stops the other). SQLite table `labor_misc_task_segments`; API `POST /api/labor/misc-segment/start|stop`, `activeMiscSegments` on status, `miscSegments` on history, `currentMiscSegment` on presence. **Time Tracking** expanded days include a misc-task table; **Dashboard** “On the floor” shows misc title when no WO segment. Offline: `bperp_labor_local` stores `miscSegments` (schema v2).
 
 - **Time Tracking — edit shop shift** — In each expanded **Shop shift — clock in / clock out** table, **Edit** opens a modal to correct times (datetime-local). **Operators** may edit their own shifts only; **Administrators** and **Machinists** may edit anyone visible on the list. **PATCH `/api/labor/shift/:id`** with a server session; **`laborLocal.updateShiftTimes`** when offline. Closing an open shift from the editor ends open WO segments on that shift at the new clock-out time; WO rows are not otherwise auto-adjusted.

@@ -79,6 +79,19 @@ function translateSql(sql, pgParams = []) {
     // Remove PostgreSQL type casts (::text, ::float, ::jsonb, etc.)
     translated = translated.replace(/::\w+/g, '');
 
+    // CURRENT_DATE → SQLite date
+    translated = translated.replace(/\bCURRENT_DATE\b/gi, "date('now')");
+
+    // CURRENT_DATE + INTERVAL 'N days' (common in route filters)
+    translated = translated.replace(
+        /date\('now'\)\s*\+\s*INTERVAL\s+'(\d+)\s+days'/gi,
+        "date('now', '+$1 days')"
+    );
+    translated = translated.replace(
+        /CURRENT_DATE\s*\+\s*INTERVAL\s+'(\d+)\s+days'/gi,
+        "date('now', '+$1 days')"
+    );
+
     // Remove CASCADE from DROP TABLE/INDEX/VIEW (not supported in SQLite)
     // But preserve "ON DELETE CASCADE" and "ON UPDATE CASCADE" in FK definitions
     translated = translated.replace(

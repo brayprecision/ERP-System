@@ -4,7 +4,11 @@ Express.js API server for the BPERP ERP system. It can run **on the NAS** (or an
 
 **NAS deployment:** see `docs/NAS-SETUP.md`.
 
-**Electron:** Native modules must match Electron’s embedded Node. From the **repository root**, run `npm run rebuild:backend` (see `scripts/rebuild-backend-native.js`). After `npm install` in `backend/`, run that again before `npm start` at the root.
+**Electron:** Native modules (`better-sqlite3`, `bcrypt`) must match **Electron’s embedded Node ABI**, not your system `node`. If `npm install` ran inside `backend/`, npm built or unpacked binaries for **system Node**; Electron’s forked backend uses **Electron’s Node**, so `NODE_MODULE_VERSION` mismatches (e.g. `ERR_DLOPEN_FAILED` / `better_sqlite3.node` “compiled against a different Node.js version”) are **normal** until you rebuild for Electron.
+
+**Always** from the **repository root**, after `npm install` (or `npm ci`) in `backend/`: run **`npm run rebuild:backend`** (see `scripts/rebuild-backend-native.js`). Then **`npm start`** at the root. Root `postinstall` (`electron-builder install-app-deps`) does **not** substitute for this for `backend/node_modules`.
+
+If **`cd backend && npm run dev`** breaks after `rebuild:backend`, run **`npm rebuild better-sqlite3 bcrypt`** in `backend/` to restore system-Node binaries.
 
 **Packaging (repo root):** `npm run build:win`, `build:linux`, and `pack:win` use **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` here) so the copied `resources/backend` tree omits Jest, nodemon, TypeScript, etc. After running those, run **`npm run backend:install`** from the repo root if you need dev dependencies in `backend/` again for tests or `npm run dev`.
 
@@ -158,12 +162,14 @@ All other endpoints require `Authorization: Bearer <token>` header.
 ### Customers
 
 ```
-GET    /api/customers           # List customers
-GET    /api/customers/:id       # Get customer
-POST   /api/customers           # Create customer
-PUT    /api/customers/:id       # Update customer
-DELETE /api/customers/:id       # Soft delete customer
-GET    /api/customers/:id/contacts  # Get customer contacts
+GET    /api/customers                # List customers (active only)
+GET    /api/customers/archived       # List soft-deleted customers (archive)
+GET    /api/customers/:id            # Get customer
+POST   /api/customers                # Create customer
+PUT    /api/customers/:id            # Update customer
+DELETE /api/customers/:id            # Soft delete (archive) customer
+DELETE /api/customers/:id/permanent # Permanently delete archived customer (Administrator only)
+GET    /api/customers/:id/contacts    # Get customer contacts
 ```
 
 ### Inventory

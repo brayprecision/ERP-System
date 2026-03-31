@@ -236,7 +236,7 @@ const quoteSchema = z.object({
         partNumber: z.string().min(1, 'Part number is required').max(100),
         revision: z.string().max(50).optional().nullable(),
         description: z.string().max(1000).optional().nullable(),
-        quantity: z.coerce.number().int().positive(),
+        quantity: z.coerce.number().min(0.0001, 'Quantity must be positive'),
         unit: z.string().max(20).optional(),
         material: z.string().max(200).optional().nullable(),
         materialCost: z.number().min(0).optional(),
@@ -255,8 +255,7 @@ const quoteItemSchema = z.object({
     revision: z.string().max(50).optional().nullable(),
     description: z.string().max(1000).optional().nullable(),
     quantity: z.coerce.number()
-        .int('Quantity must be an integer')
-        .positive('Quantity must be at least 1'),
+        .min(0.0001, 'Quantity must be positive'),
     unit: z.string().max(20).optional(),
     material: z.string().max(200).optional().nullable(),
     materialCost: z.number().min(0).optional(),
@@ -282,8 +281,7 @@ const workOrderSchema = z.object({
     revision: z.string().max(50).optional().nullable(),
     description: z.string().max(1000).optional().nullable(),
     quantity: z.coerce.number()
-        .int('Quantity must be an integer')
-        .positive('Quantity must be at least 1'),
+        .min(0.0001, 'Quantity must be positive'),
     unit: z.string().max(20).optional(),
     material: z.string().max(200).optional().nullable(),
     dueDate: z.string().min(1, 'Due date is required'),

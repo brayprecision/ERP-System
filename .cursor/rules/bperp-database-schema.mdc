@@ -33,11 +33,11 @@ When you add or rename tables, update this file, `README.md`, `backend/README.md
 | Table | Purpose |
 |-------|---------|
 | `customers` | Customer records |
-| `customer_contacts` | Contacts per customer |
+| `contacts` | Contacts per customer |
 | `quotes` | Quote header + status workflow |
 | `quote_items` | Quote line items |
-| `work_orders` | Jobs from won quotes |
-| `work_order_parts` | Parts on work orders |
+| `work_orders` | Work orders (part fields on row; UI may show synthetic line items) |
+| `wo_checklist` | Workflow checklist steps per work order |
 
 ## Production tables
 

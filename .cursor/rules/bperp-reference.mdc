@@ -24,12 +24,16 @@ alwaysApply: true
 | Build config | `package.json` (build section) |
 | Cursor rules | `.cursor/rules/*.mdc` |
 
+## Electron vs system Node (better-sqlite3, bcrypt)
+
+Native addons in `backend/node_modules` target **one** ABI. **`npm install` in `backend/`** typically builds for **system** `node`. **`npm start`** runs the backend under **Electron’s embedded Node** — different `NODE_MODULE_VERSION`. If you see `ERR_DLOPEN_FAILED` / `better_sqlite3.node` / ABI mismatch at Electron startup, run **`npm run rebuild:backend`** from the **repo root** after any backend dependency install (see `scripts/rebuild-backend-native.js`). After `rebuild:backend`, `cd backend && npm run dev` may need `npm rebuild better-sqlite3 bcrypt` for system Node again.
+
 ## Common commands
 
 ```bash
 # Development
 cd backend && npm run dev          # Backend with nodemon (system Node)
-npm run rebuild:backend            # Repo root: native modules for Electron
+npm run rebuild:backend            # Repo root: native modules for Electron (required after backend npm install)
 npm start                          # Electron (forks backend; run rebuild:backend after backend npm install)
 
 # Testing

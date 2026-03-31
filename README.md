@@ -12,7 +12,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 - **Task Management** — Workflow tabs mirror WIP checklists (localStorage + work orders). **All Tasks**, workflow tabs, **Ordering**, and **Completed Work** use inventory-style **search, status filter, sort, Asc/Desc, Clear**. **Misc tasks** can be **recurring** (weekly or monthly Nth weekday); complete sets the next due date. *(The Tasks UI does not use `/api/tasks` yet.)*
 - **Labor / time tracking** — Sidebar **Time clock** and a **Shop shift** bar above the main area on **Tasks** screens and **Work In Progress** (same clock in/out as the sidebar). **Tasks → Time Tracking** shows per-user history, including **clock in / clock out** per shop shift, with **Edit** to manually correct shift times (role-based), plus **work order process segments** and **misc task** labor rows. The clock shows **on shift · since …** when clocked in, or **last clock out / last clock in** when not. **Dashboard** shows **On the floor**: who is clocked in and their current WO step, **misc task** title when timing a misc task, or “no job timer”. **Begin Process** on a workcenter tab starts a **process timer** for that WO + step (auto **clock-in** if needed); **Clock Out** stops the timer only; **Complete Process** stops the timer and completes the step. On **All Tasks**, misc task rows have **Start** / **Stop** labor (same shift rules as WO timers). With a **real server session**, data is in SQLite via `/api/labor/*`. With **offline or demo login** (`offline_token_*`), the same UI uses **localStorage** (`bperp_labor_local`) only—no sync to SQLite. **Electron** does **not** auto clock-out on app exit (closing the window leaves your shift open). Non–work-order time (quoting, design) is [planned](docs/FUTURE-LABOR-EXPANSION.md).
 - **Workcenter Management** — Machine queues, job routing, state tracking
-- **Machines** (under Tasks sidebar) — Profiles in **localStorage** (`bperp_machines`): **WIP-style expandable cards** with urgency **left border**; **Maintenance** tasks (add, complete, **edit**, **remove**) and **Upgrade** tasks (add, edit, complete, delete). Sidebar label **Machines**; route id `tasks-maintenance`. **Note:** After `npm install` in `backend/`, run **`npm run rebuild:backend`** from the repo root before **`npm start`** (Electron) so `better-sqlite3` matches embedded Node.
+- **Machines** (under Tasks sidebar) — Profiles in **localStorage** (`bperp_machines`): **WIP-style expandable cards** with urgency **left border**; **Maintenance** tasks (add, complete, **edit**, **remove**) and **Upgrade** tasks (add, edit, complete, delete). Sidebar label **Machines**; route id `tasks-maintenance`. **Electron:** After `npm install` in `backend/`, run **`npm run rebuild:backend`** from the repo root before **`npm start`** — see [Native modules (Electron vs system Node)](#native-modules-electron-vs-system-node).
 - User Management (Admin/Machinist/Operator roles, tab-level permissions)
 - Shop Branding (logo, name, tagline)
 - Data Import (CSV/Excel bulk import for all major entities)
@@ -86,6 +86,40 @@ Routes are handled in `frontend/js/app.js` (`navigate`, route → handler map). 
 - **Desktop**: Electron (Windows & Linux only)
 - **Auth**: Token-based with bcrypt password hashing
 
+## Native modules (Electron vs system Node)
+
+The backend uses **native** npm packages (`better-sqlite3`, `bcrypt`). They ship as compiled `.node` binaries that must match the **exact** Node.js ABI in use.
+
+| Runtime | Which Node | Typical `NODE_MODULE_VERSION` (examples) |
+|--------|------------|----------------------------------------|
+| `cd backend && npm run dev` / `npm test` | **System** `node` (your PATH) | Matches your installed Node (e.g. 20+ → higher ABI) |
+| `npm start` (Electron) | **Electron’s embedded** Node | Matches the Electron version in root `package.json` (e.g. Electron 28 → Node 18 → lower ABI) |
+
+`npm install` in **`backend/`** builds or selects native binaries for **the `node` that ran npm** (usually system Node). The Electron app **forks** the backend with **Electron’s Node**, not system `node`. If the ABI does not match, startup fails when opening SQLite — often with `ERR_DLOPEN_FAILED` or:
+
+`The module '...better_sqlite3.node' was compiled against a different Node.js version ... NODE_MODULE_VERSION X ... requires NODE_MODULE_VERSION Y`.
+
+**This is expected** whenever backend dependencies are refreshed without rebuilding for Electron. It is **not** a broken install; it means the wrong binary is on disk for Electron.
+
+### When to run `npm run rebuild:backend` (repo root)
+
+Run it **from the repository root** (not inside `backend/`) **after**:
+
+- `npm install` or `npm ci` in **`backend/`** (including `npm run setup`, `npm run backend:install`, or `npm run backend:install:prod`)
+- A fresh clone, or pulling changes that touch **`backend/package-lock.json`** or Electron/root **`package.json`**
+- Upgrading **Electron** or **Node** for the project
+- Any time **`npm start`** fails with the errors above while **`cd backend && npm run dev`** still works (classic ABI mismatch)
+
+The script **`scripts/rebuild-backend-native.js`** (invoked by `npm run rebuild:backend`) deletes stale `build/` and `prebuilds/` under `better-sqlite3` and `bcrypt`, then runs `@electron/rebuild` with `--build-from-source` for the **installed Electron** version so the addon matches the forked backend process.
+
+**Root `npm install`** runs `electron-builder install-app-deps` in `postinstall`; that does **not** replace this step for **`backend/node_modules`** after a backend install. Treat **`npm run rebuild:backend`** as mandatory whenever you reinstall backend deps and use Electron.
+
+**If `npm run dev` in `backend/` fails after a successful `rebuild:backend`**, rebuild natives for **system** Node again:
+
+```bash
+cd backend && npm rebuild better-sqlite3 bcrypt
+```
+
 ## Quick Start (Development)
 
 ### Prerequisites
@@ -108,14 +142,16 @@ Open `http://localhost:3000` in your browser. The backend serves both the API an
 
 Run the full desktop app locally with the embedded backend. Electron ships its own Node.js; native addons (`better-sqlite3`, `bcrypt`) must be compiled for that runtime, not your system `node`.
 
+**Minimal sequence (do not skip `rebuild:backend` after installing backend deps):**
+
 ```bash
 # From project root
 npm run setup              # Install root + backend dependencies
-npm run rebuild:backend    # Rebuild native modules for Electron (required after backend npm install)
+npm run rebuild:backend    # REQUIRED for Electron after any backend npm install (see section above)
 npm start                  # Launch Electron app
 ```
 
-If you see `NODE_MODULE_VERSION` / `better_sqlite3.node` errors when starting Electron, run `npm run rebuild:backend` again from the repo root. That script removes stale `build/` and `prebuilds/` under `better-sqlite3` and `bcrypt`, then runs `electron-rebuild` with `--build-from-source` so the addon matches Electron’s Node ABI (plain `electron-rebuild` alone can report success while still loading the wrong `.node` file).
+If **`npm start`** fails with `better_sqlite3.node` / `NODE_MODULE_VERSION` / `ERR_DLOPEN_FAILED`, run **`npm run rebuild:backend`** again from the repo root — see [Native modules (Electron vs system Node)](#native-modules-electron-vs-system-node).
 
 The backend runs DB migrations with the same Node binary as the server (`process.execPath`), so under Electron they use embedded Node (not system `node`), keeping `better-sqlite3` ABI consistent.
 
@@ -232,10 +268,12 @@ All endpoints (except login) require `Authorization: Bearer <token>` header.
 | `GET /api/health` | Health check (no auth) |
 | `GET /api/setup/status` | Check if setup complete (no auth) |
 | `POST /api/users/login` | Authenticate user |
-| `GET /api/customers` | List customers |
+| `GET /api/customers` | List customers (active only; soft-deleted excluded) |
+| `GET /api/customers/archived` | List soft-deleted customers (archive) |
+| `DELETE /api/customers/:id/permanent` | Permanently delete archived customer (Administrator only) |
 | `GET /api/inventory/:category` | List inventory items (products/parts/materials/tooling/misc) |
-| `GET /api/quotes` | List quotes |
-| `GET /api/work-orders` | List work orders |
+| `GET /api/quotes` | List quotes (optional `expand=items` for line items) |
+| `GET /api/work-orders` | List work orders (optional `expand=checklist` for checklist rows) |
 | `GET /api/tasks` | List tasks (supports filtering) |
 | `GET /api/labor/status` | Current shift + active WO segments + active misc-task segments |
 | `POST /api/labor/clock-in` / `POST /api/labor/clock-out` | Shop shift |
@@ -258,8 +296,8 @@ cd backend && npm test             # Run tests
 cd backend && npm run migrate      # Run database migrations
 cd backend && npm run migrate:status  # Check migration status
 
-# Electron app (from repo root; run rebuild:backend after backend npm install)
-npm run rebuild:backend            # Native modules for Electron (better-sqlite3, bcrypt)
+# Electron app (from repo root; see "Native modules (Electron vs system Node)")
+npm run rebuild:backend            # Required after backend npm install / lockfile changes
 npm start                          # Run desktop app
 npm run dev                        # Electron with NODE_ENV=development (works on Windows via cross-env)
 

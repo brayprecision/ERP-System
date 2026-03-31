@@ -199,8 +199,8 @@ const routes = {
     // Sales
     'sales-customers': () => modules.sales?.loadCustomersView(),
     'sales-quotes': () => modules.sales?.loadQuotesView(),
-    'sales-archived-quotes': () => modules.sales?.loadArchivedQuotesView(),
-    'sales-archived-work': () => modules.sales?.loadArchivedWorkView(),
+    'sales-archived-quotes': () => modules.sales?.loadArchiveView('quotes'),
+    'sales-archived-work': () => modules.sales?.loadArchiveView('work'),
     
     // Tasks
     'tasks-all': () => modules.tasks?.loadAllTasks(),
@@ -219,6 +219,7 @@ const routes = {
     'settings-branding': () => ShopBranding.showSettings(),
     'settings-preferences': () => ThemeManager.showModal(),
     'settings-users': () => modules.users?.loadUsersView(),
+    'settings-archive': () => modules.sales?.loadArchiveView('quotes'),
     'settings-backup': () => loadBackupRestoreView(),
     'settings-server': () => loadServerSettingsView(),
     'settings-about': () => void loadAboutAppView()
@@ -486,7 +487,7 @@ function loadBackupRestoreView() {
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                         <div class="bg-gray-800/50 p-3 rounded">
                             <div class="text-gray-400">Data Types Backed Up</div>
-                            <div class="text-white font-medium">Customers, Quotes, Work Orders, Archived Work, Inventory, Tasks</div>
+                            <div class="text-white font-medium">Customers, Quotes, Work Orders, Settings → Archive, Inventory, Tasks</div>
                         </div>
                         <div class="bg-gray-800/50 p-3 rounded">
                             <div class="text-gray-400">File Format</div>
@@ -657,6 +658,7 @@ const routeToCategory = {
     'settings-branding': 'settings',
     'settings-preferences': 'settings',
     'settings-users': 'settings',
+    'settings-archive': 'settings',
     'settings-backup': 'settings',
     'settings-server': 'settings',
     'settings-about': 'settings'
@@ -713,7 +715,7 @@ function navigate(route) {
             if (route !== 'tasks-time-tracking') {
                 modules.timeTracking?.deactivate?.();
             }
-            if (!route.startsWith('sales-')) {
+            if (!route.startsWith('sales-') && route !== 'settings-archive') {
                 modules.sales?.deactivate?.();
             }
             
@@ -823,6 +825,7 @@ function updatePageTitle(route) {
         'tasks-time-tracking': 'Time Tracking',
         'settings-branding': 'Shop Branding',
         'settings-users': 'Users & Permissions',
+        'settings-archive': 'Archive',
         'settings-backup': 'Backup & Restore',
         'settings-server': 'Server Connection',
         'settings-about': 'About this app',
