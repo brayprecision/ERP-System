@@ -11,6 +11,7 @@ import {
 import { storage, STORAGE_KEYS, searchCache, state } from './storage.js';
 import * as salesApi from './salesApi.js';
 import { isAdmin } from './users.js';
+import { SALES_PROSPECTS } from './salesLeadsData.js';
 
 // ==================== CONSTANTS ====================
 const API_BASE = window.API_BASE || '/api';
@@ -20,19 +21,22 @@ let salesState = {
     currentView: 'customers',
     archiveTab: 'quotes',
     expandedCustomers: new Set(),
+    expandedLeads: new Set(),
     expandedWorkOrders: new Set(),
     expandedLineItems: new Set(),  // Track expanded line items: "woId-itemId"
     filters: {
         search: '',
         status: ''
-    }
+    },
+    leadsSearch: ''
 };
 
 /** In-memory cache when logged in (API-backed; replaces localStorage for sales entities). */
 let salesApiCache = {
     customers: null,
     quotes: null,
-    workOrders: null
+    workOrders: null,
+    leads: null
 };
 
 function mapApiQuoteToUi(q) {
@@ -98,14 +102,15 @@ function mapApiWorkOrderToUi(wo) {
 
 export async function refreshSalesData() {
     if (!salesApi.hasAuthToken()) {
-        salesApiCache = { customers: null, quotes: null, workOrders: null };
+        salesApiCache = { customers: null, quotes: null, workOrders: null, leads: null };
         return;
     }
     try {
-        const [customers, quotes, workOrders] = await Promise.all([
+        const [customers, quotes, workOrders, leads] = await Promise.all([
             salesApi.fetchCustomers(),
             salesApi.fetchQuotes(),
-            salesApi.fetchWorkOrders()
+            salesApi.fetchWorkOrders(),
+            salesApi.fetchLeads()
         ]);
         salesApiCache.customers = customers.map((c) => ({
             ...c,
@@ -115,10 +120,41 @@ export async function refreshSalesData() {
         }));
         salesApiCache.quotes = quotes.map(mapApiQuoteToUi);
         salesApiCache.workOrders = workOrders.map(mapApiWorkOrderToUi);
+        salesApiCache.leads = Array.isArray(leads) ? leads : [];
     } catch (e) {
         console.error('refreshSalesData:', e);
         showToast(e.message || 'Failed to load sales data', 'error');
     }
+}
+
+function ensureOfflineLeadsSeeded() {
+    let rows = storage.get(STORAGE_KEYS.LEADS);
+    if (!rows || !Array.isArray(rows) || rows.length === 0) {
+        rows = SALES_PROSPECTS.map((p) => ({
+            id: p.id,
+            name: p.name,
+            segment: p.segment || '',
+            location: p.location || '',
+            phone: p.phone || '',
+            email: p.email || '',
+            industry: p.industry || '',
+            notes: p.notes || '',
+            priorityTarget: !!p.priorityTarget,
+            sortOrder: p.id,
+            deletedAt: null
+        }));
+        storage.set(STORAGE_KEYS.LEADS, rows);
+    }
+}
+
+/** Active leads: API cache when signed in, localStorage (+ seed) when offline/demo. */
+export function getLeads() {
+    if (salesApi.hasAuthToken()) {
+        return salesApiCache.leads || [];
+    }
+    ensureOfflineLeadsSeeded();
+    const all = storage.get(STORAGE_KEYS.LEADS) || [];
+    return all.filter((l) => !l.deletedAt);
 }
 
 // ==================== DEMO DATA ====================
@@ -888,6 +924,464 @@ function setupCustomerSearch() {
     }
 }
 
+// ==================== LEADS (SALES PROSPECTS) ====================
+function escapeLeadHtml(s) {
+    if (s == null || s === '') return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+export function loadLeadsView() {
+    salesState.currentView = 'leads';
+    showLoadingSpinner();
+    safeExecute(async () => {
+        if (salesApi.hasAuthToken()) {
+            await refreshSalesData();
+        } else {
+            ensureOfflineLeadsSeeded();
+        }
+        renderLeadsView();
+    }, () => {
+        showToast('Error loading leads', 'error');
+    }, 'loadLeadsView');
+}
+
+function getSalesProspectsFiltered() {
+    const list = getLeads().slice().sort((a, b) => {
+        const sa = a.sortOrder ?? a.id ?? 0;
+        const sb = b.sortOrder ?? b.id ?? 0;
+        if (sa !== sb) return sa - sb;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+    const q = (salesState.leadsSearch || '').trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((p) => {
+        const blob = [p.name, p.segment, p.location, p.industry, p.phone, p.email, p.notes]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+        return blob.includes(q);
+    });
+}
+
+function renderLeadDetailsRow(lead) {
+    const phone = escapeLeadHtml(lead.phone) || '—';
+    const emailRaw = lead.email || '';
+    const email = emailRaw
+        ? `<a href="mailto:${escapeLeadHtml(emailRaw)}" class="text-blue-400 hover:text-blue-300">${escapeLeadHtml(emailRaw)}</a>`
+        : '—';
+    const loc = escapeLeadHtml(lead.location) || '—';
+    const ind = escapeLeadHtml(lead.industry) || '—';
+    const notes = lead.notes
+        ? `<div class="text-xs mt-2 text-gray-400 whitespace-pre-wrap">${escapeLeadHtml(lead.notes)}</div>`
+        : '';
+    return `
+        <tr class="bg-gray-900">
+            <td colspan="6" class="px-8 py-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Location</h4>
+                        <p class="text-gray-300">${loc}</p>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Industry / focus</h4>
+                        <p class="text-gray-300">${ind}</p>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Phone</h4>
+                        <p class="text-gray-300">${phone}</p>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Email</h4>
+                        <p>${email}</p>
+                    </div>
+                </div>
+                ${notes}
+            </td>
+        </tr>
+    `;
+}
+
+function renderLeadsView() {
+    const container = DOMCache.get('dashboardContent');
+    if (!container) return;
+
+    const filtered = getSalesProspectsFiltered();
+    const rows = filtered
+        .map((lead) => {
+            const isExpanded = salesState.expandedLeads.has(lead.id);
+            const pri = lead.priorityTarget
+                ? '<span class="ml-2 px-2 py-0.5 text-xs rounded-full bg-amber-600/40 text-amber-200 border border-amber-500/50">Priority</span>'
+                : '';
+            const escName = escapeLeadHtml(lead.name);
+            return `
+            <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${lead.id}">
+                <td class="px-4 py-3 text-gray-400 whitespace-nowrap cursor-pointer" data-action="toggle-lead" data-id="${lead.id}">
+                    ${lead.sortOrder != null ? lead.sortOrder : lead.id}
+                </td>
+                <td class="px-4 py-3 cursor-pointer" data-action="toggle-lead" data-id="${lead.id}">
+                    <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} mr-2 text-gray-500"></i>
+                    <span class="font-medium text-white">${escName}</span>${pri}
+                </td>
+                <td class="px-4 py-3 text-gray-300 cursor-pointer" data-action="toggle-lead" data-id="${lead.id}">${escapeLeadHtml(lead.segment) || '—'}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs max-w-xs truncate cursor-pointer" data-action="toggle-lead" data-id="${lead.id}" title="${escapeLeadHtml(lead.location || '').replace(/"/g, '&quot;')}">${escapeLeadHtml(lead.location) || '—'}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs max-w-md truncate cursor-pointer" data-action="toggle-lead" data-id="${lead.id}" title="${escapeLeadHtml(lead.industry || '').replace(/"/g, '&quot;')}">${escapeLeadHtml(lead.industry) || '—'}</td>
+                <td class="px-4 py-3">
+                    <button type="button" data-action="edit-lead" data-id="${lead.id}" class="text-blue-400 hover:text-blue-300 mr-2" title="Edit lead">
+                        <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button type="button" data-action="delete-lead" data-id="${lead.id}" data-name="${escName.replace(/"/g, '&quot;')}" class="text-red-400 hover:text-red-300" title="Archive lead">
+                        <i class="fa-solid fa-archive"></i>
+                    </button>
+                </td>
+            </tr>
+            ${isExpanded ? renderLeadDetailsRow(lead) : ''}
+        `;
+        })
+        .join('');
+
+    container.innerHTML = `
+        <div class="col-span-3 card p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
+                    <i class="fa-solid fa-user-plus mr-2"></i>Leads
+                    <span class="text-xs" style="color: var(--color-text-muted);">(${filtered.length} prospects)</span>
+                </h3>
+                <div class="flex space-x-2">
+                    <button data-action="export-leads" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
+                        <i class="fa-solid fa-download mr-1"></i>Export CSV
+                    </button>
+                    <button data-action="add-lead" class="btn btn-primary text-sm">
+                        <i class="fa-solid fa-plus mr-1"></i>Add Lead
+                    </button>
+                </div>
+            </div>
+            <p class="text-xs mb-3" style="color: var(--color-text-muted);">
+                Prospects are stored in the database when signed in, or in the browser when using offline/demo login. Archive removes a lead from this list; permanently delete from Settings → Archive → Archived leads (administrators).
+            </p>
+            <div class="mb-4">
+                <input type="text" id="leadsSearch" placeholder="Search prospects (name, segment, location, notes)..."
+                    value="${(salesState.leadsSearch || '').replace(/"/g, '&quot;')}"
+                    class="w-full bg-gray-700 text-sm text-gray-300 rounded px-3 py-2 border border-gray-600">
+            </div>
+            <div class="table-container">
+                <table class="table w-full text-sm text-left">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 w-12">#</th>
+                            <th class="px-4 py-3">Company</th>
+                            <th class="px-4 py-3">Segment</th>
+                            <th class="px-4 py-3">Location</th>
+                            <th class="px-4 py-3">Industry / focus</th>
+                            <th class="px-4 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows || '<tr><td colspan="6" class="text-center py-8" style="color: var(--color-text-muted);">No prospects match your search</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    const searchInput = document.getElementById('leadsSearch');
+    if (searchInput) {
+        searchInput.addEventListener(
+            'input',
+            debounce((e) => {
+                salesState.leadsSearch = e.target.value;
+                renderLeadsView();
+            }, 300)
+        );
+    }
+}
+
+export function toggleLeadExpand(leadId) {
+    const id = parseInt(leadId, 10);
+    if (Number.isNaN(id)) return;
+    if (salesState.expandedLeads.has(id)) {
+        salesState.expandedLeads.delete(id);
+    } else {
+        salesState.expandedLeads.add(id);
+    }
+    renderLeadsView();
+}
+
+function showAddLeadModal() {
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-user-plus mr-2" style="color: var(--color-accent-primary);"></i>Add Lead
+                </h3>
+                <button type="button" onclick="BPERP.common.closeModal('addLeadModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="addLeadForm" class="space-y-4">
+                <div>
+                    <label class="form-label">Company name *</label>
+                    <input type="text" name="name" required class="form-input w-full" placeholder="Company name">
+                </div>
+                <div>
+                    <label class="form-label">Segment</label>
+                    <input type="text" name="segment" class="form-input w-full" placeholder="e.g. Drone manufacturers">
+                </div>
+                <div>
+                    <label class="form-label">Location</label>
+                    <textarea name="location" class="form-input w-full" rows="2" placeholder="Address or region"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Phone</label>
+                        <input type="text" name="phone" class="form-input w-full">
+                    </div>
+                    <div>
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-input w-full">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Industry / focus</label>
+                    <textarea name="industry" class="form-input w-full" rows="2"></textarea>
+                </div>
+                <div>
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-input w-full" rows="3"></textarea>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="priorityTarget" id="addLeadPriority" class="rounded border-gray-600">
+                    <label for="addLeadPriority" class="text-sm text-gray-300">Priority target</label>
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('addLeadModal')" class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fa-solid fa-plus mr-2"></i>Add Lead
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    createModal('addLeadModal', content, { width: 'w-full max-w-lg' });
+    document.getElementById('addLeadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const name = (fd.get('name') || '').trim();
+        if (!name) {
+            showToast('Company name is required', 'error');
+            return;
+        }
+        const payload = {
+            name,
+            segment: (fd.get('segment') || '').trim() || null,
+            location: (fd.get('location') || '').trim() || null,
+            phone: (fd.get('phone') || '').trim() || null,
+            email: (fd.get('email') || '').trim() || null,
+            industry: (fd.get('industry') || '').trim() || null,
+            notes: (fd.get('notes') || '').trim() || null,
+            priorityTarget: fd.get('priorityTarget') === 'on'
+        };
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.createLead(payload);
+                await refreshSalesData();
+                closeModal('addLeadModal');
+                showToast(`Lead "${name}" added`, 'success');
+                loadLeadsView();
+            } catch (err) {
+                showToast(err.message || 'Failed to add lead', 'error');
+            }
+            return;
+        }
+        ensureOfflineLeadsSeeded();
+        const leads = storage.get(STORAGE_KEYS.LEADS) || [];
+        const maxId = leads.reduce((m, l) => Math.max(m, l.id || 0), 0);
+        const nextSort = leads.reduce((m, l) => Math.max(m, l.sortOrder || l.id || 0), 0) + 1;
+        leads.push({
+            id: maxId + 1,
+            ...payload,
+            priorityTarget: payload.priorityTarget,
+            sortOrder: nextSort,
+            deletedAt: null
+        });
+        storage.set(STORAGE_KEYS.LEADS, leads);
+        closeModal('addLeadModal');
+        showToast(`Lead "${name}" added`, 'success');
+        loadLeadsView();
+    });
+}
+
+function showEditLeadModal(leadId) {
+    const id = parseInt(leadId, 10);
+    const lead = getLeads().find((l) => l.id === id);
+    if (!lead) {
+        showToast('Lead not found', 'error');
+        return;
+    }
+    const esc = (v) => String(v ?? '').replace(/"/g, '&quot;');
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-edit mr-2" style="color: var(--color-accent-primary);"></i>Edit Lead
+                </h3>
+                <button type="button" onclick="BPERP.common.closeModal('editLeadModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="editLeadForm" class="space-y-4" data-lead-id="${id}">
+                <div>
+                    <label class="form-label">Company name *</label>
+                    <input type="text" name="name" required class="form-input w-full" value="${esc(lead.name)}">
+                </div>
+                <div>
+                    <label class="form-label">Segment</label>
+                    <input type="text" name="segment" class="form-input w-full" value="${esc(lead.segment)}">
+                </div>
+                <div>
+                    <label class="form-label">Location</label>
+                    <textarea name="location" class="form-input w-full" rows="2">${escapeLeadHtml(lead.location)}</textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Phone</label>
+                        <input type="text" name="phone" class="form-input w-full" value="${esc(lead.phone)}">
+                    </div>
+                    <div>
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-input w-full" value="${esc(lead.email)}">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Industry / focus</label>
+                    <textarea name="industry" class="form-input w-full" rows="2">${escapeLeadHtml(lead.industry)}</textarea>
+                </div>
+                <div>
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-input w-full" rows="3">${escapeLeadHtml(lead.notes)}</textarea>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="priorityTarget" id="editLeadPriority" class="rounded border-gray-600" ${lead.priorityTarget ? 'checked' : ''}>
+                    <label for="editLeadPriority" class="text-sm text-gray-300">Priority target</label>
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('editLeadModal')" class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fa-solid fa-save mr-2"></i>Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    createModal('editLeadModal', content, { width: 'w-full max-w-lg' });
+    document.getElementById('editLeadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const lid = parseInt(form.dataset.leadId, 10);
+        const fd = new FormData(form);
+        const name = (fd.get('name') || '').trim();
+        if (!name) {
+            showToast('Company name is required', 'error');
+            return;
+        }
+        const payload = {
+            name,
+            segment: (fd.get('segment') || '').trim() || null,
+            location: (fd.get('location') || '').trim() || null,
+            phone: (fd.get('phone') || '').trim() || null,
+            email: (fd.get('email') || '').trim() || null,
+            industry: (fd.get('industry') || '').trim() || null,
+            notes: (fd.get('notes') || '').trim() || null,
+            priorityTarget: fd.get('priorityTarget') === 'on'
+        };
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.updateLead(lid, payload);
+                await refreshSalesData();
+                closeModal('editLeadModal');
+                showToast('Lead updated', 'success');
+                loadLeadsView();
+            } catch (err) {
+                showToast(err.message || 'Failed to update lead', 'error');
+            }
+            return;
+        }
+        ensureOfflineLeadsSeeded();
+        const leads = storage.get(STORAGE_KEYS.LEADS) || [];
+        const idx = leads.findIndex((l) => l.id === lid);
+        if (idx === -1) {
+            showToast('Lead not found', 'error');
+            return;
+        }
+        leads[idx] = { ...leads[idx], ...payload, priorityTarget: payload.priorityTarget };
+        storage.set(STORAGE_KEYS.LEADS, leads);
+        closeModal('editLeadModal');
+        showToast('Lead updated', 'success');
+        loadLeadsView();
+    });
+}
+
+function deleteLead(leadId, leadName) {
+    showConfirmModal(
+        'Archive lead?',
+        `Remove <strong class="text-white">${escapeLeadHtml(leadName)}</strong> from the active list? Find it under <strong class="text-white">Settings → Archive → Archived leads</strong>. Permanent removal is only from there (administrators).`,
+        async () => {
+            if (salesApi.hasAuthToken()) {
+                try {
+                    await salesApi.deleteLead(leadId);
+                    await refreshSalesData();
+                    showToast(`Lead "${leadName}" archived`, 'success');
+                    loadLeadsView();
+                } catch (err) {
+                    showToast(err.message || 'Failed to archive lead', 'error');
+                }
+                return;
+            }
+            ensureOfflineLeadsSeeded();
+            const leads = storage.get(STORAGE_KEYS.LEADS) || [];
+            const id = parseInt(leadId, 10);
+            const found = leads.find((l) => l.id === id);
+            if (!found) {
+                showToast('Lead not found', 'error');
+                return;
+            }
+            storage.set(
+                STORAGE_KEYS.LEADS,
+                leads.filter((l) => l.id !== id)
+            );
+            const archived = storage.get(STORAGE_KEYS.ARCHIVED_LEADS) || [];
+            archived.unshift({
+                ...found,
+                deletedAt: new Date().toISOString(),
+                archivedAt: new Date().toISOString()
+            });
+            storage.set(STORAGE_KEYS.ARCHIVED_LEADS, archived);
+            showToast(`Lead "${leadName}" archived`, 'success');
+            loadLeadsView();
+        },
+        { icon: 'fa-archive', iconColor: 'text-amber-400', confirmText: 'Archive lead', confirmClass: 'bg-amber-700 hover:bg-amber-600' }
+    );
+}
+
+async function exportLeadsCsv() {
+    const rows = getSalesProspectsFiltered().map((p) => ({
+        '#': p.sortOrder != null ? p.sortOrder : p.id,
+        Company: p.name,
+        Segment: p.segment,
+        Location: p.location || '',
+        Phone: p.phone || '',
+        Email: p.email || '',
+        Industry: p.industry || '',
+        Notes: p.notes || '',
+        'Priority target': p.priorityTarget ? 'Yes' : ''
+    }));
+    await exportToCSV(rows, 'sales-leads');
+    showToast('Leads exported', 'success');
+}
+
 // ==================== QUOTES VIEW ====================
 export function loadQuotesView() {
     salesState.currentView = 'quotes';
@@ -1599,18 +2093,91 @@ async function buildArchivedCustomersPanelHtml() {
     `;
 }
 
+async function buildArchivedLeadsPanelHtml() {
+    let rows = [];
+    if (salesApi.hasAuthToken()) {
+        try {
+            rows = await salesApi.fetchArchivedLeads();
+        } catch (e) {
+            console.error('fetchArchivedLeads', e);
+            rows = [];
+        }
+    } else {
+        rows = storage.get(STORAGE_KEYS.ARCHIVED_LEADS) || [];
+    }
+
+    const admin = isAdmin();
+    const tableRows = rows.map((lead) => {
+        const name = lead.name || '—';
+        const del = lead.deletedAt || lead.archivedAt;
+        const escName = String(name).replace(/"/g, '&quot;');
+        return `
+            <tr class="hover:bg-gray-800/50">
+                <td class="px-4 py-3 font-medium text-white">${escapeLeadHtml(name)}</td>
+                <td class="px-4 py-3 text-gray-400">${escapeLeadHtml(lead.segment) || '—'}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(del)}</td>
+                <td class="px-4 py-3 text-right">
+                    ${admin ? `
+                        <button type="button" data-action="permanently-delete-archived-lead" data-id="${lead.id}" data-name="${escName}"
+                            class="text-xs px-3 py-1 rounded bg-red-900/60 text-red-200 hover:bg-red-800 border border-red-800">
+                            <i class="fa-solid fa-skull-crossbones mr-1"></i>Delete permanently
+                        </button>
+                    ` : `
+                        <span class="text-xs text-gray-500">Administrators can permanently delete</span>
+                    `}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
+                <i class="fa-solid fa-user-plus mr-2"></i>Archived leads
+                <span class="text-xs" style="color: var(--color-text-muted);">(${rows.length})</span>
+            </h3>
+        </div>
+        <p class="text-sm text-gray-400 mb-4">
+            Leads removed from Sales → Leads are stored here. Permanent deletion removes the record from the database and is only available to administrators, from this screen.
+        </p>
+        <div class="card p-6">
+            ${rows.length > 0 ? `
+                <div class="table-container">
+                    <table class="table w-full text-sm text-left">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-3">Company</th>
+                                <th class="px-4 py-3">Segment</th>
+                                <th class="px-4 py-3">Archived</th>
+                                <th class="px-4 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+            ` : `
+                <div class="text-center py-12">
+                    <i class="fa-solid fa-user-plus text-5xl mb-4" style="color: var(--color-text-muted);"></i>
+                    <p style="color: var(--color-text-muted);">No archived leads</p>
+                    <p class="text-xs mt-2" style="color: var(--color-text-muted);">Archiving a lead from Sales → Leads moves the record here</p>
+                </div>
+            `}
+        </div>
+    `;
+}
+
 /**
- * Settings → Archive: archived quotes, work orders, and removed customers.
- * @param {'quotes'|'work'|'customers'} tab
+ * Settings → Archive: archived quotes, work orders, removed customers, archived leads.
+ * @param {'quotes'|'work'|'customers'|'leads'} tab
  */
 export async function loadArchiveView(tab = 'quotes') {
-    const t = ['quotes', 'work', 'customers'].includes(tab) ? tab : 'quotes';
+    const t = ['quotes', 'work', 'customers', 'leads'].includes(tab) ? tab : 'quotes';
     salesState.currentView = 'archive';
     salesState.archiveTab = t;
     showLoadingSpinner();
 
     await safeExecute(async () => {
-        if (salesApi.hasAuthToken() && (t === 'quotes' || t === 'customers')) {
+        if (salesApi.hasAuthToken() && (t === 'quotes' || t === 'customers' || t === 'leads')) {
             await refreshSalesData();
         }
         const container = DOMCache.get('dashboardContent');
@@ -1619,6 +2186,7 @@ export async function loadArchiveView(tab = 'quotes') {
         let panelHtml = '';
         if (t === 'work') panelHtml = buildArchivedWorkPanelHtml();
         else if (t === 'customers') panelHtml = await buildArchivedCustomersPanelHtml();
+        else if (t === 'leads') panelHtml = await buildArchivedLeadsPanelHtml();
         else panelHtml = buildArchivedQuotesPanelHtml();
 
         container.innerHTML = `
@@ -1627,7 +2195,7 @@ export async function loadArchiveView(tab = 'quotes') {
                     <h2 class="text-xl font-semibold text-white flex items-center gap-2">
                         <i class="fa-solid fa-box-archive text-gray-400"></i> Archive
                     </h2>
-                    <p class="text-sm text-gray-400 mt-1">Won/lost quotes, completed work orders, and customers removed from the active list.</p>
+                    <p class="text-sm text-gray-400 mt-1">Won/lost quotes, completed work orders, customers and leads removed from the active lists.</p>
                 </div>
                 <div class="flex flex-wrap gap-2 mb-6">
                     <button type="button" data-action="archive-tab" data-tab="quotes" class="${archiveTabButtonClass('quotes', t)}">
@@ -1638,6 +2206,9 @@ export async function loadArchiveView(tab = 'quotes') {
                     </button>
                     <button type="button" data-action="archive-tab" data-tab="customers" class="${archiveTabButtonClass('customers', t)}">
                         <i class="fa-solid fa-building mr-1"></i>Archived customers
+                    </button>
+                    <button type="button" data-action="archive-tab" data-tab="leads" class="${archiveTabButtonClass('leads', t)}">
+                        <i class="fa-solid fa-user-plus mr-1"></i>Archived leads
                     </button>
                 </div>
                 <div id="archivePanel">${panelHtml}</div>
@@ -1691,6 +2262,47 @@ function permanentlyDeleteArchivedCustomer(customerId, customerName) {
         'Permanently delete customer?',
         `Remove <strong class="text-white">${customerName}</strong> from the archive forever? Related quotes and work orders for this customer will be deleted from the database.`,
         () => runPermanentCustomerDelete(customerId, customerName),
+        { icon: 'fa-triangle-exclamation', iconColor: 'text-amber-400', confirmText: 'Continue', confirmClass: 'bg-amber-700 hover:bg-amber-600' }
+    );
+}
+
+function runPermanentLeadDelete(leadId, leadName) {
+    const id = parseInt(leadId, 10);
+    const doDelete = async () => {
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.permanentlyDeleteLead(id);
+                await refreshSalesData();
+                showToast(`Lead "${leadName}" permanently deleted`, 'success');
+                loadArchiveView('leads');
+            } catch (err) {
+                showToast(err.message || 'Failed to permanently delete lead', 'error');
+            }
+            return;
+        }
+        const ar = storage.get(STORAGE_KEYS.ARCHIVED_LEADS) || [];
+        storage.set(STORAGE_KEYS.ARCHIVED_LEADS, ar.filter((l) => l.id !== id));
+        showToast(`Lead "${leadName}" permanently removed`, 'success');
+        loadArchiveView('leads');
+    };
+
+    showConfirmModal(
+        'Final confirmation',
+        `This will <strong class="text-red-300">permanently erase</strong> <strong class="text-white">${escapeLeadHtml(leadName)}</strong> and cannot be undone.`,
+        doDelete,
+        { icon: 'fa-skull-crossbones', iconColor: 'text-red-400', confirmText: 'Delete permanently', confirmClass: 'bg-red-900 hover:bg-red-800' }
+    );
+}
+
+function permanentlyDeleteArchivedLead(leadId, leadName) {
+    if (!isAdmin()) {
+        showToast('Only administrators can permanently delete archived leads', 'error');
+        return;
+    }
+    showConfirmModal(
+        'Permanently delete lead?',
+        `Remove <strong class="text-white">${escapeLeadHtml(leadName)}</strong> from the archive forever?`,
+        () => runPermanentLeadDelete(leadId, leadName),
         { icon: 'fa-triangle-exclamation', iconColor: 'text-amber-400', confirmText: 'Continue', confirmClass: 'bg-amber-700 hover:bg-amber-600' }
     );
 }
@@ -3257,6 +3869,13 @@ function convertQuoteToWorkOrder(quoteId) {
 
 export function registerActionHandlers(registerFn) {
     registerFn('toggle-customer', (target) => toggleCustomerExpand(target.dataset.id));
+    registerFn('toggle-lead', (target) => toggleLeadExpand(target.dataset.id));
+    registerFn('add-lead', () => showAddLeadModal());
+    registerFn('edit-lead', (target) => showEditLeadModal(target.dataset.id));
+    registerFn('delete-lead', (target) => deleteLead(target.dataset.id, target.dataset.name));
+    registerFn('export-leads', () => exportLeadsCsv());
+    registerFn('permanently-delete-archived-lead', (target) =>
+        permanentlyDeleteArchivedLead(target.dataset.id, target.dataset.name));
     registerFn('toggle-wo', (target) => toggleWOExpand(target.dataset.id));
     registerFn('refresh-wip', () => loadWIPView());
     registerFn('add-customer', () => showAddCustomerModal());

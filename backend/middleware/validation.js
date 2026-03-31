@@ -115,6 +115,23 @@ const customerSchema = z.object({
     })).optional()
 });
 
+const leadCreateSchema = z.object({
+    name: z.string()
+        .min(1, 'Company name is required')
+        .max(200, 'Name too long')
+        .trim(),
+    segment: z.string().max(500).optional().nullable(),
+    location: z.string().max(2000).optional().nullable(),
+    phone: z.string().max(120).optional().nullable(),
+    email: z.string().max(255).optional().nullable(),
+    industry: z.string().max(2000).optional().nullable(),
+    notes: z.string().max(8000).optional().nullable(),
+    priorityTarget: z.boolean().optional(),
+    sortOrder: z.number().int().optional().nullable()
+});
+
+const leadUpdateSchema = leadCreateSchema.partial();
+
 const contactSchema = z.object({
     name: z.string()
         .min(1, 'Contact name is required')
@@ -443,6 +460,8 @@ module.exports = {
         updatePermissions: updatePermissionsSchema,
         appearanceSettings: appearanceSettingsSchema,
         customer: customerSchema,
+        leadCreate: leadCreateSchema,
+        leadUpdate: leadUpdateSchema,
         contact: contactSchema,
         material: materialSchema,
         tool: toolSchema,

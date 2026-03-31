@@ -83,6 +83,39 @@ export async function permanentlyDeleteCustomer(id) {
     await apiRequest(`/customers/${id}/permanent`, { method: 'DELETE' });
 }
 
+export async function fetchLeads(params = 'limit=2000') {
+    const r = await apiRequest(`/leads?${params}`);
+    return r.data || [];
+}
+
+export async function fetchLead(id) {
+    const r = await apiRequest(`/leads/${id}`);
+    return r.data;
+}
+
+export async function createLead(payload) {
+    const r = await apiRequest('/leads', { method: 'POST', body: JSON.stringify(payload) });
+    return r.data;
+}
+
+export async function updateLead(id, payload) {
+    const r = await apiRequest(`/leads/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    return r.data;
+}
+
+export async function deleteLead(id) {
+    await apiRequest(`/leads/${id}`, { method: 'DELETE' });
+}
+
+export async function fetchArchivedLeads() {
+    const r = await apiRequest('/leads/archived?limit=500');
+    return r.data || [];
+}
+
+export async function permanentlyDeleteLead(id) {
+    await apiRequest(`/leads/${id}/permanent`, { method: 'DELETE' });
+}
+
 export async function fetchQuotes(params = 'limit=500&expand=items') {
     const r = await apiRequest(`/quotes?${params}`);
     return r.data || [];

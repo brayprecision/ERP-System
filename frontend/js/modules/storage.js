@@ -11,6 +11,8 @@ export const STORAGE_KEYS = {
     ARCHIVED_WORK_ORDERS: 'bperp_archived_work_orders',
     CUSTOMERS: 'bperp_customers',
     ARCHIVED_CUSTOMERS: 'bperp_archived_customers',
+    LEADS: 'bperp_leads',
+    ARCHIVED_LEADS: 'bperp_archived_leads',
     QUOTES: 'bperp_quotes',
     QUOTE_DOCUMENTS: 'bperp_quote_documents',
     WO_DOCUMENTS: 'bperp_wo_documents',

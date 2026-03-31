@@ -41,7 +41,7 @@ window.BPERP = {
     common,      // DOM utilities, modals, toasts
     storage,     // localStorage wrapper with caching
     inventory,   // Products, parts, materials, tooling, misc
-    sales,       // Customers, quotes, work orders
+    sales,       // Customers, leads (API + offline), quotes, work orders
     tasks,       // Workflow tasks
     maintenance, // Machine profiles, maintenance tasks
     search,      // Global search

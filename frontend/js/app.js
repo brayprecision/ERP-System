@@ -198,6 +198,7 @@ const routes = {
     
     // Sales
     'sales-customers': () => modules.sales?.loadCustomersView(),
+    'sales-leads': () => modules.sales?.loadLeadsView(),
     'sales-quotes': () => modules.sales?.loadQuotesView(),
     'sales-archived-quotes': () => modules.sales?.loadArchiveView('quotes'),
     'sales-archived-work': () => modules.sales?.loadArchiveView('work'),
@@ -641,6 +642,7 @@ const routeToCategory = {
     'inventory-misc': 'inventory',
     'workcenter-wip': 'workcenter',
     'sales-customers': 'sales',
+    'sales-leads': 'sales',
     'sales-quotes': 'sales',
     'sales-archived-quotes': 'sales',
     'sales-archived-work': 'sales',
@@ -809,6 +811,7 @@ function updatePageTitle(route) {
         'inventory-misc': 'Miscellaneous Items',
         'workcenter-wip': 'Work In Progress',
         'sales-customers': 'Customers',
+        'sales-leads': 'Leads',
         'sales-quotes': 'Quotes',
         'sales-archived-quotes': 'Archived Quotes',
         'sales-archived-work': 'Archived Work Orders',
@@ -1260,6 +1263,7 @@ async function initializeApp() {
             modules.sales?.getCustomers?.();
             modules.sales?.getQuotes?.();
             modules.sales?.getWorkOrders?.();
+            modules.sales?.getLeads?.();
             console.log('BPERP: Demo data preloaded');
         } catch (e) {
             console.warn('BPERP: Could not preload some demo data:', e);

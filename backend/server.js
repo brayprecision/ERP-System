@@ -63,6 +63,7 @@ const { requireAuth } = require('./middleware/auth')(pool);
 // Import routes
 const inventoryRoutes = require('./routes/inventory')(pool);
 const customerRoutes = require('./routes/customers')(pool);
+const leadRoutes = require('./routes/leads')(pool);
 const quoteRoutes = require('./routes/quotes')(pool);
 const workOrderRoutes = require('./routes/workorders')(pool);
 const usersRoutes = require('./routes/users')(pool);
@@ -83,6 +84,7 @@ const importRoutes = require('./routes/import')(pool);
 // Mount routes
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/leads', leadRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/work-orders', workOrderRoutes);
 app.use('/api/users', usersRoutes);
@@ -582,6 +584,7 @@ app.post('/api/backup/create', requireAuth, exportLimiter, async (req, res) => {
             database: {
                 customers: await safeQuery('SELECT * FROM customers'),
                 contacts: await safeQuery('SELECT * FROM contacts'),
+                sales_leads: await safeQuery('SELECT * FROM sales_leads'),
                 quotes: await safeQuery('SELECT * FROM quotes'),
                 quote_items: await safeQuery('SELECT * FROM quote_items'),
                 quote_documents: await safeQuery('SELECT * FROM quote_documents'),

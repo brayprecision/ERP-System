@@ -34,6 +34,7 @@ When you add or rename tables, update this file, `README.md`, `backend/README.md
 |-------|---------|
 | `customers` | Customer records |
 | `contacts` | Contacts per customer |
+| `sales_leads` | Sales prospects (editable; soft-delete archive) |
 | `quotes` | Quote header + status workflow |
 | `quote_items` | Quote line items |
 | `work_orders` | Work orders (part fields on row; UI may show synthetic line items) |

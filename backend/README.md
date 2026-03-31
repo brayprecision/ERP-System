@@ -101,6 +101,7 @@ backend/
 │   └── scripts/         # Migration files
 ├── routes/              # API route handlers (JavaScript)
 │   ├── customers.js
+│   ├── leads.js         # Sales prospects (leads)
 │   ├── import.js        # Data import API
 │   ├── inventory.js
 │   ├── labor.js         # Shop shifts + WO + misc-task process time segments
@@ -170,6 +171,18 @@ PUT    /api/customers/:id            # Update customer
 DELETE /api/customers/:id            # Soft delete (archive) customer
 DELETE /api/customers/:id/permanent # Permanently delete archived customer (Administrator only)
 GET    /api/customers/:id/contacts    # Get customer contacts
+```
+
+### Sales leads
+
+```
+GET    /api/leads                     # List active leads (optional `search`, `page`, `limit`)
+GET    /api/leads/archived            # List archived (soft-deleted) leads
+GET    /api/leads/:id                 # Get one lead
+POST   /api/leads                     # Create lead
+PUT    /api/leads/:id                 # Update lead
+DELETE /api/leads/:id                 # Soft delete (archive) lead
+DELETE /api/leads/:id/permanent      # Permanently delete archived lead (Administrator only)
 ```
 
 ### Inventory
