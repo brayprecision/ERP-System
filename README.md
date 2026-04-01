@@ -27,7 +27,7 @@ The Inventory sidebar (materials, tooling, misc, products, parts, and **Kanban**
 - **Search** module exists but cross-module search isn't fully wired
 
 ### TODO (pick up here)
-1. Test the Windows installer end-to-end: run `dist-installers\BPERP-1.0.0-beta.1-win-x64.exe` (use `npm run build:win` to rebuild)
+1. Test installers end-to-end: Windows — `dist-installers/BPERP-*-win-x64.exe` (`npm run build:win`); Linux — `dist-installers/BPERP-*-linux-amd64.deb` and/or `dist-installers/BPERP-*-linux-x86_64.AppImage` (`npm run build:linux`; electron-builder names **deb** `amd64` and **AppImage** `x86_64`)
 2. Local dev: use **Standalone** in the setup wizard or `cd backend && npm run dev`; deploy **Network (NAS)** when ready for multiple workstations (see `docs/NAS-SETUP.md`)
 3. Import shop data via CSV import (Settings > Data Import)
 4. Fix Backup/Restore to copy the SQLite DB file via Electron IPC
@@ -125,6 +125,13 @@ cd backend && npm rebuild better-sqlite3 bcrypt
 ### Prerequisites
 
 - Node.js 18+
+- **Linux (native modules):** `better-sqlite3` and `bcrypt` compile via **node-gyp**. Install a C++ toolchain and, on **Python 3.12+** (e.g. Ubuntu 24.04), **`setuptools`** supplies `distutils`, which older **node-gyp** expects:
+
+```bash
+sudo apt install build-essential python3-setuptools
+```
+
+Without `python3-setuptools`, you may see `ModuleNotFoundError: No module named 'distutils'` during `npm install` in `backend/` or during `npm run rebuild:backend`.
 
 ### Option A: Browser-Based (fastest)
 
@@ -163,19 +170,50 @@ cd backend && npm rebuild better-sqlite3 bcrypt
 
 On first launch, the setup wizard will ask you to choose **Standalone (Local)** or **Network (NAS)** mode. Choose Standalone to run everything on this computer with no NAS required. Create your admin account and you're ready to go.
 
+**Standalone SQLite file**
+
+| How you run the app | Default database file (when `database.path` is unset) |
+|---------------------|------------------------------------------------------|
+| **Dev clone** (`npm start` from repo) | `backend/bperp.db` next to the backend code |
+| **Packaged** (Windows installer, Linux `.deb`, AppImage) | `bperp.db` under Electron **user data** (writable). On Linux this is typically under `~/.config/BPERP - Manufacturing ERP/`. **Settings → About this app** shows the exact path in Standalone mode. |
+
+**Linux notes (AppImage / `.deb`)** — AppImages mount read-only; the `.deb` install tree under `/opt` is often not user-writable. The packaged default above avoids storing SQLite next to the application files. The **`.deb`** declares **`Depends`** on system libraries Electron/Chromium needs (e.g. **ca-certificates**, **GTK/ATK/Pango/Cairo**, **NSS/NSPR**, **D-Bus**, **DRM/GBM**, **ALSA**, **CUPS**, **X11** stack including **composite/randr/xfixes**, **udev**, **xkbcommon**); **`sudo apt install ./BPERP-*.deb`** (or **Software Manager** / **GDebi** on Linux Mint) pulls them in. **Linux Mint** uses the same packages as Ubuntu/Debian; prefer the **`.deb`** for a normal desktop install. Some distributions require **FUSE** or **`libfuse2`** / **`libfuse2t64`** to run AppImages; if the file will not execute, install the fuse package your release provides or use the **`.deb`** instead.
+
+#### Linux Mint workstation
+
+1. **Install the app** — Prefer **`BPERP-*-linux-amd64.deb`**: open the folder in the file manager, right‑click → **Open with GDebi Package Installer**, or run `sudo apt install ./BPERP-*-linux-amd64.deb` (or `sudo apt install ./BPERP-*.deb`) from a terminal in that directory. `apt` pulls in the **`.deb`** `Depends` (Electron/Chromium libraries).
+2. **AppImage (optional)** — If you use **`BPERP-*-linux-x86_64.AppImage`** instead: `chmod +x` the file, then run it. If it fails to mount or run, install the **FUSE** package your Mint release uses (`libfuse2` / `libfuse2t64` / `fuse3` as applicable) or switch to the **`.deb`**.
+3. **First launch** — Use the setup wizard: **Standalone (Local)** for everything on this PC, or **Network (NAS)** and enter the shop server URL (e.g. `http://192.168.1.100:3000`). See **`docs/NAS-SETUP.md`** for the backend on the server; the Mint PC only needs **network access** to that host and port (no extra workstation firewall rule unless you block outbound traffic).
+4. **Where to find the app** — Launch **BPERP** from the application menu (Office category), or from the **`.desktop`** entry; in Standalone mode the SQLite path is under **Settings → About this app** (typically under `~/.config/`).
+
+#### Debugging the setup wizard
+
+If **Launch BPERP** spins forever or the window stays blank after the wizard:
+
+- **Logs** — Main process log: **`bperp.log`** under Electron **user data** (same folder as **`bperp-config.json`**). From the app: **Help → View Logs** (or **Settings → About this app** shows the folder). Look for **`Starting backend`**, **`POST /api/setup/init`**, **`Admin user created`**, or **`Setup failed`**.
+- **Standalone hangs** — Usually **local backend not listening** (native module ABI, migrations, or port **3000** in use). After **`npm run rebuild:backend`**, try **`cd backend && npm run dev`** to see server output; ensure nothing else uses port **3000**.
+- **Network mode** — **Test Connection** must succeed before **Next**. The wizard times out remote **`/api/setup/status`** after **8s** so a dead NAS cannot block step 1 forever.
+- **DevTools on first run** — From a terminal: **`BPERP_DEBUG_SETUP=1 npm start`** (dev clone) or `BPERP_DEBUG_SETUP=1 /path/to/bperp` so the setup window opens **DevTools** (renderer **Console** for **`wizard.js`** errors).
+
+#### Electron desktop (Linux): window and logs
+
+- **Maximize** — The main window’s **minimum size** is limited to the **primary display work area** (not a fixed 1024×768). On short displays (e.g. **1366×768** with a panel), a larger minimum used to prevent the window manager from honoring **maximize**; that behavior is fixed in **`electron/main.js`**.
+- **Logs / false “fatal” exits** — Main process logging goes to **`bperp.log`** under user data. If **stdout** is gone (e.g. closed terminal), **`write EPIPE`** is ignored so the app does not treat it as a crash; details may still be appended to **`/tmp/bperp-crash.log`** for diagnosis.
+
 ### Building Installers
 
-`build:win`, `build:linux`, and `pack:win` run **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` in `backend/`) so shipped `resources/backend` does not include Jest, nodemon, TypeScript, etc.; then they rebuild native modules for Electron.
+`build:win`, `build:linux`, `pack:win`, and **`pack:linux`** run **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` in `backend/`) so shipped `resources/backend` does not include Jest, nodemon, TypeScript, etc.; then they rebuild native modules for Electron. Root **`build.publish`** is **`null`** and those scripts use **`--publish never`**, so **local packaging does not require a GitHub token** or upload to releases.
 
 **After a packaging build**, if you need backend tests or `npm run dev` in `backend/` again, run **`npm run backend:install`** once to restore dev dependencies.
 
 ```bash
 npm run build:win        # Windows NSIS installer → dist-installers/BPERP-*-win-x64.exe
-npm run build:linux     # Linux .deb + AppImage (no rpm)
+npm run build:linux     # Linux .deb + AppImage (no rpm); does not publish to GitHub
 npm run pack:win         # Windows unpacked app only (faster than NSIS; same packaged layout)
+npm run pack:linux       # Linux unpacked dir only (faster than full AppImage + deb; same layout as under /opt)
 ```
 
-Output: `dist-installers/` (installer + unpacked app for testing).
+Output: `dist-installers/` (installer + unpacked app for testing). Artifacts: **`BPERP-*-linux-amd64.deb`**, **`BPERP-*-linux-x86_64.AppImage`** (electron-builder naming; **not** `linux-x64.deb`).
 
 ### Beta testing (Windows): rebuild on launch
 
@@ -194,8 +232,8 @@ From **cmd** or double-click: `scripts\launch-beta.cmd` (same flags). If `.ps1` 
 
 ### Why reinstalling can still show an “old” UI
 
-- **Settings and server URL survive uninstall.** Electron stores config (including **Network mode** `server.url`) under **user data** (on Windows, typically `%APPDATA%\BPERP` or similar—not inside the install folder). The NSIS uninstaller removes the app under `%LOCALAPPDATA%\Programs\...` but usually **does not** delete that folder. After reinstall, the app can still open **Network** mode and load the **HTML/JS from your NAS**, which may be an older `frontend/` tree. To exercise the **new installer’s** UI: **Settings → Server Connection → Clear (Standalone Mode)**, restart, or deploy an updated `frontend/` on the server (see `docs/NAS-SETUP.md`).
-- **Standalone mode** should match the installed `resources/frontend`. If it does not, confirm the Start menu shortcut **target** points at the install you updated (not an old `win-unpacked` or dev copy).
+- **Settings and server URL survive uninstall.** Electron stores config (including **Network mode** `server.url`) under **user data**, not inside the install folder. **Windows:** often `%APPDATA%\BPERP` or similar; the NSIS uninstaller removes the app under `%LOCALAPPDATA%\Programs\...` but usually **does not** delete user data. **Linux:** typically `~/.config/BPERP - Manufacturing ERP/` (see **Settings → About this app** for the exact path). After reinstall, the app can still open **Network** mode and load the **HTML/JS from your NAS**, which may be an older `frontend/` tree. To exercise the **new installer’s** UI: **Settings → Server Connection → Clear (Standalone Mode)**, restart, or deploy an updated `frontend/` on the server (see `docs/NAS-SETUP.md`).
+- **Standalone mode** should match the installed `resources/frontend`. If it does not, confirm the shortcut **target** points at the install you updated: on Windows, the Start menu shortcut (not an old `win-unpacked` or dev copy); on Linux, the `.desktop` entry or launcher for the current `.deb`/AppImage install.
 
 In the desktop app, **Settings → About this app** shows the running app version, mode, and server URL (if any)—**but only if the page you’re viewing includes that menu** (i.e. bundled UI or an up-to-date `frontend/` on the server). If the sidebar looks old and **About this app** is missing, check the **window title bar** after rebuilding the desktop app: it should end with `· v… · Standalone` or `· v… · Network · UI from server` after your shop name (branding sets the first part of the title). For diagnostics regardless of page version, press **Alt** to show the menu bar → **Help → About BPERP**, or use the **system tray** icon → **About BPERP**.
 
@@ -254,7 +292,7 @@ ERP-System/
 ## End-to-End Testing (Installer)
 
 1. **Thin client (NAS):** Start the backend on the NAS or test machine: `cd backend && npm start`. **Standalone:** skip this; the app starts its own backend.
-2. Run the installer: `dist-installers\BPERP-1.0.0-beta.1-win-x64.exe` (or `npm start` from a dev clone after `npm run rebuild:backend`).
+2. Run an installer or dev build: **Windows** `dist-installers/BPERP-*-win-x64.exe`; **Linux** `dist-installers/BPERP-*-linux-amd64.deb` (install with `sudo apt install ./BPERP-*.deb`) or **`BPERP-*-linux-x86_64.AppImage`**; or **`npm start`** from a dev clone after `npm run rebuild:backend`.
 3. Setup wizard: choose **Network (NAS)** and server URL (e.g. `http://localhost:3000` or NAS IP), or **Standalone (Local)** and create the admin user on this PC.
 4. Launch and verify: login, dashboard, inventory, sales, tasks, workcenter, settings
 5. Import sample data via Settings > Data Import

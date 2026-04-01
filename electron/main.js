@@ -14,7 +14,19 @@ const Store = require('electron-store');
 // Must be registered BEFORE any initialization that could throw,
 // so crashes during startup produce a visible error instead of silent exit.
 process.on('uncaughtException', (error) => {
-    console.error('UNCAUGHT EXCEPTION:', error.message, error.stack);
+    // Broken stdout/stderr (closed terminal, detached process) — not an app bug; do not exit.
+    if (error && error.code === 'EPIPE') {
+        try {
+            fs.appendFileSync(
+                path.join(os.tmpdir(), 'bperp-crash.log'),
+                `[${new Date().toISOString()}] UNCAUGHT (ignored EPIPE): ${error.message}\n`
+            );
+        } catch (_) {}
+        return;
+    }
+    try {
+        console.error('UNCAUGHT EXCEPTION:', error.message, error.stack);
+    } catch (_) {}
     try {
         fs.appendFileSync(
             path.join(os.tmpdir(), 'bperp-crash.log'),
@@ -30,7 +42,9 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason) => {
     const msg = reason instanceof Error ? reason.message : String(reason);
     const stack = reason instanceof Error ? reason.stack : '';
-    console.error('UNHANDLED REJECTION:', msg);
+    try {
+        console.error('UNHANDLED REJECTION:', msg);
+    } catch (_) {}
     try {
         fs.appendFileSync(
             path.join(os.tmpdir(), 'bperp-crash.log'),
@@ -111,13 +125,32 @@ const assetsPath = isDev
 const logFile = path.join(app.getPath('userData'), 'bperp.log');
 fs.mkdirSync(path.dirname(logFile), { recursive: true });
 const logStream = fs.createWriteStream(logFile, { flags: 'a' });
-logStream.on('error', (err) => console.error('Log stream error:', err.message));
+logStream.on('error', (err) => {
+    try {
+        console.error('Log stream error:', err.message);
+    } catch (_) {}
+});
 
 function log(level, message, ...args) {
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message} ${args.length ? JSON.stringify(args) : ''}`;
-    console.log(logMessage);
-    logStream.write(logMessage + '\n');
+    try {
+        console.log(logMessage);
+    } catch (err) {
+        // EPIPE when stdout is closed (e.g. terminal detached, headless) — not fatal for the app
+        if (!err || err.code !== 'EPIPE') {
+            try {
+                fs.appendFileSync(logFile, `${logMessage} [console.log failed: ${err && err.message}]\n`);
+            } catch (_) {}
+        }
+    }
+    try {
+        logStream.write(logMessage + '\n');
+    } catch (err) {
+        try {
+            fs.appendFileSync(logFile, `${logMessage} [logStream failed: ${err && err.message}]\n`);
+        } catch (_) {}
+    }
 }
 
 /** Shared Help / tray “About” dialog (includes user data path for support). */
@@ -220,19 +253,37 @@ function applyMainWindowTitle() {
     mainWindow.setTitle(`${base} · v${v} · ${mode}`);
 }
 
+/** Keep min size within the monitor work area so the WM can maximize (fixed 1024×768 breaks on 768px-tall laptops with panels). */
+function getMainWindowMinSize() {
+    try {
+        const work = screen.getPrimaryDisplay().workAreaSize;
+        return {
+            minWidth: Math.min(1024, Math.max(400, work.width)),
+            minHeight: Math.min(768, Math.max(400, work.height))
+        };
+    } catch (e) {
+        return { minWidth: 1024, minHeight: 768 };
+    }
+}
+
 // ==================== MAIN WINDOW ====================
 function createMainWindow() {
     allowMainWindowClose = false;
     const windowConfig = store.get('window');
-    
+    const mins = getMainWindowMinSize();
+
     mainWindow = new BrowserWindow({
         width: windowConfig.width,
         height: windowConfig.height,
-        minWidth: 1024,
-        minHeight: 768,
+        minWidth: mins.minWidth,
+        minHeight: mins.minHeight,
         show: false,
         frame: true,
         autoHideMenuBar: true,
+        resizable: true,
+        maximizable: true,
+        minimizable: true,
+        fullscreenable: true,
         icon: path.join(assetsPath, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -240,11 +291,6 @@ function createMainWindow() {
             preload: path.join(__dirname, 'preload.js')
         }
     });
-    
-    // On Linux, ensure window respects taskbar/panel
-    if (process.platform === 'linux') {
-        mainWindow.setMaximizable(true);
-    }
 
     // Load the frontend - from remote URL (NAS) or localhost (standalone)
     const serverUrl = store.get('server.url');
@@ -274,11 +320,18 @@ function createMainWindow() {
         }
         
         mainWindow.show();
-        
+
+        // Linux: WM often needs controls re-applied after the window is mapped (maximize button otherwise no-ops).
+        if (process.platform === 'linux') {
+            mainWindow.setMinimizable(true);
+            mainWindow.setMaximizable(true);
+            mainWindow.setResizable(true);
+        }
+
         if (windowConfig.maximized) {
             mainWindow.maximize();
         }
-        
+
         log('info', 'Main window ready and shown');
     });
 
@@ -400,21 +453,92 @@ function createTray() {
 }
 
 // ==================== BACKEND MANAGEMENT ====================
-function getBackendEnv() {
-    const dbConfig = store.get('database');
+/**
+ * SQLite file for the forked backend. Empty string = let server.js use backend/bperp.db (dev clone).
+ * Packaged installs must not write under resources/ (AppImage is read-only; Linux deb is often root-owned under /opt).
+ */
+function getResolvedDatabasePath() {
+    const explicit = ((store.get('database') || {}).path || '').trim();
+    if (explicit) {
+        return explicit;
+    }
+    if (app.isPackaged) {
+        return path.join(app.getPath('userData'), 'bperp.db');
+    }
+    return '';
+}
 
+function getBackendEnv() {
     return {
         ...process.env,
         NODE_ENV: isDev ? 'development' : 'production',
         PORT: store.get('server.port'),
-        DB_PATH: dbConfig.path || ''
+        DB_PATH: getResolvedDatabasePath()
     };
+}
+
+/** POST /api/setup/init — must not hang forever (broken pipe / stuck server). */
+const SETUP_INIT_TIMEOUT_MS = 45000;
+
+function postSetupInitAdmin(targetUrl, adminPayload) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(targetUrl);
+        const protocol = urlObj.protocol === 'https:' ? require('https') : require('http');
+        const body = JSON.stringify(adminPayload);
+        const timeoutMs = SETUP_INIT_TIMEOUT_MS;
+
+        const req = protocol.request(
+            {
+                hostname: urlObj.hostname,
+                port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+                path: '/api/setup/init',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body)
+                },
+                timeout: timeoutMs
+            },
+            (res) => {
+                let data = '';
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                res.on('end', () => {
+                    try {
+                        const json = data ? JSON.parse(data) : {};
+                        if (res.statusCode >= 200 && res.statusCode < 300) {
+                            resolve(json);
+                        } else {
+                            reject(new Error(json.error || `HTTP ${res.statusCode}`));
+                        }
+                    } catch (e) {
+                        reject(new Error('Invalid response from server'));
+                    }
+                });
+            }
+        );
+
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(
+                new Error(
+                    `Admin setup timed out after ${timeoutMs / 1000}s (no response from ${targetUrl})`
+                )
+            );
+        });
+        req.write(body);
+        req.end();
+    });
 }
 
 function startBackend() {
     return new Promise((resolve, reject) => {
         log('info', 'Starting backend server...');
-        
+        const dbPathForLog = getResolvedDatabasePath() || path.join(backendPath, 'bperp.db');
+        log('info', `SQLite database file: ${dbPathForLog}`);
+
         const serverPath = path.join(backendPath, 'server.js');
         
         if (!fs.existsSync(serverPath)) {
@@ -730,7 +854,7 @@ function setupIpcHandlers() {
 
     ipcMain.handle('get-app-info', () => {
         const serverUrl = (store.get('server.url') || '').trim();
-        return {
+        const info = {
             version: app.getVersion(),
             isPackaged: app.isPackaged,
             userDataPath: app.getPath('userData'),
@@ -738,6 +862,11 @@ function setupIpcHandlers() {
             electronVersion: process.versions.electron,
             nodeVersion: process.versions.node
         };
+        if (!serverUrl) {
+            info.sqliteDatabasePath =
+                getResolvedDatabasePath() || path.join(backendPath, 'bperp.db');
+        }
+        return info;
     });
     
     ipcMain.handle('get-logs', () => {
@@ -772,6 +901,10 @@ function setupIpcHandlers() {
     
     ipcMain.handle('maximize-app', () => {
         if (mainWindow) {
+            if (process.platform === 'linux') {
+                mainWindow.setMaximizable(true);
+                mainWindow.setResizable(true);
+            }
             if (mainWindow.isMaximized()) {
                 mainWindow.unmaximize();
             } else {
@@ -818,51 +951,18 @@ function setupIpcHandlers() {
                 const targetUrl = mode === 'standalone'
                     ? `http://localhost:${store.get('server.port')}`
                     : serverUrl;
-                log('info', 'Creating initial admin user on', targetUrl);
+                log('info', `POST /api/setup/init → ${targetUrl} (timeout ${SETUP_INIT_TIMEOUT_MS / 1000}s)`);
 
                 try {
-                    const urlObj = new URL(targetUrl);
-                    const protocol = urlObj.protocol === 'https:' ? require('https') : require('http');
-                    const adminData = JSON.stringify({
+                    await postSetupInitAdmin(targetUrl, {
                         username: setupConfig.admin.username,
                         name: setupConfig.admin.name || setupConfig.admin.username,
                         email: setupConfig.admin.email || null,
                         password: setupConfig.admin.password
                     });
-
-                    await new Promise((resolve, reject) => {
-                        const req = protocol.request({
-                            hostname: urlObj.hostname,
-                            port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
-                            path: '/api/setup/init',
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Content-Length': Buffer.byteLength(adminData)
-                            }
-                        }, (res) => {
-                            let data = '';
-                            res.on('data', chunk => data += chunk);
-                            res.on('end', () => {
-                                try {
-                                    const json = JSON.parse(data);
-                                    if (res.statusCode >= 200 && res.statusCode < 300) {
-                                        resolve(json);
-                                    } else {
-                                        reject(new Error(json.error || 'Failed to create admin user'));
-                                    }
-                                } catch (e) {
-                                    reject(new Error('Invalid response from server'));
-                                }
-                            });
-                        });
-                        req.on('error', reject);
-                        req.write(adminData);
-                        req.end();
-                    });
                     log('info', 'Admin user created successfully');
                 } catch (adminError) {
-                    if (adminError.message.includes('already')) {
+                    if (adminError.message && adminError.message.includes('already')) {
                         log('info', 'Users already exist, skipping admin creation');
                     } else {
                         log('warn', 'Failed to create admin user: ' + adminError.message);
@@ -1012,6 +1112,12 @@ app.whenReady().then(async () => {
     if (isFirstRun) {
         log('info', 'First run detected, showing setup wizard');
         createSetupWindow();
+        if (process.env.BPERP_DEBUG_SETUP === '1' && setupWindow) {
+            setupWindow.webContents.once('did-finish-load', () => {
+                setupWindow.webContents.openDevTools({ mode: 'detach' });
+            });
+            log('info', 'BPERP_DEBUG_SETUP=1: opening setup wizard DevTools after load');
+        }
     } else {
         // Show splash and start normally
         createSplashWindow();

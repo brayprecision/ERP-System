@@ -10,7 +10,7 @@ Express.js API server for the BPERP ERP system. It can run **on the NAS** (or an
 
 If **`cd backend && npm run dev`** breaks after `rebuild:backend`, run **`npm rebuild better-sqlite3 bcrypt`** in `backend/` to restore system-Node binaries.
 
-**Packaging (repo root):** `npm run build:win`, `build:linux`, and `pack:win` use **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` here) so the copied `resources/backend` tree omits Jest, nodemon, TypeScript, etc. After running those, run **`npm run backend:install`** from the repo root if you need dev dependencies in `backend/` again for tests or `npm run dev`.
+**Packaging (repo root):** `npm run build:win`, `build:linux`, `pack:win`, and **`pack:linux`** use **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` here) so the copied `resources/backend` tree omits Jest, nodemon, TypeScript, etc. Root **`package.json`** sets **`publish`** to **`null`** and those scripts pass **`--publish never`** (no **`GH_TOKEN`** required for local builds). After running those, run **`npm run backend:install`** from the repo root if you need dev dependencies in `backend/` again for tests or `npm run dev`.
 
 ## Setup
 
@@ -41,7 +41,7 @@ NODE_ENV=development
 SESSION_TIMEOUT_HOURS=24
 ```
 
-If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend directory.
+If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend directory. When the API is **forked from a packaged Electron app**, the main process sets `DB_PATH` to a file under Electron **user data** (see `getResolvedDatabasePath()` in `electron/main.js`) so SQLite stays writable; unpackaged dev runs still omit `DB_PATH` and use `backend/bperp.db`.
 
 ### Migrations
 

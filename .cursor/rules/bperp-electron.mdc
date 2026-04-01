@@ -8,7 +8,8 @@ globs:
 
 ## Main process (`electron/main.js`)
 
-- **Windows:** Splash → Setup Wizard (first run) → Main Window
+- **First run:** Splash → Setup Wizard → Main Window (Windows and Linux)
+- **Main window:** **`getMainWindowMinSize()`** caps **`minWidth` / `minHeight`** to the primary display **work area** so Linux WMs allow **maximize** on laptops with short work areas; on Linux, **`setMaximizable` / `setResizable`** are re-applied after **`show()`**
 - **Backend lifecycle:** Use `fork()`, not `spawn('node', ...)`, so the bundled runtime is used
 - **IPC:** Config, DB path tests, migrations, system info
 - **Single instance** lock
@@ -22,22 +23,25 @@ Renderer uses `window.electronAPI`, e.g. `getConfig()`, `testConnection`, `runMi
 
 - Path: `~/.config/BPERP - Manufacturing ERP/bperp-config.json` (electron-store)
 - Notable keys: `firstRun`, `database.path`, `window.*`, `server.port`, `server.url` (empty = standalone, set = network/NAS)
+- **Standalone SQLite (packaged):** If `database.path` is empty, main sets `DB_PATH` to `bperp.db` under `userData` so Linux `.deb`/AppImage and read-only install trees can persist the DB. Dev clone (`!isPackaged`) leaves `DB_PATH` unset so the backend uses `backend/bperp.db`.
 
 ## Build outputs
 
 | Format | Use case |
 |--------|----------|
 | `.exe` (NSIS) | Windows installer |
-| `.deb` | Ubuntu/Debian/Zorin |
-| `.AppImage` | Portable Linux |
+| `.deb` | Ubuntu / Debian / Linux Mint / Zorin (installs Chromium/Electron system libs via `Depends`). Output name: **`BPERP-*-linux-amd64.deb`**. |
+| `.AppImage` | Portable Linux. Output name: **`BPERP-*-linux-x86_64.AppImage`**. |
 
 ## `package.json` build section
 
 - `build.files`: `electron/**/*` only (static UI is **not** duplicated inside `app.asar`; Express serves `resources/frontend` from `extraResources`).
 - `extraResources`: `backend/`, `frontend/` (outside asar)
-- Release scripts (`build:win`, `build:linux`, `pack:win`) use **`npm run backend:install:prod`** so `resources/backend` omits devDependencies (Jest, nodemon, TypeScript, etc.); use `npm run backend:install` after packaging if you need full backend dev deps locally again.
+- Release scripts (`build:win`, `build:linux`, `pack:win`, `pack:linux`) use **`npm run backend:install:prod`** so `resources/backend` omits devDependencies (Jest, nodemon, TypeScript, etc.); use `npm run backend:install` after packaging if you need full backend dev deps locally again. **`build.publish`** is **`null`** and scripts pass **`--publish never`** so local builds do not require **`GH_TOKEN`**.
 - Linux targets: AppImage + deb (no rpm)
 - `linux.category`: Office
 - SQLite via `better-sqlite3`; no separate DB server dependency
 
 Native rebuild from repo root: `npm run rebuild:backend` → `scripts/rebuild-backend-native.js`.
+
+Setup wizard: **`complete-setup`** starts backend (standalone), **`postSetupInitAdmin`** (45s timeout) → **`createMainWindow`**. Debug first run: **`BPERP_DEBUG_SETUP=1`**; logs in **`bperp.log`** (user data).

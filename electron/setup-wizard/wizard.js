@@ -212,10 +212,17 @@ async function testConnection() {
     btn.innerHTML = '<span class="btn-icon">🔗</span> Test Connection';
 }
 
+/** Avoid hanging on unreachable NAS (unbounded fetch). */
+function fetchWithTimeout(url, ms = 8000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), ms);
+    return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 async function fetchSetupStatus() {
     const baseUrl = config.server.url.replace(/\/$/, '');
     try {
-        const res = await fetch(baseUrl + '/api/setup/status');
+        const res = await fetchWithTimeout(baseUrl + '/api/setup/status', 8000);
         const data = await res.json();
         return data.setupComplete === true;
     } catch (e) {
@@ -393,6 +400,8 @@ async function goNext() {
     updateUI();
 }
 
+const SETUP_IPC_TIMEOUT_MS = 120000;
+
 async function completeSetup() {
     const loadingMsg = config.mode === 'standalone'
         ? 'Starting local server...'
@@ -402,11 +411,24 @@ async function completeSetup() {
     try {
         if (window.electronAPI) {
             showLoading('Finalizing configuration...');
-            const result = await window.electronAPI.completeSetup({
-                mode: config.mode,
-                server: config.server,
-                admin: setupAlreadyComplete ? null : config.admin
-            });
+            const result = await Promise.race([
+                window.electronAPI.completeSetup({
+                    mode: config.mode,
+                    server: config.server,
+                    admin: setupAlreadyComplete ? null : config.admin
+                }),
+                new Promise((_, reject) =>
+                    setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    'Setup timed out after 2 minutes. See bperp.log in your user data folder (Help → View Logs, or Settings → About this app).'
+                                )
+                            ),
+                        SETUP_IPC_TIMEOUT_MS
+                    )
+                )
+            ]);
 
             if (!result.success) {
                 throw new Error(result.error || 'Setup failed');

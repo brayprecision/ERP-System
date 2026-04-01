@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Electron — maximize (Linux / small displays)** — Main window used **`minWidth` 1024 / `minHeight` 768** unconditionally. On common **1366×768** (and similar) panels, the **work area height** can be **below 768**, so the window’s minimum size exceeded the monitor and many window managers **disabled or ignored maximize**. Minimum size is now **capped to the primary display work area**; `maximizable` / `resizable` are set explicitly and re-applied after **`show()`** on Linux (and IPC toggle).
+
+- **Setup wizard hang** — **`POST /api/setup/init`** now uses a **45s** HTTP timeout (was unbounded). **Network** step **`fetch('/api/setup/status')`** uses an **8s** abort timeout. **Launch BPERP** shows an error after **2 minutes** if the main process never returns. **`BPERP_DEBUG_SETUP=1`** opens **DevTools** on the setup window after load.
+
+- **Electron main — `write EPIPE` “fatal” exit** — If **stdout** is closed (closed terminal, headless, piping), **`console.log`** in **`log()`** could throw **`EPIPE`**, which triggered **`uncaughtException`** and **`process.exit(1)`**. **`log()`** now catches broken console writes; **`EPIPE`** in the global handler is ignored (still appended to **`/tmp/bperp-crash.log`** for diagnosis). **`console.error`** in early handlers is wrapped so it cannot recurse on **`EPIPE`**.
+
+- **electron-builder (local packaging)** — **`npm run build:linux`**, **`build:win`**, and **`pack:win`** / **`pack:linux`** use **`--publish never`** and **`build.publish: null`** so packaging does not require **`GH_TOKEN`** or attempt GitHub release upload (artifacts still land in **`dist-installers/`**).
+
+- **Linux `.deb` installer** — Declared **`Depends`** cover Electron/Chromium runtime links (**ca-certificates**, **ATK / AT-SPI bridge**, **Cairo / Pango / GLib**, **D-Bus**, **DRM/GBM**, **ALSA**, **CUPS**, **X11** including **composite / randr / xfixes / shmfence**, **xcb**, **xkbcommon**, **udev**) and use **`|` alternatives** where distros ship **`t64`** packages (GTK, cups, asound, ATK stack, etc.), so minimal desktops, **Linux Mint**, and Ubuntu 24.04+ resolve packages correctly.
+
+- **Linux / Node 18 — `npm run rebuild:backend`** — Pinned **`@electron/rebuild` to 3.6.1**. Version 4.x uses `util.styleText`, which is not available on Node 18, so the rebuild CLI crashed before running **node-gyp**. Node 20.12+ can use newer `@electron/rebuild` if you upgrade.
+
+- **Electron Standalone (packaged)** — When `database.path` is unset, the SQLite file now defaults to **`bperp.db` under Electron user data** (not next to `server.js` under the install). Packaged Linux installs (`.deb`, AppImage) often cannot write under `resources/` or `/opt`, so the previous default could fail silently or block startup. Unpackaged runs from a dev clone still use **`backend/bperp.db`** as before.
+
 ### Added
+
+- **Settings → About this app** (Electron, Standalone) — Shows the resolved **SQLite database** file path.
 
 - **Sales → Leads** — Full **CRUD** with **SQLite** table `sales_leads` and REST **`/api/leads`** (list with search, get, create, update, soft delete, archived list, permanent delete for admins). Seeded with **48** prospects (migration + `backend/migrations/seeds/sales_leads_seed.json`). **Offline/demo** uses `bperp_leads` / `bperp_archived_leads` seeded from `salesLeadsData.js`. **Settings → Archive → Archived leads**. Server backup includes `sales_leads`.
 
@@ -15,7 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Linux prerequisites** — README Quick Start notes **`build-essential`** and **`python3-setuptools`** for node-gyp on Python 3.12+ (`distutils`).
+- **Linux Mint workstation** — README adds a short checklist (`.deb` vs AppImage, first-run wizard, NAS vs Standalone, launcher and DB path).
+
+- **Linux artifact names** — README documents actual electron-builder output (**`BPERP-*-linux-amd64.deb`**, **`BPERP-*-linux-x86_64.AppImage`**), not `linux-x64.*`.
+
 - **Electron native modules** — README (`Native modules (Electron vs system Node)`), `backend/README.md`, and `.cursor/rules/bperp-reference.mdc` explain why `better-sqlite3` / `bcrypt` hit `NODE_MODULE_VERSION` / `ERR_DLOPEN_FAILED` under Electron, when to run `npm run rebuild:backend` from the repo root, and that root `postinstall` does not replace that step for `backend/` installs.
+
+- **Electron desktop (Linux)** — README (**Quick Start**) adds **Electron desktop (Linux): window and logs** (maximize / work-area min size, **`bperp.log`** / **`EPIPE`** / **`/tmp/bperp-crash.log`**). **Building Installers** mentions **`pack:linux`** and **`--publish never`** / no **`GH_TOKEN`**.
+
+- **Setup wizard debugging** — README documents **`BPERP_DEBUG_SETUP`**, timeouts, and **`bperp.log`** (see **Debugging the setup wizard**).
+
+- **`backend/README.md`** — Packaging paragraph includes **`pack:linux`**, **`publish: null`**, and **`--publish never`**.
+
+- **`.cursor/rules/bperp-electron.mdc`** — Main-window maximize / work-area behavior documented.
 
 ### Changed
 

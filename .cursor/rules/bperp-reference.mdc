@@ -41,7 +41,8 @@ cd backend && npm test
 
 # Building installers (from repo root; runs backend:install:prod + rebuild:backend + electron-builder)
 npm run build:win                    # Windows NSIS + unpacked → dist-installers/
-npm run build:linux                  # Linux AppImage + deb (no rpm)
+npm run build:linux                  # Linux AppImage + deb (no rpm); outputs BPERP-*-linux-amd64.deb and BPERP-*-linux-x86_64.AppImage
+npm run pack:linux                   # Linux linux-unpacked only (faster smoke test)
 npm run pack:win                     # Windows unpacked only (faster)
 
 # Test unpacked Windows build

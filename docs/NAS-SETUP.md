@@ -15,7 +15,7 @@ Uninstalling BPERP on a PC **does not** remove Electron **user data** (where the
 
 ## Prerequisites
 
-- Node.js 18+ installed on the NAS
+- Node.js 18+ installed on the NAS (Linux Mint and other Ubuntu-based systems: same as Ubuntu for installing Node and running `npm install` in `backend/`)
 - Network access from workstations to the NAS
 
 ## Quick Start (Manual)
@@ -117,7 +117,7 @@ Migrations run automatically when the server starts. No manual step required.
 Ensure port 3000 is open on the NAS so workstations can connect:
 
 ```bash
-# Ubuntu/Zorin (ufw)
+# Ubuntu / Linux Mint / Zorin (ufw)
 sudo ufw allow 3000/tcp
 sudo ufw reload
 ```

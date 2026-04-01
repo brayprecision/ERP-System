@@ -408,6 +408,11 @@ async function loadAboutAppView() {
                         <dt class="text-gray-500 font-medium">Server URL (UI source)</dt>
                         <dd class="text-emerald-300/90 font-mono text-xs mt-1 break-all">${esc(serverUrl)}</dd>
                     </div>` : ''}
+                    ${!network && info.sqliteDatabasePath ? `
+                    <div>
+                        <dt class="text-gray-500 font-medium">SQLite database (local backend)</dt>
+                        <dd class="text-gray-400 font-mono text-xs mt-1 break-all">${esc(info.sqliteDatabasePath)}</dd>
+                    </div>` : ''}
                     <div>
                         <dt class="text-gray-500 font-medium">Runtime</dt>
                         <dd class="text-gray-400 font-mono text-xs mt-1">Electron ${esc(info.electronVersion)} · Node ${esc(info.nodeVersion)}</dd>
