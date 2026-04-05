@@ -62,6 +62,10 @@ if (process.platform === 'linux') {
     app.commandLine.appendSwitch('gtk-version', '3');
     // Disable GPU VSync errors (cosmetic, doesn't affect functionality)
     app.commandLine.appendSwitch('disable-gpu-vsync');
+    // Optional: `BPERP_OZONE_PLATFORM=x11 npm start` — some Wayland sessions break maximize/resize; forces X11/Wayland X11 mode.
+    if ((process.env.BPERP_OZONE_PLATFORM || '').toLowerCase() === 'x11') {
+        app.commandLine.appendSwitch('ozone-platform', 'x11');
+    }
 }
 
 // Initialize config store
@@ -76,7 +80,7 @@ const store = new Store({
         window: {
             width: 1280,
             height: 800,
-            maximized: false
+            maximized: true
         },
         server: {
             port: 3000,
@@ -253,17 +257,66 @@ function applyMainWindowTitle() {
     mainWindow.setTitle(`${base} · v${v} · ${mode}`);
 }
 
-/** Keep min size within the monitor work area so the WM can maximize (fixed 1024×768 breaks on 768px-tall laptops with panels). */
+/**
+ * Keep min size within the monitor work area so the WM can maximize (fixed 1024×768 breaks on short panels).
+ * Never set minWidth/minHeight equal to the full work width/height — that makes vertical (or horizontal) resize
+ * impossible because the window cannot be shorter than the entire usable area.
+ */
 function getMainWindowMinSize() {
     try {
         const work = screen.getPrimaryDisplay().workAreaSize;
+        const preferredW = Math.max(400, Math.min(1024, work.width));
+        const preferredH = Math.max(400, Math.min(768, work.height));
         return {
-            minWidth: Math.min(1024, Math.max(400, work.width)),
-            minHeight: Math.min(768, Math.max(400, work.height))
+            minWidth: Math.min(Math.max(1, work.width - 1), preferredW),
+            minHeight: Math.min(Math.max(1, work.height - 1), preferredH)
         };
     } catch (e) {
         return { minWidth: 1024, minHeight: 768 };
     }
+}
+
+/** Linux (Cinnamon/X11): WM `maximize()` often sizes to the full screen, so the bottom sits under the panel. We fill `screen.workArea` with `setBounds` instead and treat that as "maximized" for persistence. */
+const LINUX_WORK_AREA_MATCH_TOL = 8;
+
+function linuxBoundsFillWorkArea(win) {
+    if (process.platform !== 'linux' || !win || win.isDestroyed()) return false;
+    const bounds = win.getBounds();
+    const wa = screen.getDisplayMatching(bounds).workArea;
+    return (
+        Math.abs(bounds.x - wa.x) <= LINUX_WORK_AREA_MATCH_TOL &&
+        Math.abs(bounds.y - wa.y) <= LINUX_WORK_AREA_MATCH_TOL &&
+        Math.abs(bounds.width - wa.width) <= LINUX_WORK_AREA_MATCH_TOL &&
+        Math.abs(bounds.height - wa.height) <= LINUX_WORK_AREA_MATCH_TOL
+    );
+}
+
+function linuxApplyWorkAreaFill() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+    }
+    const wa = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+    mainWindow.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height }, false);
+    mainWindow.setMinimizable(true);
+    mainWindow.setMaximizable(true);
+    mainWindow.setResizable(true);
+    store.set('window.maximized', true);
+    if (isDev) {
+        log('info', 'Linux: applied work-area fill', { workArea: wa });
+    }
+}
+
+function linuxRestoreFromWorkAreaFill() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const w = store.get('window.width') || 1280;
+    const h = store.get('window.height') || 800;
+    mainWindow.setSize(w, h, false);
+    mainWindow.center();
+    mainWindow.setMinimizable(true);
+    mainWindow.setMaximizable(true);
+    mainWindow.setResizable(true);
+    store.set('window.maximized', false);
 }
 
 // ==================== MAIN WINDOW ====================
@@ -323,6 +376,8 @@ function createMainWindow() {
 
         // Linux: WM often needs controls re-applied after the window is mapped (maximize button otherwise no-ops).
         if (process.platform === 'linux') {
+            const m = getMainWindowMinSize();
+            mainWindow.setMinimumSize(m.minWidth, m.minHeight);
             mainWindow.setMinimizable(true);
             mainWindow.setMaximizable(true);
             mainWindow.setResizable(true);
@@ -339,13 +394,30 @@ function createMainWindow() {
     mainWindow.on('resize', saveWindowState);
     mainWindow.on('move', saveWindowState);
     
-    // Handle maximize state
+    // Handle maximize state (Linux: WM maximize() often draws under the panel — replace with work-area fill)
     mainWindow.on('maximize', () => {
-        store.set('window.maximized', true);
+        if (process.platform === 'linux') {
+            setImmediate(() => {
+                if (!mainWindow || mainWindow.isDestroyed()) return;
+                linuxApplyWorkAreaFill();
+            });
+        } else {
+            store.set('window.maximized', true);
+        }
     });
-    
+
     mainWindow.on('unmaximize', () => {
-        store.set('window.maximized', false);
+        if (process.platform === 'linux') {
+            // Run after linuxApplyWorkAreaFill's setBounds so we don't clear maximized during fill.
+            setTimeout(() => {
+                if (!mainWindow || mainWindow.isDestroyed()) return;
+                if (!linuxBoundsFillWorkArea(mainWindow)) {
+                    store.set('window.maximized', false);
+                }
+            }, 0);
+        } else {
+            store.set('window.maximized', false);
+        }
     });
 
     // Close immediately — do not auto clock-out on quit (users may leave the app open while developing).
@@ -395,10 +467,12 @@ function createMainWindow() {
 
 function saveWindowState() {
     if (!mainWindow || mainWindow.isMaximized()) return;
-    
+    if (process.platform === 'linux' && linuxBoundsFillWorkArea(mainWindow)) return;
+
     const bounds = mainWindow.getBounds();
     store.set('window.width', bounds.width);
     store.set('window.height', bounds.height);
+    store.set('window.maximized', false);
 }
 
 // ==================== SYSTEM TRAY ====================
@@ -900,21 +974,33 @@ function setupIpcHandlers() {
     });
     
     ipcMain.handle('maximize-app', () => {
-        if (mainWindow) {
-            if (process.platform === 'linux') {
-                mainWindow.setMaximizable(true);
-                mainWindow.setResizable(true);
-            }
-            if (mainWindow.isMaximized()) {
-                mainWindow.unmaximize();
+        if (!mainWindow) return;
+        if (process.platform === 'linux') {
+            mainWindow.setMaximizable(true);
+            mainWindow.setResizable(true);
+            if (linuxBoundsFillWorkArea(mainWindow) || mainWindow.isMaximized()) {
+                if (mainWindow.isMaximized()) {
+                    mainWindow.unmaximize();
+                }
+                linuxRestoreFromWorkAreaFill();
             } else {
-                mainWindow.maximize();
+                linuxApplyWorkAreaFill();
             }
+            return;
+        }
+        if (mainWindow.isMaximized()) {
+            mainWindow.unmaximize();
+        } else {
+            mainWindow.maximize();
         }
     });
     
     ipcMain.handle('is-maximized', () => {
-        return mainWindow ? mainWindow.isMaximized() : false;
+        if (!mainWindow) return false;
+        if (process.platform === 'linux') {
+            return linuxBoundsFillWorkArea(mainWindow) || mainWindow.isMaximized();
+        }
+        return mainWindow.isMaximized();
     });
     
     // Setup wizard completion (standalone or remote/NAS mode)

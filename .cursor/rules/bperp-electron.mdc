@@ -9,7 +9,7 @@ globs:
 ## Main process (`electron/main.js`)
 
 - **First run:** Splash → Setup Wizard → Main Window (Windows and Linux)
-- **Main window:** **`getMainWindowMinSize()`** caps **`minWidth` / `minHeight`** to the primary display **work area** so Linux WMs allow **maximize** on laptops with short work areas; on Linux, **`setMaximizable` / `setResizable`** are re-applied after **`show()`**
+- **Main window:** **`getMainWindowMinSize()`** caps **`minWidth` / `minHeight`** using the primary display work area but keeps each **strictly below** the work width/height so the window can always shrink within the work area; on Linux, **`setMinimumSize`**, **`setMaximizable` / `setResizable`** are re-applied after **`show()`**; **Linux “maximize”** uses **`setBounds(workArea)`** (not **`maximize()`**) so the window stays **above the panel**; **`maximize`** event is converted to that fill; default **`window.maximized`** is **`true`**; optional **`BPERP_OZONE_PLATFORM=x11`** for bad Wayland WMs
 - **Backend lifecycle:** Use `fork()`, not `spawn('node', ...)`, so the bundled runtime is used
 - **IPC:** Config, DB path tests, migrations, system info
 - **Single instance** lock
