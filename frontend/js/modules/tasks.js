@@ -789,6 +789,13 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor, l
         `;
     };
     
+    const inspectionInventoryBtn =
+        stepName === 'Inspection Tasks'
+            ? `<button type="button" data-action="navigate-inventory-inspection" class="text-cyan-400 hover:text-cyan-300 text-sm flex items-center gap-1 mr-3">
+                <i class="fa-solid fa-microscope"></i>Inspection inventory
+               </button>`
+            : '';
+
     container.innerHTML = `
         <div class="col-span-3">
             <div class="flex justify-between items-center mb-4">
@@ -796,9 +803,12 @@ function renderWorkflowView(workOrders, stepKeys, stepName, tabIcon, tabColor, l
                     <i class="fa-solid ${tabIcon} mr-2 ${tabColor}"></i>${stepName}
                     <span class="text-xs text-gray-500">(${relevantItems.length} parts at this step)</span>
                 </h3>
-                <button data-action="refresh-tasks" class="text-gray-400 hover:text-white text-sm">
-                    <i class="fa-solid fa-refresh mr-1"></i>Refresh
-                </button>
+                <div class="flex items-center">
+                    ${inspectionInventoryBtn}
+                    <button data-action="refresh-tasks" class="text-gray-400 hover:text-white text-sm">
+                        <i class="fa-solid fa-refresh mr-1"></i>Refresh
+                    </button>
+                </div>
             </div>
             
             ${filterBar}
@@ -1849,6 +1859,10 @@ export function registerActionHandlers(registerFn) {
     });
 
     registerFn('refresh-tasks', refreshCurrentView);
+
+    registerFn('navigate-inventory-inspection', () => {
+        window.BPERP?.navigate?.('inventory-inspection');
+    });
 
     registerFn('clear-tasks-filters', () => clearTasksFilters());
     

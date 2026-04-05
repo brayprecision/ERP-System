@@ -518,6 +518,7 @@ export async function createBackup() {
         materials: JSON.parse(localStorage.getItem('bperp_materials') || 'null'),
         tooling: JSON.parse(localStorage.getItem('bperp_tooling') || 'null'),
         misc_items: JSON.parse(localStorage.getItem('bperp_misc_items') || 'null'),
+        inspection_tools: JSON.parse(localStorage.getItem('bperp_inspection_tools') || 'null'),
         misc_tasks: JSON.parse(localStorage.getItem('bperp_misc_tasks') || 'null'),
             // User profiles (includes appearance settings and permissions)
             users_list: JSON.parse(localStorage.getItem('bperp_users_list') || 'null'),
@@ -637,6 +638,7 @@ export async function restoreFromBackup(fileInput) {
                 materials: 'bperp_materials',
                 tooling: 'bperp_tooling',
                 misc_items: 'bperp_misc_items',
+                inspection_tools: 'bperp_inspection_tools',
                 misc_tasks: 'bperp_misc_tasks',
                 users_list: 'bperp_users_list',
                 theme_preferences: 'bperp_theme_preferences',

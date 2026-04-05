@@ -23,6 +23,8 @@ export const STORAGE_KEYS = {
     MISC_ITEMS: 'bperp_misc_items',
     PRODUCTS: 'bperp_products',
     PARTS: 'bperp_parts',
+    /** Gages / metrology: profiles, calibration dates, documents (base64 in browser) */
+    INSPECTION_TOOLS: 'bperp_inspection_tools',
     MISC_TASKS: 'bperp_misc_tasks',
     USER_PREFERENCES: 'bperp_user_preferences',
     CACHED_SEARCH: 'bperp_cached_search',

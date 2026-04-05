@@ -20,7 +20,7 @@ Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, wor
 
 ### Inventory (browser UI)
 
-The Inventory sidebar (materials, tooling, misc, products, parts, and **Kanban**) stores item data in **localStorage** in the current UI; it does not call the SQLite **REST** inventory API yet (`/api/inventory/*` remains available for future wiring). Per-item fields include optional **reorder link**, **min reorder qty** (shown on Kanban with **reorder cost** = unit price × min qty), and **Bill of Materials** on product add and edit.
+The Inventory sidebar (materials, tooling, misc, products, parts, **Inspection**, and **Kanban**) stores item data in **localStorage** in the current UI so the app works **without relying on the REST API** for day-to-day use; SQLite **`/api/inventory/*`** and **`/api/inspection-inventory/*`** remain available for when you migrate to a server-backed workflow. **Inspection** stores gage profiles, calibration dates, PDF/image attachments (base64 in the browser), and can **Sync reminders** to create **misc tasks** on **All Tasks** when calibrations are due or overdue. Per-item fields elsewhere include optional **reorder link**, **min reorder qty** (shown on Kanban with **reorder cost** = unit price × min qty), and **Bill of Materials** on product add and edit.
 
 ### Known Issues
 - **Backup/Restore** only saves browser localStorage, not a real database backup (should be a simple file copy of the SQLite DB)
@@ -310,6 +310,7 @@ All endpoints (except login) require `Authorization: Bearer <token>` header.
 | `GET /api/customers/archived` | List soft-deleted customers (archive) |
 | `DELETE /api/customers/:id/permanent` | Permanently delete archived customer (Administrator only) |
 | `GET /api/inventory/:category` | List inventory items (products/parts/materials/tooling/misc) |
+| `GET /api/inspection-inventory/*` | **Optional (migration / NAS):** inspection tools API when the SQLite backend is used; the browser UI stores inspection data in **`localStorage`** (`bperp_inspection_tools`) without requiring these routes for normal use |
 | `GET /api/quotes` | List quotes (optional `expand=items` for line items) |
 | `GET /api/work-orders` | List work orders (optional `expand=checklist` for checklist rows) |
 | `GET /api/tasks` | List tasks (supports filtering) |

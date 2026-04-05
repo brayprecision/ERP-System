@@ -360,6 +360,35 @@ const idParamSchema = z.object({
         .transform(val => parseInt(val, 10))
 });
 
+const inspectionToolDocParamsSchema = z.object({
+    id: z.string()
+        .regex(/^\d+$/, 'ID must be a positive integer')
+        .transform(val => parseInt(val, 10)),
+    docId: z.string()
+        .regex(/^\d+$/, 'Document ID must be a positive integer')
+        .transform(val => parseInt(val, 10))
+});
+
+const inspectionToolCreateSchema = z.object({
+    name: z.string().min(1, 'Name is required').max(200).trim(),
+    assetTag: z.string().max(100).optional().nullable(),
+    manufacturer: z.string().max(200).optional().nullable(),
+    model: z.string().max(200).optional().nullable(),
+    serialNumber: z.string().max(200).optional().nullable(),
+    location: z.string().max(200).optional().nullable(),
+    traceabilityNote: z.string().max(2000).optional().nullable(),
+    notes: z.string().max(5000).optional().nullable(),
+    lastCalibrationDate: z.string().max(32).optional().nullable(),
+    calibrationIntervalDays: z.coerce.number().int().positive().optional().nullable()
+});
+
+const inspectionToolUpdateSchema = inspectionToolCreateSchema.partial();
+
+const inspectionToolListQuerySchema = z.object({
+    search: z.string().max(200).optional(),
+    dueSoon: z.enum(['true', 'false']).optional()
+});
+
 // ==================== VALIDATION MIDDLEWARE ====================
 
 /**
@@ -478,7 +507,11 @@ module.exports = {
         laborShiftPatch: laborShiftPatchSchema,
         laborMiscSegmentStart: laborMiscSegmentStartSchema,
         laborMiscSegmentStop: laborMiscSegmentStopSchema,
-        idParam: idParamSchema
+        idParam: idParamSchema,
+        inspectionToolDocParams: inspectionToolDocParamsSchema,
+        inspectionToolCreate: inspectionToolCreateSchema,
+        inspectionToolUpdate: inspectionToolUpdateSchema,
+        inspectionToolListQuery: inspectionToolListQuerySchema
     },
     // Middleware creators
     validateBody,

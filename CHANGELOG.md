@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Inventory → Inspection** — Gage profiles, calibration dates, and PDF/image attachments in **`localStorage`** (`bperp_inspection_tools`; documents as base64). **Sync reminders** adds **misc tasks** when calibrations are due (within 30 days) or overdue. **Inspection** workcenter links to this inventory. Optional SQLite migration path: **`inspection_tool_assets`** / **`inspection_tool_documents`**, REST **`/api/inspection-inventory/*`**, disk uploads under **`backend/uploads/inspection-tools/`**, server **`Calibration`** tasks — see **`backend/README.md`**.
+
 - **Settings → About this app** (Electron, Standalone) — Shows the resolved **SQLite database** file path.
 
 - **Sales → Leads** — Full **CRUD** with **SQLite** table `sales_leads` and REST **`/api/leads`** (list with search, get, create, update, soft delete, archived list, permanent delete for admins). Seeded with **48** prospects (migration + `backend/migrations/seeds/sales_leads_seed.json`). **Offline/demo** uses `bperp_leads` / `bperp_archived_leads` seeded from `salesLeadsData.js`. **Settings → Archive → Archived leads**. Server backup includes `sales_leads`.

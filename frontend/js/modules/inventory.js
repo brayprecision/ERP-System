@@ -432,6 +432,7 @@ function refreshCurrentView() {
         case 'misc': loadMiscInventory(); break;
         case 'products': loadProductInventory(); break;
         case 'parts': loadPartsInventory(); break;
+        case 'inspection': loadInspectionToolInventory(); break;
     }
 }
 
@@ -509,6 +510,450 @@ export function loadPartsInventory() {
     }, () => {
         showToast('Error loading parts', 'error');
     }, 'loadPartsInventory');
+}
+
+// ==================== INSPECTION TOOL INVENTORY (API) ====================
+
+function calibrationStatusBadge(tool) {
+    const due = tool.nextCalibrationDue;
+    if (!due) {
+        return { text: 'No due date', cls: 'bg-gray-600 text-gray-100' };
+    }
+    const d = new Date(due);
+    if (Number.isNaN(d.getTime())) {
+        return { text: 'Invalid date', cls: 'bg-gray-600 text-gray-100' };
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dd = new Date(d);
+    dd.setHours(0, 0, 0, 0);
+    const diff = Math.round((dd - today) / 86400000);
+    if (diff < 0) return { text: 'Overdue', cls: 'bg-red-600 text-red-100' };
+    if (diff <= 30) return { text: 'Due soon', cls: 'bg-amber-600 text-amber-100' };
+    return { text: 'OK', cls: 'bg-green-600 text-green-100' };
+}
+
+function getDemoInspectionTools() {
+    return [];
+}
+
+export function getInspectionTools() {
+    let data = storage.get(STORAGE_KEYS.INSPECTION_TOOLS);
+    if (!data || !Array.isArray(data)) {
+        data = getDemoInspectionTools();
+        storage.set(STORAGE_KEYS.INSPECTION_TOOLS, data);
+    }
+    return data;
+}
+
+function recomputeNextDueLocal(lastCalibrationDate, calibrationIntervalDays) {
+    if (!lastCalibrationDate || calibrationIntervalDays == null) return null;
+    const interval = parseInt(calibrationIntervalDays, 10);
+    if (!Number.isFinite(interval) || interval <= 0) return null;
+    const last = new Date(String(lastCalibrationDate).trim());
+    if (Number.isNaN(last.getTime())) return null;
+    const next = new Date(last);
+    next.setDate(next.getDate() + interval);
+    return next.toISOString().split('T')[0];
+}
+
+function getCalibrationLeadDaysLocal() {
+    return 30;
+}
+
+/** Tools needing calibration within lead days or overdue (for reminder table + misc-task sync). */
+function computeLocalCalibrationReminderRows(tools) {
+    const lead = getCalibrationLeadDaysLocal();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const rows = [];
+    for (const t of tools) {
+        const due = t.nextCalibrationDue;
+        if (!due) continue;
+        const d = new Date(due);
+        if (Number.isNaN(d.getTime())) continue;
+        d.setHours(0, 0, 0, 0);
+        const daysUntil = Math.round((d - today) / 86400000);
+        if (daysUntil <= lead) {
+            rows.push({
+                inspectionToolId: t.id,
+                toolName: t.name,
+                title: `Calibrate: ${t.name}`,
+                dueDate: due
+            });
+        }
+    }
+    rows.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    return rows;
+}
+
+function nextInspectionToolId() {
+    const items = getInspectionTools();
+    return Math.max(0, ...items.map((t) => t.id || 0)) + 1;
+}
+
+function filterInspectionToolsForView(items) {
+    const q = (inventoryState.filters.search || '').trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((t) => {
+        const hay = [
+            t.name,
+            t.assetTag,
+            t.manufacturer,
+            t.model,
+            t.serialNumber,
+            t.location
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+        return hay.includes(q);
+    });
+}
+
+function syncLocalCalibrationMiscTasks() {
+    const tools = getInspectionTools();
+    const reminders = computeLocalCalibrationReminderRows(tools);
+    let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+    let added = 0;
+    for (const r of reminders) {
+        const exists = miscTasks.some(
+            (t) =>
+                t.source === 'inspection_calibration' &&
+                t.linkedInspectionToolId === r.inspectionToolId &&
+                t.status !== 'Completed'
+        );
+        if (!exists) {
+            miscTasks.push({
+                id: Date.now() + Math.floor(Math.random() * 10000),
+                title: r.title,
+                description: 'Calibration reminder from Inspection inventory',
+                category: 'Other',
+                priority: 'Medium',
+                assignedTo: '',
+                dueDate: r.dueDate,
+                estimatedDuration: '',
+                status: 'Not Started',
+                type: 'miscellaneous',
+                source: 'inspection_calibration',
+                linkedInspectionToolId: r.inspectionToolId,
+                createdAt: new Date().toISOString(),
+                isRecurring: false,
+                recurrence: null
+            });
+            added++;
+        }
+    }
+    storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+    return added;
+}
+
+function completeLocalMiscTasksForInspectionTool(toolId) {
+    let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+    let changed = false;
+    miscTasks = miscTasks.map((t) => {
+        if (
+            t.source === 'inspection_calibration' &&
+            t.linkedInspectionToolId === toolId &&
+            t.status !== 'Completed'
+        ) {
+            changed = true;
+            return {
+                ...t,
+                status: 'Completed',
+                completedAt: new Date().toISOString()
+            };
+        }
+        return t;
+    });
+    if (changed) storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+}
+
+function saveInspectionToolRecord(record) {
+    const items = getInspectionTools();
+    const idx = items.findIndex((x) => x.id === record.id);
+    if (idx === -1) {
+        items.push(record);
+    } else {
+        items[idx] = record;
+    }
+    storage.set(STORAGE_KEYS.INSPECTION_TOOLS, items);
+    searchCache.clear();
+}
+
+export function loadInspectionToolInventory() {
+    inventoryState.currentView = 'inspection';
+    showLoadingSpinner();
+
+    const container = DOMCache.get('dashboardContent');
+    if (!container) return;
+
+    safeExecute(() => {
+        const tools = filterInspectionToolsForView(getInspectionTools());
+        const reminders = computeLocalCalibrationReminderRows(tools);
+
+        const rows = (tools || []).map((t) => {
+            const badge = calibrationStatusBadge(t);
+            return `
+                <tr data-item-id="${t.id}">
+                    <td class="px-4 py-3">
+                        <div class="font-medium text-white">${escapeHtml(t.name)}</div>
+                        <div class="text-xs" style="color: var(--color-text-muted);">${escapeHtml(t.assetTag || '—')}</div>
+                    </td>
+                    <td class="px-4 py-3 text-sm" style="color: var(--color-text-secondary);">${escapeHtml(t.manufacturer || '—')}</td>
+                    <td class="px-4 py-3 text-sm" style="color: var(--color-text-secondary);">${t.nextCalibrationDue ? formatDate(t.nextCalibrationDue) : '—'}</td>
+                    <td class="px-4 py-3"><span class="badge ${badge.cls}">${badge.text}</span></td>
+                    <td class="px-4 py-3">
+                        <div class="flex gap-2">
+                            <button type="button" data-action="open-inspection-tool" data-id="${t.id}" class="text-cyan-400 hover:opacity-80" title="Profile">
+                                <i class="fa-solid fa-id-card"></i>
+                            </button>
+                            <button type="button" data-action="delete-inspection-tool" data-id="${t.id}" data-name="${escapeHtmlAttr(t.name)}" class="text-red-400 hover:opacity-80" title="Delete">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>`;
+        }).join('');
+
+        const reminderRows = (reminders || []).length
+            ? reminders
+                  .map(
+                      (r) => `
+                <tr>
+                    <td class="px-4 py-2 text-sm text-white">${escapeHtml(r.toolName || '—')}</td>
+                    <td class="px-4 py-2 text-sm" style="color: var(--color-text-muted);">${escapeHtml(r.title || '')}</td>
+                    <td class="px-4 py-2 text-sm">${r.dueDate ? formatDate(r.dueDate) : '—'}</td>
+                    <td class="px-4 py-2">
+                        <button type="button" data-action="open-inspection-tool" data-id="${r.inspectionToolId}" class="text-xs text-cyan-400 hover:underline">Open tool</button>
+                    </td>
+                </tr>`
+                  )
+                  .join('')
+            : `<tr><td colspan="4" class="px-4 py-3 text-sm text-gray-500">No open calibration reminders.</td></tr>`;
+
+        container.innerHTML = `
+            <div class="col-span-3 space-y-6">
+                <div class="flex flex-wrap justify-between items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-semibold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-microscope text-cyan-400"></i>
+                            Inspection tool inventory
+                        </h2>
+                        <p class="text-sm text-gray-500 mt-1">Stored in this browser (localStorage). Use <strong>Sync reminders</strong> to add due/overdue items as misc tasks on All Tasks.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" data-action="sync-calibration-reminders" class="px-3 py-2 rounded bg-gray-700 text-white text-sm hover:bg-gray-600">
+                            <i class="fa-solid fa-rotate mr-1"></i>Sync reminders
+                        </button>
+                        <button type="button" data-action="add-inspection-tool" class="px-3 py-2 rounded bg-accentGreen text-white text-sm hover:bg-green-700">
+                            <i class="fa-solid fa-plus mr-1"></i>Add tool
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card p-4">
+                    <h3 class="text-sm font-medium text-amber-400 mb-3"><i class="fa-solid fa-bell mr-2"></i>Open calibration reminders</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="text-left text-xs uppercase text-gray-500 border-b border-gray-700">
+                                    <th class="px-4 py-2">Tool</th>
+                                    <th class="px-4 py-2">Task</th>
+                                    <th class="px-4 py-2">Due</th>
+                                    <th class="px-4 py-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody>${reminderRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card p-4">
+                    <div class="flex flex-wrap gap-4 mb-4">
+                        <input type="search" id="inventorySearch" placeholder="Search name, tag, manufacturer…" value="${escapeHtmlAttr(inventoryState.filters.search)}"
+                            class="flex-1 min-w-[200px] bg-gray-700 text-white rounded px-3 py-2 border border-gray-600 text-sm">
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="text-left text-xs uppercase text-gray-500 border-b border-gray-700">
+                                    <th class="px-4 py-3">Tool</th>
+                                    <th class="px-4 py-3">Manufacturer</th>
+                                    <th class="px-4 py-3">Next calibration</th>
+                                    <th class="px-4 py-3">Status</th>
+                                    <th class="px-4 py-3 w-24"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows.length ? rows : `<tr><td colspan="5" class="text-center py-8 text-gray-500">No inspection tools yet. Add a tool to begin.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>`;
+
+        setupInventoryFilters();
+    }, () => {
+        showToast('Error loading inspection inventory', 'error');
+    }, 'loadInspectionToolInventory');
+}
+
+function showInspectionToolModal(tool) {
+    const persisted = tool && tool.id && getInspectionTools().some((x) => x.id === tool.id);
+    const t = persisted
+        ? getInspectionTools().find((x) => x.id === tool.id) || tool
+        : tool || {};
+    const docs = t.documents || [];
+
+    const docRows = docs.length
+        ? docs
+              .map(
+                  (d) => `
+        <tr>
+            <td class="px-2 py-1 text-sm text-white">${escapeHtml(d.title)}</td>
+            <td class="px-2 py-1 text-xs text-gray-400">${escapeHtml(d.documentType)}</td>
+            <td class="px-2 py-1 text-right">
+                <button type="button" data-action="download-inspection-doc" data-tool-id="${t.id}" data-doc-id="${d.id}" data-filename="${escapeHtmlAttr(d.originalFilename)}" class="text-sky-400 text-xs mr-2">Download</button>
+                <button type="button" data-action="delete-inspection-doc" data-tool-id="${t.id}" data-doc-id="${d.id}" class="text-red-400 text-xs">Remove</button>
+            </td>
+        </tr>`
+              )
+              .join('')
+        : '<tr><td colspan="3" class="text-gray-500 py-2">No documents yet.</td></tr>';
+
+    const content = `
+        <div class="p-6 max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-microscope mr-2 text-cyan-400"></i>${persisted ? 'Inspection tool profile' : 'Add inspection tool'}
+                </h3>
+                <button type="button" onclick="BPERP.common.closeModal('inspectionToolModal')" class="text-gray-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <form id="inspectionToolForm" class="space-y-3">
+                ${persisted ? `<input type="hidden" name="id" value="${t.id}">` : ''}
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Name *</label>
+                        <input name="name" required class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr(t.name || '')}">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Asset tag</label>
+                        <input name="assetTag" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr(t.assetTag || '')}">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Manufacturer</label>
+                        <input name="manufacturer" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr(t.manufacturer || '')}">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Model</label>
+                        <input name="model" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr(t.model || '')}">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Serial number</label>
+                        <input name="serialNumber" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr(t.serialNumber || '')}">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Location</label>
+                        <input name="location" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr(t.location || '')}">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-gray-400 mb-1">Traceability note</label>
+                        <input name="traceabilityNote" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr(t.traceabilityNote || '')}">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Last calibration (YYYY-MM-DD)</label>
+                        <input name="lastCalibrationDate" type="date" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${escapeHtmlAttr((t.lastCalibrationDate || '').slice(0, 10))}">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Calibration interval (days)</label>
+                        <input name="calibrationIntervalDays" type="number" min="1" step="1" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600" value="${t.calibrationIntervalDays != null ? escapeHtmlAttr(String(t.calibrationIntervalDays)) : ''}">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-gray-400 mb-1">Notes</label>
+                        <textarea name="notes" rows="2" class="w-full bg-gray-700 text-white rounded px-3 py-2 border border-gray-600">${escapeHtml(t.notes || '')}</textarea>
+                    </div>
+                </div>
+                ${persisted ? `
+                <div class="border-t border-gray-700 pt-4 mt-4">
+                    <h4 class="text-sm font-medium text-gray-300 mb-2">Documents (stored in this browser)</h4>
+                    <p class="text-xs text-gray-500 mb-2">PDF or images, max 10 MB each. Large files count toward browser storage limits.</p>
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        <input type="file" id="inspectionDocFile" accept=".pdf,image/*" class="text-sm text-gray-400">
+                        <select id="inspectionDocType" class="bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600">
+                            <option value="calibration_cert">Calibration certificate</option>
+                            <option value="traceability">Traceability</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <input type="text" id="inspectionDocTitle" placeholder="Title" class="flex-1 min-w-[120px] bg-gray-700 text-white rounded px-2 py-1 text-sm border border-gray-600">
+                        <button type="button" data-action="upload-inspection-doc" data-tool-id="${t.id}" class="px-3 py-1 rounded bg-sky-600 text-white text-sm">Upload</button>
+                    </div>
+                    <table class="w-full text-sm">
+                        <thead><tr class="text-left text-xs text-gray-500"><th class="py-1">Title</th><th class="py-1">Type</th><th class="py-1 text-right">Actions</th></tr></thead>
+                        <tbody>${docRows}</tbody>
+                    </table>
+                </div>` : ''}
+                <div class="flex gap-2 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('inspectionToolModal')" class="flex-1 bg-gray-600 text-white py-2 rounded">Cancel</button>
+                    <button type="submit" class="flex-1 bg-accentGreen text-white py-2 rounded">${persisted ? 'Save' : 'Create'}</button>
+                </div>
+            </form>
+        </div>`;
+
+    createModal('inspectionToolModal', content, { width: 'w-full max-w-2xl' });
+
+    const form = document.getElementById('inspectionToolForm');
+    if (form) {
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const fd = new FormData(form);
+            const payload = {
+                name: (fd.get('name') || '').trim(),
+                assetTag: (fd.get('assetTag') || '').trim() || null,
+                manufacturer: (fd.get('manufacturer') || '').trim() || null,
+                model: (fd.get('model') || '').trim() || null,
+                serialNumber: (fd.get('serialNumber') || '').trim() || null,
+                location: (fd.get('location') || '').trim() || null,
+                traceabilityNote: (fd.get('traceabilityNote') || '').trim() || null,
+                notes: (fd.get('notes') || '').trim() || null,
+                lastCalibrationDate: (fd.get('lastCalibrationDate') || '').trim() || null,
+                calibrationIntervalDays: (() => {
+                    const v = fd.get('calibrationIntervalDays');
+                    if (v === '' || v == null) return null;
+                    const n = parseInt(v, 10);
+                    return Number.isFinite(n) ? n : null;
+                })()
+            };
+
+            if (!payload.name) {
+                showToast('Name is required', 'warning');
+                return;
+            }
+
+            const nextDue = recomputeNextDueLocal(payload.lastCalibrationDate, payload.calibrationIntervalDays);
+            const prev = persisted ? getInspectionTools().find((x) => x.id === t.id) : null;
+            const id = persisted ? t.id : nextInspectionToolId();
+            const record = {
+                ...payload,
+                id,
+                nextCalibrationDue: nextDue,
+                documents: Array.isArray(prev?.documents) ? [...prev.documents] : []
+            };
+
+            const calChanged =
+                persisted &&
+                (payload.lastCalibrationDate !== (prev?.lastCalibrationDate ?? null) ||
+                    payload.calibrationIntervalDays !== (prev?.calibrationIntervalDays ?? null));
+            if (calChanged) {
+                completeLocalMiscTasksForInspectionTool(id);
+            }
+
+            saveInspectionToolRecord(record);
+            showToast(persisted ? 'Tool updated' : 'Tool created', 'success');
+            closeModal('inspectionToolModal');
+            loadInspectionToolInventory();
+        });
+    }
 }
 
 // ==================== CRUD OPERATIONS ====================
@@ -1204,6 +1649,120 @@ export function registerActionHandlers(registerFn) {
     
     registerFn('clear-inventory-filters', () => {
         clearFilters();
+    });
+
+    registerFn('open-inspection-tool', (target) => {
+        const id = parseInt(target.dataset.id, 10);
+        if (!Number.isFinite(id)) return;
+        const tool = getInspectionTools().find((x) => x.id === id);
+        if (!tool) {
+            showToast('Tool not found', 'error');
+            return;
+        }
+        showInspectionToolModal(tool);
+    });
+
+    registerFn('add-inspection-tool', () => {
+        showInspectionToolModal(null);
+    });
+
+    registerFn('delete-inspection-tool', (target) => {
+        const id = parseInt(target.dataset.id, 10);
+        const name = target.dataset.name || 'this tool';
+        showDeleteConfirm(name, 'inspection tool', String(id), () => {
+            const items = getInspectionTools().filter((t) => t.id !== id);
+            storage.set(STORAGE_KEYS.INSPECTION_TOOLS, items);
+            let miscTasks = storage.get(STORAGE_KEYS.MISC_TASKS) || [];
+            miscTasks = miscTasks.filter((t) => t.linkedInspectionToolId !== id);
+            storage.set(STORAGE_KEYS.MISC_TASKS, miscTasks);
+            searchCache.clear();
+            showToast('Tool deleted', 'success');
+            loadInspectionToolInventory();
+        });
+    });
+
+    registerFn('sync-calibration-reminders', () => {
+        const added = syncLocalCalibrationMiscTasks();
+        showToast(
+            added > 0
+                ? `Added ${added} calibration task(s) to All Tasks (misc)`
+                : 'No new calibration tasks needed (or they already exist)',
+            'success'
+        );
+        loadInspectionToolInventory();
+    });
+
+    registerFn('upload-inspection-doc', (target) => {
+        const toolId = parseInt(target.dataset.toolId, 10);
+        const fileInput = document.getElementById('inspectionDocFile');
+        const titleEl = document.getElementById('inspectionDocTitle');
+        const typeEl = document.getElementById('inspectionDocType');
+        const file = fileInput?.files?.[0];
+        if (!file) {
+            showToast('Choose a file first', 'warning');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            showToast('File too large (max 10 MB)', 'error');
+            return;
+        }
+        const tool = getInspectionTools().find((x) => x.id === toolId);
+        if (!tool) {
+            showToast('Tool not found', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const docs = Array.isArray(tool.documents) ? tool.documents : [];
+            const nextDocId = docs.length ? Math.max(...docs.map((d) => d.id || 0)) + 1 : 1;
+            docs.push({
+                id: nextDocId,
+                title: (titleEl?.value || file.name).trim(),
+                documentType: typeEl?.value || 'other',
+                originalFilename: file.name,
+                mimeType: file.type || 'application/octet-stream',
+                fileSize: file.size,
+                fileData: reader.result,
+                uploadedAt: new Date().toISOString()
+            });
+            saveInspectionToolRecord({ ...tool, documents: docs });
+            if (fileInput) fileInput.value = '';
+            showToast('Document attached', 'success');
+            closeModal('inspectionToolModal');
+            showInspectionToolModal(getInspectionTools().find((x) => x.id === toolId));
+        };
+        reader.onerror = () => showToast('Could not read file', 'error');
+        reader.readAsDataURL(file);
+    });
+
+    registerFn('download-inspection-doc', (target) => {
+        const toolId = parseInt(target.dataset.toolId, 10);
+        const docId = parseInt(target.dataset.docId, 10);
+        const filename = target.dataset.filename || 'document';
+        const tool = getInspectionTools().find((x) => x.id === toolId);
+        const doc = tool?.documents?.find((d) => d.id === docId);
+        if (!doc?.fileData) {
+            showToast('Document not found', 'error');
+            return;
+        }
+        const a = document.createElement('a');
+        a.href = doc.fileData;
+        a.download = filename;
+        a.click();
+    });
+
+    registerFn('delete-inspection-doc', (target) => {
+        const toolId = parseInt(target.dataset.toolId, 10);
+        const docId = parseInt(target.dataset.docId, 10);
+        showDeleteConfirm('this document', 'document', String(docId), () => {
+            const tool = getInspectionTools().find((x) => x.id === toolId);
+            if (!tool) return;
+            const docs = (tool.documents || []).filter((d) => d.id !== docId);
+            saveInspectionToolRecord({ ...tool, documents: docs });
+            showToast('Document removed', 'success');
+            closeModal('inspectionToolModal');
+            showInspectionToolModal(getInspectionTools().find((x) => x.id === toolId));
+        });
     });
 }
 

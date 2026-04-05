@@ -27,6 +27,8 @@ When you add or rename tables, update this file, `README.md`, `backend/README.md
 | `materials` | Raw materials |
 | `tooling` | Cutting tools, inserts |
 | `misc_items` | Consumables, supplies |
+| `inspection_tool_assets` | Metrology / inspection equipment (calibration dates, traceability) |
+| `inspection_tool_documents` | PDFs and attachments for inspection tools |
 
 ## Sales tables
 

@@ -78,6 +78,8 @@ const laborRoutes = require('./routes/labor')(pool);
 
 // Data import routes
 const importRoutes = require('./routes/import')(pool);
+const inspectionInventoryRoutes = require('./routes/inspectionInventory')(pool);
+const { syncCalibrationReminders } = require('./services/calibrationReminders');
 
 // --- API ROUTES ---
 
@@ -726,6 +728,10 @@ app.use((req, res) => {
 // Start the Server - bind to 0.0.0.0 so NAS accepts connections from workstations
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT} (accessible from network)`);
+    syncCalibrationReminders(pool).catch((e) => console.error('Calibration reminder sync:', e.message));
+    setInterval(() => {
+        syncCalibrationReminders(pool).catch((e) => console.error('Calibration reminder sync:', e.message));
+    }, 24 * 60 * 60 * 1000);
     console.log(`Export directories:`);
     console.log(`  CSV exports: ${csvDir}`);
     console.log(`  Backups: ${backupsDir}`);
@@ -737,6 +743,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('  /api/inventory/misc          - CRUD for misc items');
     console.log('  /api/inventory/all           - All inventory combined');
     console.log('  /api/inventory/stats         - Inventory statistics');
+    console.log('  /api/inspection-inventory/tools - Inspection gages, calibration, documents');
     
     console.log('\nCUSTOMERS:');
     console.log('  /api/customers               - CRUD for customers');

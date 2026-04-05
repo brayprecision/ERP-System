@@ -103,6 +103,7 @@ backend/
 │   ├── customers.js
 │   ├── leads.js         # Sales prospects (leads)
 │   ├── import.js        # Data import API
+│   ├── inspectionInventory.js  # Gages, calibration, PDF uploads
 │   ├── inventory.js
 │   ├── labor.js         # Shop shifts + WO + misc-task process time segments
 │   ├── machines.js
@@ -113,6 +114,8 @@ backend/
 │   ├── users.js
 │   ├── workcenters.js
 │   └── workorders.js
+├── services/
+│   └── calibrationReminders.js  # Inspection tool calibration task sync
 ├── db.js                # SQLite wrapper (PostgreSQL-compatible query interface)
 ├── scripts/             # NAS deployment (start-server.sh, bperp.service)
 ├── tests/
@@ -206,6 +209,23 @@ DELETE /api/inventory/parts/:id     # Delete part
 GET    /api/inventory/materials     # List materials
 GET    /api/inventory/tooling      # List tooling
 GET    /api/inventory/misc         # List misc items
+```
+
+### Inspection tool inventory (gages / calibration)
+
+Files are stored under `backend/uploads/inspection-tools/` (or `INSPECTION_TOOL_UPLOADS_DIR`). Reminder lead time: `CALIBRATION_REMINDER_DAYS` (default 30). Server runs `syncCalibrationReminders` on startup and every 24 hours.
+
+```
+GET    /api/inspection-inventory/tools                    # List tools (?search= &dueSoon=true)
+GET    /api/inspection-inventory/tools/:id                # Tool + documents metadata
+POST   /api/inspection-inventory/tools                    # Create
+PUT    /api/inspection-inventory/tools/:id               # Update (recomputes next due; completes open reminder tasks when calibration saved)
+DELETE /api/inspection-inventory/tools/:id               # Delete tool + files
+POST   /api/inspection-inventory/tools/:id/documents     # multipart field `file` (+ title, documentType)
+GET    /api/inspection-inventory/tools/:id/documents/:docId/file   # Download (auth)
+DELETE /api/inspection-inventory/tools/:id/documents/:docId       # Remove file
+GET    /api/inspection-inventory/calibration-reminders     # Open Calibration tasks + tool info
+POST   /api/inspection-inventory/sync-calibration-reminders        # Manual sync
 ```
 
 ### Tasks
