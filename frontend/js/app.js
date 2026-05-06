@@ -14,6 +14,79 @@ const CONFIG = {
 
 // Import backup/restore functions from common
 import { createBackup, restoreFromBackup } from './modules/common.js';
+import { initLaborClockUI, refreshLaborClockUI } from './modules/laborClock.js';
+import { getLaborPresence } from './modules/laborApi.js';
+
+/** Cleared when leaving the Dashboard route */
+let dashboardPresencePollInterval = null;
+
+function clearDashboardPresencePoll() {
+    if (dashboardPresencePollInterval) {
+        clearInterval(dashboardPresencePollInterval);
+        dashboardPresencePollInterval = null;
+    }
+}
+
+function formatWorkflowStepLabel(key) {
+    if (!key) return '—';
+    return String(key).replace(/_/g, ' ');
+}
+
+function formatPresenceShort(iso) {
+    if (!iso) return '—';
+    try {
+        const d = new Date(iso);
+        return d.toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit'
+        });
+    } catch {
+        return iso;
+    }
+}
+
+async function refreshDashboardPresenceCard() {
+    const el = document.getElementById('dashboardPresenceCard');
+    if (!el) return;
+    try {
+        const rows = await getLaborPresence();
+        const list = Array.isArray(rows) ? rows : [];
+        if (list.length === 0) {
+            el.innerHTML =
+                '<p class="text-sm" style="color: var(--color-text-muted);">No one is clocked in right now.</p>';
+            return;
+        }
+        el.innerHTML = `
+            <div class="space-y-1">
+                ${list
+                    .map((p) => {
+                        const seg = p.currentSegment;
+                        const misc = p.currentMiscSegment;
+                        const workLine = seg
+                            ? `<span class="text-white font-medium">${seg.woNumber || `WO ${seg.workOrderId}`}</span> · <span style="color: var(--color-text-muted);">${formatWorkflowStepLabel(seg.workflowStepKey)}</span>${seg.lineItemId != null ? ` <span class="text-xs text-gray-500">(line ${seg.lineItemId})</span>` : ''}`
+                            : misc
+                              ? `<span class="text-white font-medium">Misc</span> · <span style="color: var(--color-text-muted);">${misc.miscTaskTitle || misc.miscTaskId || 'Task'}</span>`
+                              : '<span style="color: var(--color-text-muted);">On shift — no active job timer</span>';
+                        return `
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 py-2 border-b border-gray-700/60 last:border-0">
+                        <div class="min-w-0">
+                            <span class="font-medium text-white">${p.name || p.username}</span>
+                            <span class="text-xs ml-2" style="color: var(--color-text-muted);">${p.role}</span>
+                        </div>
+                        <div class="text-sm min-w-0 break-words">${workLine}</div>
+                        <div class="text-xs whitespace-nowrap" style="color: var(--color-text-muted);">Shift since ${formatPresenceShort(p.shiftStartedAt)}</div>
+                    </div>`;
+                    })
+                    .join('')}
+            </div>`;
+    } catch (e) {
+        console.warn('Dashboard presence:', e);
+        el.innerHTML =
+            '<p class="text-sm text-amber-500/90">Could not load who is clocked in.</p>';
+    }
+}
 
 // Expose API_BASE globally for modules
 window.API_BASE = CONFIG.API_BASE;
@@ -40,7 +113,8 @@ const modules = {
     sales: null,
     tasks: null,
     maintenance: null,
-    users: null
+    users: null,
+    timeTracking: null
 };
 
 // ==================== MODULE LOADER ====================
@@ -64,13 +138,14 @@ async function loadModules() {
         console.log('BPERP: Core modules loaded');
         
         // Load feature modules
-        const [inventory, sales, tasks, maintenance, search, users] = await Promise.all([
+        const [inventory, sales, tasks, maintenance, search, users, timeTracking] = await Promise.all([
             import('./modules/inventory.js'),
             import('./modules/sales.js'),
             import('./modules/tasks.js'),
             import('./modules/maintenance.js'),
             import('./modules/search.js'),
-            import('./modules/users.js')
+            import('./modules/users.js'),
+            import('./modules/timeTracking.js')
         ]);
         
         modules.inventory = inventory;
@@ -79,6 +154,7 @@ async function loadModules() {
         modules.maintenance = maintenance;
         modules.search = search;
         modules.users = users;
+        modules.timeTracking = timeTracking;
         
         console.log('BPERP: Feature modules loaded');
         return true;
@@ -110,6 +186,7 @@ const routes = {
     'dashboard': () => loadDashboard(),
     
     // Inventory
+    'inventory-kanban': () => modules.inventory?.loadKanbanInventory(),
     'inventory-materials': () => modules.inventory?.loadMaterialInventory(),
     'inventory-tooling': () => modules.inventory?.loadToolingInventory(),
     'inventory-misc': () => modules.inventory?.loadMiscInventory(),
@@ -121,9 +198,10 @@ const routes = {
     
     // Sales
     'sales-customers': () => modules.sales?.loadCustomersView(),
+    'sales-leads': () => modules.sales?.loadLeadsView(),
     'sales-quotes': () => modules.sales?.loadQuotesView(),
-    'sales-archived-quotes': () => modules.sales?.loadArchivedQuotesView(),
-    'sales-archived-work': () => modules.sales?.loadArchivedWorkView(),
+    'sales-archived-quotes': () => modules.sales?.loadArchiveView('quotes'),
+    'sales-archived-work': () => modules.sales?.loadArchiveView('work'),
     
     // Tasks
     'tasks-all': () => modules.tasks?.loadAllTasks(),
@@ -136,13 +214,219 @@ const routes = {
     'tasks-shipping': () => modules.tasks?.loadShippingReceivingTasks(),
     'tasks-completed': () => modules.tasks?.loadCompletedWorkTasks(),
     'tasks-maintenance': () => modules.maintenance?.loadMaintenanceTasks(),
+    'tasks-time-tracking': () => modules.timeTracking?.loadTimeTrackingView(),
     
     // Settings
     'settings-branding': () => ShopBranding.showSettings(),
     'settings-preferences': () => ThemeManager.showModal(),
     'settings-users': () => modules.users?.loadUsersView(),
-    'settings-backup': () => loadBackupRestoreView()
+    'settings-archive': () => modules.sales?.loadArchiveView('quotes'),
+    'settings-backup': () => loadBackupRestoreView(),
+    'settings-server': () => loadServerSettingsView(),
+    'settings-about': () => void loadAboutAppView()
 };
+
+async function loadServerSettingsView() {
+    const container = document.getElementById('dashboardContent');
+    if (!container) return;
+
+    if (!window.electronAPI?.getServerUrl) {
+        container.innerHTML = `
+            <div class="col-span-3">
+                <div class="card p-6">
+                    <p class="text-gray-400">Server connection settings are only available in the desktop app.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const currentUrl = await window.electronAPI.getServerUrl();
+    const isNetworkMode = Boolean((currentUrl || '').trim());
+    const networkModeNotice = isNetworkMode
+        ? `
+                <div class="mb-6 rounded-lg border border-amber-600/50 bg-amber-950/40 p-4 text-sm text-amber-100/95">
+                    <p class="font-medium text-amber-200 mb-1">Network mode — UI comes from the server</p>
+                    <p class="text-amber-100/80">The sidebar, pages, and JavaScript are loaded from the URL below, not from this installer. If items are missing (for example <strong class="text-amber-100">Products</strong> or <strong class="text-amber-100">Parts</strong> under Inventory), deploy the latest <code class="text-xs bg-black/30 px-1 rounded">frontend</code> folder from your repo onto the machine that runs the backend (alongside <code class="text-xs bg-black/30 px-1 rounded">backend</code>), then restart the BPERP server.</p>
+                </div>`
+        : `
+                <div class="mb-6 rounded-lg border border-gray-600/50 bg-gray-800/40 p-4 text-sm text-gray-300">
+                    <p class="font-medium text-gray-200 mb-1">Standalone mode</p>
+                    <p class="text-gray-400">This app runs the bundled backend and serves the UI from your PC. If the UI looks outdated, install the latest BPERP build from your team.</p>
+                </div>`;
+
+    container.innerHTML = `
+        <div class="col-span-3 space-y-6">
+            <div class="card p-6">
+                <div class="flex items-center mb-6">
+                    <i class="fa-solid fa-server text-3xl mr-4 text-cyan-400"></i>
+                    <div>
+                        <h2 class="text-xl font-semibold text-white">Server Connection</h2>
+                        <p class="text-gray-400 text-sm">Change the BPERP server URL (e.g. when NAS IP changes)</p>
+                    </div>
+                </div>
+                ${networkModeNotice}
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-400 mb-2">Server URL</label>
+                        <input type="text" id="serverUrlInput" class="form-input w-full" placeholder="http://192.168.1.100:3000" value="${(currentUrl || '').replace(/"/g, '&quot;')}">
+                        <p class="text-xs text-gray-500 mt-1">e.g. http://nas.local:3000 or http://192.168.1.100:3000</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button type="button" id="testServerBtn" class="btn btn-secondary">
+                            <i class="fa-solid fa-link mr-2"></i>Test Connection
+                        </button>
+                        <button type="button" id="saveServerBtn" class="btn btn-primary">
+                            <i class="fa-solid fa-save mr-2"></i>Save
+                        </button>
+                        <button type="button" id="clearServerBtn" class="btn bg-gray-600 hover:bg-gray-700 text-white">
+                            <i class="fa-solid fa-times mr-2"></i>Clear (Standalone Mode)
+                        </button>
+                    </div>
+                    <div id="serverStatus" class="text-sm hidden"></div>
+                </div>
+                <p class="text-xs text-gray-500 mt-4">Restart the app after changing the server URL.</p>
+            </div>
+        </div>
+    `;
+
+    const input = document.getElementById('serverUrlInput');
+    const testBtn = document.getElementById('testServerBtn');
+    const saveBtn = document.getElementById('saveServerBtn');
+    const clearBtn = document.getElementById('clearServerBtn');
+    const statusEl = document.getElementById('serverStatus');
+
+    testBtn?.addEventListener('click', async () => {
+        const url = input?.value?.trim() || '';
+        if (!url) {
+            modules.common?.showToast?.('Enter a server URL first', 'error');
+            return;
+        }
+        testBtn.disabled = true;
+        testBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Testing...';
+        statusEl?.classList.add('hidden');
+        try {
+            const result = await window.electronAPI.testServerConnection(url);
+            statusEl.classList.remove('hidden');
+            if (result.success) {
+                statusEl.textContent = '✓ Connection successful';
+                statusEl.className = 'text-sm text-green-400';
+            } else {
+                statusEl.textContent = '✗ ' + (result.error || 'Connection failed');
+                statusEl.className = 'text-sm text-red-400';
+            }
+        } catch (e) {
+            statusEl.classList.remove('hidden');
+            statusEl.textContent = '✗ ' + (e.message || 'Test failed');
+            statusEl.className = 'text-sm text-red-400';
+        }
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<i class="fa-solid fa-link mr-2"></i>Test Connection';
+    });
+
+    saveBtn?.addEventListener('click', async () => {
+        const url = input?.value?.trim() || '';
+        await window.electronAPI.setServerUrl(url);
+        modules.common?.showToast?.('Server URL saved. Restart the app to connect.', 'success');
+    });
+
+    clearBtn?.addEventListener('click', async () => {
+        await window.electronAPI.setServerUrl('');
+        input.value = '';
+        modules.common?.showToast?.('Cleared. Restart the app to use standalone mode.', 'success');
+    });
+}
+
+async function loadAboutAppView() {
+    const container = document.getElementById('dashboardContent');
+    if (!container) return;
+
+    if (!window.electronAPI?.getAppInfo) {
+        container.innerHTML = `
+            <div class="col-span-3">
+                <div class="card p-6">
+                    <p class="text-gray-400">About this app is only available in the BPERP desktop application.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    let info;
+    try {
+        info = await window.electronAPI.getAppInfo();
+    } catch (e) {
+        container.innerHTML = `
+            <div class="col-span-3">
+                <div class="card p-6">
+                    <p class="text-red-400">Could not load app information.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const serverUrl = (info.serverUrl || '').trim();
+    const network = Boolean(serverUrl);
+    const modeLabel = network ? 'Network' : 'Standalone';
+    const modeDesc = network
+        ? 'Pages and scripts are loaded from the server URL below (not from the installed app files). If the UI looks outdated, deploy the latest <code class="text-xs bg-black/30 px-1 rounded">frontend</code> folder on that server, or clear Server URL and use Standalone to use the bundled UI.'
+        : 'Pages and scripts come from this install (bundled frontend). The local backend runs on this PC.';
+
+    const esc = (s) =>
+        String(s ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+    container.innerHTML = `
+        <div class="col-span-3 space-y-6">
+            <div class="card p-6">
+                <div class="flex items-center mb-6">
+                    <i class="fa-solid fa-circle-info text-3xl mr-4 text-sky-400"></i>
+                    <div>
+                        <h2 class="text-xl font-semibold text-white">About this app</h2>
+                        <p class="text-gray-400 text-sm">Version, deployment mode, and where the UI is loaded from</p>
+                    </div>
+                </div>
+                <dl class="space-y-4 text-sm">
+                    <div>
+                        <dt class="text-gray-500 font-medium">App version</dt>
+                        <dd class="text-white font-mono mt-1">${esc(info.version)}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 font-medium">Packaged install</dt>
+                        <dd class="text-gray-300 mt-1">${info.isPackaged ? 'Yes (installer or unpacked build)' : 'No (development run from repo)'}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 font-medium">Mode</dt>
+                        <dd class="text-gray-300 mt-1"><span class="text-white font-medium">${modeLabel}</span> — ${modeDesc}</dd>
+                    </div>
+                    ${network ? `
+                    <div>
+                        <dt class="text-gray-500 font-medium">Server URL (UI source)</dt>
+                        <dd class="text-emerald-300/90 font-mono text-xs mt-1 break-all">${esc(serverUrl)}</dd>
+                    </div>` : ''}
+                    ${!network && info.sqliteDatabasePath ? `
+                    <div>
+                        <dt class="text-gray-500 font-medium">SQLite database (local backend)</dt>
+                        <dd class="text-gray-400 font-mono text-xs mt-1 break-all">${esc(info.sqliteDatabasePath)}</dd>
+                    </div>` : ''}
+                    <div>
+                        <dt class="text-gray-500 font-medium">Runtime</dt>
+                        <dd class="text-gray-400 font-mono text-xs mt-1">Electron ${esc(info.electronVersion)} · Node ${esc(info.nodeVersion)}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500 font-medium">User data (settings persist here)</dt>
+                        <dd class="text-gray-400 font-mono text-xs mt-1 break-all">${esc(info.userDataPath)}</dd>
+                    </div>
+                </dl>
+                <p class="text-xs text-gray-500 mt-6">Uninstalling the app usually does not delete the user data folder above. The <strong class="text-gray-400">Server URL</strong> is stored there and survives reinstall.</p>
+            </div>
+        </div>
+    `;
+}
 
 function loadBackupRestoreView() {
     const container = document.getElementById('dashboardContent');
@@ -209,7 +493,7 @@ function loadBackupRestoreView() {
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                         <div class="bg-gray-800/50 p-3 rounded">
                             <div class="text-gray-400">Data Types Backed Up</div>
-                            <div class="text-white font-medium">Customers, Quotes, Work Orders, Archived Work, Inventory, Tasks</div>
+                            <div class="text-white font-medium">Customers, Quotes, Work Orders, Settings → Archive, Inventory, Tasks</div>
                         </div>
                         <div class="bg-gray-800/50 p-3 rounded">
                             <div class="text-gray-400">File Format</div>
@@ -355,11 +639,15 @@ function updateLastBackupDate() {
 // Map routes to tab categories for permission checking
 const routeToCategory = {
     'dashboard': 'dashboard',
+    'inventory-kanban': 'inventory',
+    'inventory-products': 'inventory',
+    'inventory-parts': 'inventory',
     'inventory-materials': 'inventory',
     'inventory-tooling': 'inventory',
     'inventory-misc': 'inventory',
     'workcenter-wip': 'workcenter',
     'sales-customers': 'sales',
+    'sales-leads': 'sales',
     'sales-quotes': 'sales',
     'sales-archived-quotes': 'sales',
     'sales-archived-work': 'sales',
@@ -373,10 +661,14 @@ const routeToCategory = {
     'tasks-shipping': 'tasks',
     'tasks-completed': 'tasks',
     'tasks-maintenance': 'tasks',
+    'tasks-time-tracking': 'tasks',
     'settings-branding': 'settings',
     'settings-preferences': 'settings',
     'settings-users': 'settings',
-    'settings-backup': 'settings'
+    'settings-archive': 'settings',
+    'settings-backup': 'settings',
+    'settings-server': 'settings',
+    'settings-about': 'settings'
 };
 
 function checkRoutePermission(route) {
@@ -397,6 +689,20 @@ function navigate(route) {
         console.warn('BPERP: App not initialized yet');
         return;
     }
+
+    if (route !== 'dashboard') {
+        clearDashboardPresencePoll();
+    }
+
+    const tasksClockBar = document.getElementById('tasksLaborClockBar');
+    if (tasksClockBar) {
+        const showContextLaborClock =
+            route.startsWith('tasks-') || route === 'workcenter-wip';
+        tasksClockBar.classList.toggle('hidden', !showContextLaborClock);
+        if (showContextLaborClock) {
+            import('./modules/laborClock.js').then((m) => m.refreshLaborClockUI?.());
+        }
+    }
     
     // Check permission before navigating
     if (!checkRoutePermission(route)) {
@@ -409,10 +715,14 @@ function navigate(route) {
         try {
             // Deactivate modules when navigating away from them
             // This prevents auto-refresh from running on inactive modules
-            if (!route.startsWith('tasks-')) {
+            // tasks-maintenance (Machines) is served by maintenance.js, not tasks.js — still deactivate tasks
+            if (!route.startsWith('tasks-') || route === 'tasks-maintenance' || route === 'tasks-time-tracking') {
                 modules.tasks?.deactivate?.();
             }
-            if (!route.startsWith('sales-')) {
+            if (route !== 'tasks-time-tracking') {
+                modules.timeTracking?.deactivate?.();
+            }
+            if (!route.startsWith('sales-') && route !== 'settings-archive') {
                 modules.sales?.deactivate?.();
             }
             
@@ -460,6 +770,8 @@ function updateSidebarPermissions() {
         if (userNameEl) userNameEl.textContent = user.name;
         if (userRoleEl) userRoleEl.textContent = user.role;
     }
+
+    refreshLaborClockUI();
 }
 
 function updateSidebarActiveState(route) {
@@ -496,11 +808,15 @@ function updatePageTitle(route) {
     
     const titles = {
         'dashboard': 'Dashboard',
+        'inventory-kanban': 'Kanban',
+        'inventory-products': 'Products Inventory',
+        'inventory-parts': 'Parts Inventory',
         'inventory-materials': 'Materials Inventory',
         'inventory-tooling': 'Tooling Inventory',
         'inventory-misc': 'Miscellaneous Items',
         'workcenter-wip': 'Work In Progress',
         'sales-customers': 'Customers',
+        'sales-leads': 'Leads',
         'sales-quotes': 'Quotes',
         'sales-archived-quotes': 'Archived Quotes',
         'sales-archived-work': 'Archived Work Orders',
@@ -513,10 +829,14 @@ function updatePageTitle(route) {
         'tasks-inspection': 'Inspection Tasks',
         'tasks-shipping': 'Shipping & Receiving',
         'tasks-completed': 'Completed Work',
-        'tasks-maintenance': 'Machine Maintenance',
+        'tasks-maintenance': 'Machines',
+        'tasks-time-tracking': 'Time Tracking',
         'settings-branding': 'Shop Branding',
         'settings-users': 'Users & Permissions',
+        'settings-archive': 'Archive',
         'settings-backup': 'Backup & Restore',
+        'settings-server': 'Server Connection',
+        'settings-about': 'About this app',
         'settings-preferences': 'Preferences'
     };
     
@@ -527,8 +847,9 @@ function updatePageTitle(route) {
 function loadDashboard() {
     const container = document.getElementById('dashboardContent');
     if (!container) return;
+
+    clearDashboardPresencePoll();
     
-    // Get stats from various sources
     let workOrders = [];
     try {
         workOrders = modules.sales?.getWorkOrders() || [];
@@ -536,90 +857,20 @@ function loadDashboard() {
         console.warn('Could not get work orders:', e);
     }
     
-    // Get inventory data to count low stock items
-    let lowStockCount = 0;
-    try {
-        const materials = modules.inventory?.getMaterials() || [];
-        const tools = modules.inventory?.getTooling() || [];
-        const misc = modules.inventory?.getMiscItems() || [];
-        
-        const countLowStock = (items) => items.filter(item => {
-            const qty = item.quantityOnHand ?? item.qtyOnHand ?? 0;
-            const reorderPoint = item.reorderPoint ?? item.minimumQty ?? 0;
-            return qty <= reorderPoint && reorderPoint > 0;
-        }).length;
-        
-        lowStockCount = countLowStock(materials) + countLowStock(tools) + countLowStock(misc);
-    } catch (e) {
-        console.warn('Could not get inventory data:', e);
-    }
-    
     const activeWOs = workOrders.filter(wo => wo.completionPercentage < 100);
-    const overdueCount = activeWOs.filter(wo => {
-        try {
-            return modules.common?.getUrgencyColor(wo.dueDate) === 'red';
-        } catch (e) {
-            return false;
-        }
-    }).length;
-    const dueSoonCount = activeWOs.filter(wo => {
-        try {
-            return modules.common?.getUrgencyColor(wo.dueDate) === 'yellow';
-        } catch (e) {
-            return false;
-        }
-    }).length;
     
     container.innerHTML = `
         <div class="col-span-3">
             <h2 class="text-2xl font-bold text-white mb-6">Dashboard</h2>
-            
-            <!-- Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                <div class="card p-6 cursor-pointer" data-route="workcenter-wip">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Active Work Orders</p>
-                            <p class="text-3xl font-bold text-white">${activeWOs.length}</p>
-                        </div>
-                        <i class="fa-solid fa-clipboard-list text-4xl opacity-50" style="color: var(--color-info);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="tasks-all">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Overdue</p>
-                            <p class="text-3xl font-bold" style="color: var(--color-error);">${overdueCount}</p>
-                        </div>
-                        <i class="fa-solid fa-exclamation-circle text-4xl opacity-50" style="color: var(--color-error);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="tasks-all">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Due Soon</p>
-                            <p class="text-3xl font-bold" style="color: var(--color-warning);">${dueSoonCount}</p>
-                        </div>
-                        <i class="fa-solid fa-clock text-4xl opacity-50" style="color: var(--color-warning);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="workcenter-wip">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Completed</p>
-                            <p class="text-3xl font-bold" style="color: var(--color-success);">${workOrders.filter(wo => wo.completionPercentage === 100).length}</p>
-                        </div>
-                        <i class="fa-solid fa-check-circle text-4xl opacity-50" style="color: var(--color-success);"></i>
-                    </div>
-                </div>
-                <div class="card p-6 cursor-pointer" data-route="inventory-materials">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase" style="color: var(--color-text-muted);">Low Stock</p>
-                            <p class="text-3xl font-bold" style="color: ${lowStockCount > 0 ? 'var(--color-warning)' : 'var(--color-success)'};">${lowStockCount}</p>
-                        </div>
-                        <i class="fa-solid fa-box-open text-4xl opacity-50" style="color: ${lowStockCount > 0 ? 'var(--color-warning)' : 'var(--color-success)'};"></i>
-                    </div>
+
+            <!-- Who is clocked in -->
+            <div class="card p-6 mb-6" style="background: var(--color-card-bg, #1f2937);">
+                <h3 class="text-lg font-medium text-white mb-3">
+                    <i class="fa-solid fa-users-viewfinder mr-2" style="color: var(--color-accent-primary);"></i>On the floor
+                </h3>
+                <p class="text-xs mb-3" style="color: var(--color-text-muted);">Users currently on shop shift and their active job timer (if any).</p>
+                <div id="dashboardPresenceCard">
+                    <p class="text-sm" style="color: var(--color-text-muted);">Loading…</p>
                 </div>
             </div>
             
@@ -635,9 +886,9 @@ function loadDashboard() {
                         <i class="fa-solid fa-tasks text-2xl mb-2 block" style="color: var(--color-accent-secondary);"></i>
                         <p class="text-sm" style="color: var(--color-text-secondary);">All Tasks</p>
                     </button>
-                    <button data-route="inventory-materials" class="card p-4 text-center transition-colors">
-                        <i class="fa-solid fa-boxes text-2xl mb-2 block" style="color: var(--color-warning);"></i>
-                        <p class="text-sm" style="color: var(--color-text-secondary);">Inventory</p>
+                    <button data-route="inventory-kanban" class="card p-4 text-center transition-colors">
+                        <i class="fa-solid fa-table-columns text-2xl mb-2 block" style="color: var(--color-warning);"></i>
+                        <p class="text-sm" style="color: var(--color-text-secondary);">Kanban</p>
                     </button>
                     <button data-route="tasks-maintenance" class="card p-4 text-center transition-colors">
                         <i class="fa-solid fa-wrench text-2xl mb-2 block" style="color: var(--color-error);"></i>
@@ -672,6 +923,15 @@ function loadDashboard() {
             </div>
         </div>
     `;
+
+    void refreshDashboardPresenceCard();
+    dashboardPresencePollInterval = setInterval(() => {
+        if (document.getElementById('dashboardPresenceCard')) {
+            void refreshDashboardPresenceCard();
+        } else {
+            clearDashboardPresencePoll();
+        }
+    }, CONFIG.AUTO_REFRESH_INTERVAL);
 }
 
 // ==================== QUICK ADD DROPDOWN ====================
@@ -948,6 +1208,7 @@ async function initializeApp() {
             maintenance: modules.maintenance,
             search: modules.search,
             users: modules.users,
+            timeTracking: modules.timeTracking,
             config: CONFIG,
             navigate,
             isInitialized: false
@@ -1007,6 +1268,7 @@ async function initializeApp() {
             modules.sales?.getCustomers?.();
             modules.sales?.getQuotes?.();
             modules.sales?.getWorkOrders?.();
+            modules.sales?.getLeads?.();
             console.log('BPERP: Demo data preloaded');
         } catch (e) {
             console.warn('BPERP: Could not preload some demo data:', e);
@@ -1014,6 +1276,8 @@ async function initializeApp() {
         
         // Mark as initialized
         window.BPERP.isInitialized = true;
+
+        initLaborClockUI();
         
         // Load initial view (dashboard)
         loadDashboard();
@@ -1041,6 +1305,16 @@ async function initializeApp() {
         
         // Initialize shop branding
         ShopBranding.init();
+        
+        // Show desktop-only Settings entries when running in Electron
+        const serverNav = document.getElementById('settingsServerNav');
+        if (serverNav && window.electronAPI) {
+            serverNav.style.display = '';
+        }
+        const aboutNav = document.getElementById('settingsAboutNav');
+        if (aboutNav && window.electronAPI?.getAppInfo) {
+            aboutNav.style.display = '';
+        }
         
         // Check if user is logged in, if not show login modal
         if (modules.users?.isLoggedIn?.()) {

@@ -4,11 +4,14 @@
  */
 
 import { 
-    debounce, showToast, showDeleteConfirm, showLoadingSpinner,
+    debounce, showToast, showDeleteConfirm, showConfirmModal, showLoadingSpinner,
     formatDate, formatCurrency, DOMCache, createModal, closeModal,
     getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer, exportToCSV
 } from './common.js';
 import { storage, STORAGE_KEYS, searchCache, state } from './storage.js';
+import * as salesApi from './salesApi.js';
+import { isAdmin } from './users.js';
+import { SALES_PROSPECTS } from './salesLeadsData.js';
 
 // ==================== CONSTANTS ====================
 const API_BASE = window.API_BASE || '/api';
@@ -16,14 +19,143 @@ const API_BASE = window.API_BASE || '/api';
 // ==================== STATE ====================
 let salesState = {
     currentView: 'customers',
+    archiveTab: 'quotes',
     expandedCustomers: new Set(),
+    expandedLeads: new Set(),
     expandedWorkOrders: new Set(),
     expandedLineItems: new Set(),  // Track expanded line items: "woId-itemId"
     filters: {
         search: '',
         status: ''
-    }
+    },
+    leadsSearch: ''
 };
+
+/** In-memory cache when logged in (API-backed; replaces localStorage for sales entities). */
+let salesApiCache = {
+    customers: null,
+    quotes: null,
+    workOrders: null,
+    leads: null
+};
+
+function mapApiQuoteToUi(q) {
+    const first = q.items && q.items[0];
+    return {
+        id: q.id,
+        quoteNumber: q.quoteNumber,
+        customerId: q.customerId,
+        customerName: q.customerName,
+        status: q.status,
+        partNumber: first?.partNumber || '',
+        description: first?.description || '',
+        quantity: first?.quantity ?? 0,
+        material: first?.material || '',
+        dueDate: q.quoteDueDate || q.validUntil || '',
+        unitPrice: first?.unitPrice,
+        totalPrice: q.totalAmount,
+        sentAt: q.sentAt,
+        requestedDate: q.rfqReceivedDate || q.createdAt,
+        createdAt: q.createdAt,
+        updatedAt: q.updatedAt,
+        lostAt: q.lostAt,
+        items: q.items || []
+    };
+}
+
+function mapApiWorkOrderToUi(wo) {
+    const checklist = (wo.checklist || []).map((step) => ({
+        id: step.id,
+        stepOrder: step.stepOrder,
+        stepName: step.stepName,
+        stepKey: step.stepKey,
+        isCompleted: !!step.isCompleted,
+        completedAt: step.completedAt,
+        completedByName: step.completedByName,
+        notes: step.notes,
+        inProgress: false,
+        hasIssue: false
+    }));
+    const lineItem = {
+        id: wo.quoteItemId || 1,
+        partNumber: wo.partNumber,
+        description: wo.description || '',
+        quantity: wo.quantity,
+        material: wo.material || '',
+        completionPercentage: wo.completionPercentage || 0,
+        checklist: checklist.length ? checklist : getDefaultChecklist()
+    };
+    return {
+        id: wo.id,
+        woNumber: wo.woNumber,
+        customerId: wo.customerId,
+        customerName: wo.customerName,
+        dueDate: wo.dueDate,
+        status: wo.status,
+        priority: wo.priority,
+        notes: wo.notes,
+        completionPercentage: wo.completionPercentage || 0,
+        lineItems: [lineItem],
+        createdAt: wo.createdAt
+    };
+}
+
+export async function refreshSalesData() {
+    if (!salesApi.hasAuthToken()) {
+        salesApiCache = { customers: null, quotes: null, workOrders: null, leads: null };
+        return;
+    }
+    try {
+        const [customers, quotes, workOrders, leads] = await Promise.all([
+            salesApi.fetchCustomers(),
+            salesApi.fetchQuotes(),
+            salesApi.fetchWorkOrders(),
+            salesApi.fetchLeads()
+        ]);
+        salesApiCache.customers = customers.map((c) => ({
+            ...c,
+            name: c.name,
+            terms: c.defaultTerms || c.terms,
+            contacts: c.contacts || []
+        }));
+        salesApiCache.quotes = quotes.map(mapApiQuoteToUi);
+        salesApiCache.workOrders = workOrders.map(mapApiWorkOrderToUi);
+        salesApiCache.leads = Array.isArray(leads) ? leads : [];
+    } catch (e) {
+        console.error('refreshSalesData:', e);
+        showToast(e.message || 'Failed to load sales data', 'error');
+    }
+}
+
+function ensureOfflineLeadsSeeded() {
+    let rows = storage.get(STORAGE_KEYS.LEADS);
+    if (!rows || !Array.isArray(rows) || rows.length === 0) {
+        rows = SALES_PROSPECTS.map((p) => ({
+            id: p.id,
+            name: p.name,
+            segment: p.segment || '',
+            location: p.location || '',
+            phone: p.phone || '',
+            email: p.email || '',
+            industry: p.industry || '',
+            notes: p.notes || '',
+            priorityTarget: !!p.priorityTarget,
+            sortOrder: p.id,
+            deletedAt: null
+        }));
+        storage.set(STORAGE_KEYS.LEADS, rows);
+    }
+}
+
+/** Active leads: API cache when signed in, localStorage (+ seed) when offline/demo. */
+export function getLeads() {
+    if (salesApi.hasAuthToken()) {
+        return salesApiCache.leads || [];
+    }
+    ensureOfflineLeadsSeeded();
+    const all = storage.get(STORAGE_KEYS.LEADS) || [];
+    return all.filter((l) => !l.deletedAt);
+}
 
 // ==================== DEMO DATA ====================
 function getDemoCustomers() {
@@ -210,6 +342,9 @@ export function getNextWorkflowStepForLineItem(lineItem) {
 
 // ==================== DATA ACCESS ====================
 export function getCustomers() {
+    if (salesApi.hasAuthToken()) {
+        return salesApiCache.customers || [];
+    }
     let data = storage.get(STORAGE_KEYS.CUSTOMERS);
     if (!data) {
         data = getDemoCustomers();
@@ -219,6 +354,9 @@ export function getCustomers() {
 }
 
 export function getQuotes() {
+    if (salesApi.hasAuthToken()) {
+        return salesApiCache.quotes || [];
+    }
     let data = storage.get(STORAGE_KEYS.QUOTES);
     if (!data) {
         data = getDemoQuotes();
@@ -228,6 +366,9 @@ export function getQuotes() {
 }
 
 export function getWorkOrders() {
+    if (salesApi.hasAuthToken()) {
+        return salesApiCache.workOrders || [];
+    }
     let data = storage.get(STORAGE_KEYS.WORK_ORDERS);
     if (!data) {
         data = getDemoWorkOrders();
@@ -237,6 +378,10 @@ export function getWorkOrders() {
 }
 
 export function saveWorkOrders(workOrders) {
+    if (salesApi.hasAuthToken()) {
+        salesApiCache.workOrders = workOrders;
+        return;
+    }
     storage.set(STORAGE_KEYS.WORK_ORDERS, workOrders);
 }
 
@@ -262,6 +407,7 @@ export function resetAllSalesToDemo() {
     
     // Clear archived work orders
     storage.set(STORAGE_KEYS.ARCHIVED_WORK_ORDERS, [], true);
+    storage.set(STORAGE_KEYS.ARCHIVED_CUSTOMERS, [], true);
     
     // Clear documents (start fresh)
     storage.set(STORAGE_KEYS.QUOTE_DOCUMENTS, [], true);
@@ -311,6 +457,34 @@ export function getNextWorkflowStep(wo) {
     return null;
 }
 
+/**
+ * Next incomplete step for a work order, with the line item it belongs to (multi-part WOs).
+ * Used by Tasks "All" view so Start/Complete/Issue update the correct line item.
+ */
+export function getNextWorkflowStepWithLineItem(wo) {
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        let bestStep = null;
+        let bestOrder = Infinity;
+        let bestLineItemId = null;
+
+        for (const item of wo.lineItems) {
+            const checklist = item.checklist || getDefaultChecklist();
+            for (const step of checklist) {
+                if (!step.isCompleted && step.stepOrder < bestOrder) {
+                    bestStep = step;
+                    bestOrder = step.stepOrder;
+                    bestLineItemId = item.id;
+                }
+            }
+        }
+        if (!bestStep) return null;
+        return { step: bestStep, lineItemId: bestLineItemId };
+    }
+    const step = getNextWorkflowStep(wo);
+    if (!step) return null;
+    return { step, lineItemId: null };
+}
+
 export function getWOUrgencyColor(dueDate) {
     return getUrgencyColor(dueDate);
 }
@@ -335,26 +509,46 @@ export function batchUpdateWorkOrders(updates) {
     return workOrders;
 }
 
-export function updateChecklistStep(woId, stepId, updates, lineItemId = null) {
+/**
+ * @param {number|null} stepId - Checklist step id (may mismatch after import if coerced)
+ * @param {string|null} [stepKeyFallback] - If id lookup fails, match by stepKey (e.g. material_received)
+ */
+export function updateChecklistStep(woId, stepId, updates, lineItemId = null, stepKeyFallback = null) {
     const workOrders = getWorkOrders();
     const woIndex = workOrders.findIndex(wo => wo.id === woId);
     
     if (woIndex === -1) return null;
     
     const wo = workOrders[woIndex];
+
+    function resolveStepIndex(checklist) {
+        if (!checklist?.length) return -1;
+        let idx = checklist.findIndex(s => s.id === stepId);
+        if (idx === -1 && stepId != null && stepId !== '') {
+            const n = Number(stepId);
+            if (!Number.isNaN(n)) {
+                idx = checklist.findIndex(s => Number(s.id) === n);
+            }
+        }
+        if (idx === -1 && stepKeyFallback) {
+            idx = checklist.findIndex(s => s.stepKey === stepKeyFallback);
+        }
+        return idx;
+    }
     
     // Handle multi-part work orders (new structure)
     if (wo.lineItems && wo.lineItems.length > 0) {
-        // Find the line item
-        const itemIndex = lineItemId 
+        // Find the line item (lineItemId 0 is valid — do not use truthy check)
+        const lineItemSpecified = lineItemId != null && lineItemId !== '';
+        const itemIndex = lineItemSpecified
             ? wo.lineItems.findIndex(item => item.id === lineItemId)
-            : 0; // Default to first item if not specified
+            : 0;
         
         if (itemIndex === -1) return null;
         
         const lineItem = wo.lineItems[itemIndex];
         const checklist = lineItem.checklist || getDefaultChecklist();
-        const stepIndex = checklist.findIndex(s => s.id === stepId);
+        const stepIndex = resolveStepIndex(checklist);
         
         if (stepIndex === -1) return null;
         
@@ -370,7 +564,7 @@ export function updateChecklistStep(woId, stepId, updates, lineItemId = null) {
     } else {
         // Legacy single-part structure
         const checklist = wo.checklist || getDefaultChecklist();
-        const stepIndex = checklist.findIndex(s => s.id === stepId);
+        const stepIndex = resolveStepIndex(checklist);
         
         if (stepIndex === -1) return null;
         
@@ -383,8 +577,143 @@ export function updateChecklistStep(woId, stepId, updates, lineItemId = null) {
     
     workOrders[woIndex] = wo;
     saveWorkOrders(workOrders);
-    
+
+    if (salesApi.hasAuthToken() && updates.isCompleted !== undefined) {
+        let checklist;
+        if (wo.lineItems && wo.lineItems.length > 0) {
+            const lineItemSpecified = lineItemId != null && lineItemId !== '';
+            const itemIndex = lineItemSpecified
+                ? wo.lineItems.findIndex(item => item.id === lineItemId)
+                : 0;
+            checklist = wo.lineItems[itemIndex]?.checklist;
+        } else {
+            checklist = wo.checklist;
+        }
+        const si = resolveStepIndex(checklist || []);
+        if (si >= 0 && checklist[si]?.id) {
+            salesApi.updateWorkOrderChecklistItem(woId, checklist[si].id, {
+                isCompleted: !!updates.isCompleted,
+                userName: 'User'
+            }).then(() => refreshSalesData()).catch((err) => showToast(err.message, 'error'));
+        }
+    }
+
     return wo;
+}
+
+/**
+ * Roll back workflow by one step for a work order (or one line item on multi-part WOs).
+ * 1) If the current (first incomplete) step was started but not completed, clears started/in-progress.
+ * 2) Otherwise un-completes the highest stepOrder step that is still marked complete.
+ * @param {number|null|undefined} lineItemId - Target line item; null/undefined resolves from next incomplete step (or furthest-complete line if all done).
+ * @returns {{ ok: boolean, message: string }}
+ */
+export function rollBackOneWorkflowStep(woId, lineItemId) {
+    const workOrders = getWorkOrders();
+    const wo = workOrders.find(w => w.id === woId);
+    if (!wo) {
+        return { ok: false, message: 'Work order not found' };
+    }
+
+    const findLineItemForRollbackWhenNoNext = () => {
+        if (!wo.lineItems?.length) return null;
+        let bestId = null;
+        let bestMaxOrder = -1;
+        for (const item of wo.lineItems) {
+            const checklist = item.checklist || getDefaultChecklist();
+            const completed = checklist.filter(s => s.isCompleted);
+            if (!completed.length) continue;
+            const maxO = Math.max(...completed.map(s => s.stepOrder));
+            if (maxO > bestMaxOrder) {
+                bestMaxOrder = maxO;
+                bestId = item.id;
+            }
+        }
+        return bestId;
+    };
+
+    let resolvedLineItemId = lineItemId;
+    const hasExplicitLine =
+        lineItemId !== undefined &&
+        lineItemId !== null &&
+        lineItemId !== '' &&
+        !(typeof lineItemId === 'number' && Number.isNaN(lineItemId));
+
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        if (!hasExplicitLine) {
+            const ctx = getNextWorkflowStepWithLineItem(wo);
+            if (ctx?.lineItemId != null) {
+                resolvedLineItemId = ctx.lineItemId;
+            } else {
+                const fallback = findLineItemForRollbackWhenNoNext();
+                if (fallback == null) {
+                    return { ok: false, message: 'Nothing to roll back' };
+                }
+                resolvedLineItemId = fallback;
+            }
+        } else {
+            resolvedLineItemId = Number(lineItemId);
+        }
+    } else {
+        resolvedLineItemId = null;
+    }
+
+    let checklist;
+    if (wo.lineItems && wo.lineItems.length > 0) {
+        const item = wo.lineItems.find(li => li.id === resolvedLineItemId);
+        if (!item) {
+            return { ok: false, message: 'Line item not found' };
+        }
+        checklist = item.checklist || getDefaultChecklist();
+    } else {
+        checklist = wo.checklist || getDefaultChecklist();
+    }
+
+    const sorted = [...checklist].sort((a, b) => a.stepOrder - b.stepOrder);
+    const firstIncomplete = sorted.find(s => !s.isCompleted);
+
+    if (firstIncomplete && (firstIncomplete.startedAt || firstIncomplete.inProgress)) {
+        const clearStart = {
+            startedAt: null,
+            startedByName: null,
+            inProgress: false
+        };
+        if (firstIncomplete.stepKey === 'machining_complete') {
+            clearStart.machiningMachineId = null;
+            clearStart.machiningMachineName = null;
+        }
+        updateChecklistStep(woId, firstIncomplete.id, clearStart, resolvedLineItemId, firstIncomplete.stepKey);
+        return { ok: true, message: `Cleared start on: ${firstIncomplete.stepName}` };
+    }
+
+    const completed = sorted.filter(s => s.isCompleted);
+    if (completed.length === 0) {
+        return { ok: false, message: 'Nothing to roll back' };
+    }
+
+    const toUndo = completed.reduce((a, b) => (a.stepOrder >= b.stepOrder ? a : b));
+    const undoUpdates = {
+        isCompleted: false,
+        completedAt: null,
+        completedByName: null,
+        notes: null,
+        referenceNumber: null,
+        inProgress: false,
+        startedAt: null,
+        startedByName: null,
+        hasIssue: false,
+        issueType: null,
+        issueSeverity: null,
+        issueDescription: null,
+        issueReportedAt: null
+    };
+    if (toUndo.stepKey === 'machining_complete') {
+        undoUpdates.machiningMachineId = null;
+        undoUpdates.machiningMachineName = null;
+    }
+    updateChecklistStep(woId, toUndo.id, undoUpdates, resolvedLineItemId, toUndo.stepKey);
+
+    return { ok: true, message: `Rolled back: ${toUndo.stepName}` };
 }
 
 // Get all line items at a specific workflow step across all work orders
@@ -446,11 +775,14 @@ export function getLineItemsByWorkflowStep(stepKey) {
 }
 
 // ==================== VIEW FUNCTIONS ====================
-export function loadCustomersView() {
+export async function loadCustomersView() {
     salesState.currentView = 'customers';
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
+        if (salesApi.hasAuthToken()) {
+            await refreshSalesData();
+        }
         const customers = getCustomers();
         renderCustomersView(customers);
     }, () => {
@@ -592,12 +924,473 @@ function setupCustomerSearch() {
     }
 }
 
+// ==================== LEADS (SALES PROSPECTS) ====================
+function escapeLeadHtml(s) {
+    if (s == null || s === '') return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+export function loadLeadsView() {
+    salesState.currentView = 'leads';
+    showLoadingSpinner();
+    safeExecute(async () => {
+        if (salesApi.hasAuthToken()) {
+            await refreshSalesData();
+        } else {
+            ensureOfflineLeadsSeeded();
+        }
+        renderLeadsView();
+    }, () => {
+        showToast('Error loading leads', 'error');
+    }, 'loadLeadsView');
+}
+
+function getSalesProspectsFiltered() {
+    const list = getLeads().slice().sort((a, b) => {
+        const sa = a.sortOrder ?? a.id ?? 0;
+        const sb = b.sortOrder ?? b.id ?? 0;
+        if (sa !== sb) return sa - sb;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+    const q = (salesState.leadsSearch || '').trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((p) => {
+        const blob = [p.name, p.segment, p.location, p.industry, p.phone, p.email, p.notes]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+        return blob.includes(q);
+    });
+}
+
+function renderLeadDetailsRow(lead) {
+    const phone = escapeLeadHtml(lead.phone) || '—';
+    const emailRaw = lead.email || '';
+    const email = emailRaw
+        ? `<a href="mailto:${escapeLeadHtml(emailRaw)}" class="text-blue-400 hover:text-blue-300">${escapeLeadHtml(emailRaw)}</a>`
+        : '—';
+    const loc = escapeLeadHtml(lead.location) || '—';
+    const ind = escapeLeadHtml(lead.industry) || '—';
+    const notes = lead.notes
+        ? `<div class="text-xs mt-2 text-gray-400 whitespace-pre-wrap">${escapeLeadHtml(lead.notes)}</div>`
+        : '';
+    return `
+        <tr class="bg-gray-900">
+            <td colspan="6" class="px-8 py-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Location</h4>
+                        <p class="text-gray-300">${loc}</p>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Industry / focus</h4>
+                        <p class="text-gray-300">${ind}</p>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Phone</h4>
+                        <p class="text-gray-300">${phone}</p>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Email</h4>
+                        <p>${email}</p>
+                    </div>
+                </div>
+                ${notes}
+            </td>
+        </tr>
+    `;
+}
+
+function renderLeadsView() {
+    const container = DOMCache.get('dashboardContent');
+    if (!container) return;
+
+    const filtered = getSalesProspectsFiltered();
+    const rows = filtered
+        .map((lead) => {
+            const isExpanded = salesState.expandedLeads.has(lead.id);
+            const pri = lead.priorityTarget
+                ? '<span class="ml-2 px-2 py-0.5 text-xs rounded-full bg-amber-600/40 text-amber-200 border border-amber-500/50">Priority</span>'
+                : '';
+            const escName = escapeLeadHtml(lead.name);
+            return `
+            <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${lead.id}">
+                <td class="px-4 py-3 text-gray-400 whitespace-nowrap cursor-pointer" data-action="toggle-lead" data-id="${lead.id}">
+                    ${lead.sortOrder != null ? lead.sortOrder : lead.id}
+                </td>
+                <td class="px-4 py-3 cursor-pointer" data-action="toggle-lead" data-id="${lead.id}">
+                    <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} mr-2 text-gray-500"></i>
+                    <span class="font-medium text-white">${escName}</span>${pri}
+                </td>
+                <td class="px-4 py-3 text-gray-300 cursor-pointer" data-action="toggle-lead" data-id="${lead.id}">${escapeLeadHtml(lead.segment) || '—'}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs max-w-xs truncate cursor-pointer" data-action="toggle-lead" data-id="${lead.id}" title="${escapeLeadHtml(lead.location || '').replace(/"/g, '&quot;')}">${escapeLeadHtml(lead.location) || '—'}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs max-w-md truncate cursor-pointer" data-action="toggle-lead" data-id="${lead.id}" title="${escapeLeadHtml(lead.industry || '').replace(/"/g, '&quot;')}">${escapeLeadHtml(lead.industry) || '—'}</td>
+                <td class="px-4 py-3">
+                    <button type="button" data-action="edit-lead" data-id="${lead.id}" class="text-blue-400 hover:text-blue-300 mr-2" title="Edit lead">
+                        <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button type="button" data-action="delete-lead" data-id="${lead.id}" data-name="${escName.replace(/"/g, '&quot;')}" class="text-red-400 hover:text-red-300" title="Archive lead">
+                        <i class="fa-solid fa-archive"></i>
+                    </button>
+                </td>
+            </tr>
+            ${isExpanded ? renderLeadDetailsRow(lead) : ''}
+        `;
+        })
+        .join('');
+
+    container.innerHTML = `
+        <div class="col-span-3 card p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
+                    <i class="fa-solid fa-user-plus mr-2"></i>Leads
+                    <span class="text-xs" style="color: var(--color-text-muted);">(${filtered.length} prospects)</span>
+                </h3>
+                <div class="flex space-x-2">
+                    <button data-action="export-leads" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
+                        <i class="fa-solid fa-download mr-1"></i>Export CSV
+                    </button>
+                    <button data-action="add-lead" class="btn btn-primary text-sm">
+                        <i class="fa-solid fa-plus mr-1"></i>Add Lead
+                    </button>
+                </div>
+            </div>
+            <p class="text-xs mb-3" style="color: var(--color-text-muted);">
+                Prospects are stored in the database when signed in, or in the browser when using offline/demo login. Archive removes a lead from this list; permanently delete from Settings → Archive → Archived leads (administrators).
+            </p>
+            <div class="mb-4">
+                <input type="text" id="leadsSearch" placeholder="Search prospects (name, segment, location, notes)..."
+                    value="${(salesState.leadsSearch || '').replace(/"/g, '&quot;')}"
+                    class="w-full bg-gray-700 text-sm text-gray-300 rounded px-3 py-2 border border-gray-600">
+            </div>
+            <div class="table-container">
+                <table class="table w-full text-sm text-left">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 w-12">#</th>
+                            <th class="px-4 py-3">Company</th>
+                            <th class="px-4 py-3">Segment</th>
+                            <th class="px-4 py-3">Location</th>
+                            <th class="px-4 py-3">Industry / focus</th>
+                            <th class="px-4 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows || '<tr><td colspan="6" class="text-center py-8" style="color: var(--color-text-muted);">No prospects match your search</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    const searchInput = document.getElementById('leadsSearch');
+    if (searchInput) {
+        searchInput.addEventListener(
+            'input',
+            debounce((e) => {
+                salesState.leadsSearch = e.target.value;
+                renderLeadsView();
+            }, 300)
+        );
+    }
+}
+
+export function toggleLeadExpand(leadId) {
+    const id = parseInt(leadId, 10);
+    if (Number.isNaN(id)) return;
+    if (salesState.expandedLeads.has(id)) {
+        salesState.expandedLeads.delete(id);
+    } else {
+        salesState.expandedLeads.add(id);
+    }
+    renderLeadsView();
+}
+
+function showAddLeadModal() {
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-user-plus mr-2" style="color: var(--color-accent-primary);"></i>Add Lead
+                </h3>
+                <button type="button" onclick="BPERP.common.closeModal('addLeadModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="addLeadForm" class="space-y-4">
+                <div>
+                    <label class="form-label">Company name *</label>
+                    <input type="text" name="name" required class="form-input w-full" placeholder="Company name">
+                </div>
+                <div>
+                    <label class="form-label">Segment</label>
+                    <input type="text" name="segment" class="form-input w-full" placeholder="e.g. Drone manufacturers">
+                </div>
+                <div>
+                    <label class="form-label">Location</label>
+                    <textarea name="location" class="form-input w-full" rows="2" placeholder="Address or region"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Phone</label>
+                        <input type="text" name="phone" class="form-input w-full">
+                    </div>
+                    <div>
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-input w-full">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Industry / focus</label>
+                    <textarea name="industry" class="form-input w-full" rows="2"></textarea>
+                </div>
+                <div>
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-input w-full" rows="3"></textarea>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="priorityTarget" id="addLeadPriority" class="rounded border-gray-600">
+                    <label for="addLeadPriority" class="text-sm text-gray-300">Priority target</label>
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('addLeadModal')" class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fa-solid fa-plus mr-2"></i>Add Lead
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    createModal('addLeadModal', content, { width: 'w-full max-w-lg' });
+    document.getElementById('addLeadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const name = (fd.get('name') || '').trim();
+        if (!name) {
+            showToast('Company name is required', 'error');
+            return;
+        }
+        const payload = {
+            name,
+            segment: (fd.get('segment') || '').trim() || null,
+            location: (fd.get('location') || '').trim() || null,
+            phone: (fd.get('phone') || '').trim() || null,
+            email: (fd.get('email') || '').trim() || null,
+            industry: (fd.get('industry') || '').trim() || null,
+            notes: (fd.get('notes') || '').trim() || null,
+            priorityTarget: fd.get('priorityTarget') === 'on'
+        };
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.createLead(payload);
+                await refreshSalesData();
+                closeModal('addLeadModal');
+                showToast(`Lead "${name}" added`, 'success');
+                loadLeadsView();
+            } catch (err) {
+                showToast(err.message || 'Failed to add lead', 'error');
+            }
+            return;
+        }
+        ensureOfflineLeadsSeeded();
+        const leads = storage.get(STORAGE_KEYS.LEADS) || [];
+        const maxId = leads.reduce((m, l) => Math.max(m, l.id || 0), 0);
+        const nextSort = leads.reduce((m, l) => Math.max(m, l.sortOrder || l.id || 0), 0) + 1;
+        leads.push({
+            id: maxId + 1,
+            ...payload,
+            priorityTarget: payload.priorityTarget,
+            sortOrder: nextSort,
+            deletedAt: null
+        });
+        storage.set(STORAGE_KEYS.LEADS, leads);
+        closeModal('addLeadModal');
+        showToast(`Lead "${name}" added`, 'success');
+        loadLeadsView();
+    });
+}
+
+function showEditLeadModal(leadId) {
+    const id = parseInt(leadId, 10);
+    const lead = getLeads().find((l) => l.id === id);
+    if (!lead) {
+        showToast('Lead not found', 'error');
+        return;
+    }
+    const esc = (v) => String(v ?? '').replace(/"/g, '&quot;');
+    const content = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-white">
+                    <i class="fa-solid fa-edit mr-2" style="color: var(--color-accent-primary);"></i>Edit Lead
+                </h3>
+                <button type="button" onclick="BPERP.common.closeModal('editLeadModal')" class="text-gray-400 hover:text-white">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+            <form id="editLeadForm" class="space-y-4" data-lead-id="${id}">
+                <div>
+                    <label class="form-label">Company name *</label>
+                    <input type="text" name="name" required class="form-input w-full" value="${esc(lead.name)}">
+                </div>
+                <div>
+                    <label class="form-label">Segment</label>
+                    <input type="text" name="segment" class="form-input w-full" value="${esc(lead.segment)}">
+                </div>
+                <div>
+                    <label class="form-label">Location</label>
+                    <textarea name="location" class="form-input w-full" rows="2">${escapeLeadHtml(lead.location)}</textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="form-label">Phone</label>
+                        <input type="text" name="phone" class="form-input w-full" value="${esc(lead.phone)}">
+                    </div>
+                    <div>
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-input w-full" value="${esc(lead.email)}">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">Industry / focus</label>
+                    <textarea name="industry" class="form-input w-full" rows="2">${escapeLeadHtml(lead.industry)}</textarea>
+                </div>
+                <div>
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-input w-full" rows="3">${escapeLeadHtml(lead.notes)}</textarea>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" name="priorityTarget" id="editLeadPriority" class="rounded border-gray-600" ${lead.priorityTarget ? 'checked' : ''}>
+                    <label for="editLeadPriority" class="text-sm text-gray-300">Priority target</label>
+                </div>
+                <div class="flex space-x-3 pt-4">
+                    <button type="button" onclick="BPERP.common.closeModal('editLeadModal')" class="btn btn-secondary flex-1">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fa-solid fa-save mr-2"></i>Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    createModal('editLeadModal', content, { width: 'w-full max-w-lg' });
+    document.getElementById('editLeadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const lid = parseInt(form.dataset.leadId, 10);
+        const fd = new FormData(form);
+        const name = (fd.get('name') || '').trim();
+        if (!name) {
+            showToast('Company name is required', 'error');
+            return;
+        }
+        const payload = {
+            name,
+            segment: (fd.get('segment') || '').trim() || null,
+            location: (fd.get('location') || '').trim() || null,
+            phone: (fd.get('phone') || '').trim() || null,
+            email: (fd.get('email') || '').trim() || null,
+            industry: (fd.get('industry') || '').trim() || null,
+            notes: (fd.get('notes') || '').trim() || null,
+            priorityTarget: fd.get('priorityTarget') === 'on'
+        };
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.updateLead(lid, payload);
+                await refreshSalesData();
+                closeModal('editLeadModal');
+                showToast('Lead updated', 'success');
+                loadLeadsView();
+            } catch (err) {
+                showToast(err.message || 'Failed to update lead', 'error');
+            }
+            return;
+        }
+        ensureOfflineLeadsSeeded();
+        const leads = storage.get(STORAGE_KEYS.LEADS) || [];
+        const idx = leads.findIndex((l) => l.id === lid);
+        if (idx === -1) {
+            showToast('Lead not found', 'error');
+            return;
+        }
+        leads[idx] = { ...leads[idx], ...payload, priorityTarget: payload.priorityTarget };
+        storage.set(STORAGE_KEYS.LEADS, leads);
+        closeModal('editLeadModal');
+        showToast('Lead updated', 'success');
+        loadLeadsView();
+    });
+}
+
+function deleteLead(leadId, leadName) {
+    showConfirmModal(
+        'Archive lead?',
+        `Remove <strong class="text-white">${escapeLeadHtml(leadName)}</strong> from the active list? Find it under <strong class="text-white">Settings → Archive → Archived leads</strong>. Permanent removal is only from there (administrators).`,
+        async () => {
+            if (salesApi.hasAuthToken()) {
+                try {
+                    await salesApi.deleteLead(leadId);
+                    await refreshSalesData();
+                    showToast(`Lead "${leadName}" archived`, 'success');
+                    loadLeadsView();
+                } catch (err) {
+                    showToast(err.message || 'Failed to archive lead', 'error');
+                }
+                return;
+            }
+            ensureOfflineLeadsSeeded();
+            const leads = storage.get(STORAGE_KEYS.LEADS) || [];
+            const id = parseInt(leadId, 10);
+            const found = leads.find((l) => l.id === id);
+            if (!found) {
+                showToast('Lead not found', 'error');
+                return;
+            }
+            storage.set(
+                STORAGE_KEYS.LEADS,
+                leads.filter((l) => l.id !== id)
+            );
+            const archived = storage.get(STORAGE_KEYS.ARCHIVED_LEADS) || [];
+            archived.unshift({
+                ...found,
+                deletedAt: new Date().toISOString(),
+                archivedAt: new Date().toISOString()
+            });
+            storage.set(STORAGE_KEYS.ARCHIVED_LEADS, archived);
+            showToast(`Lead "${leadName}" archived`, 'success');
+            loadLeadsView();
+        },
+        { icon: 'fa-archive', iconColor: 'text-amber-400', confirmText: 'Archive lead', confirmClass: 'bg-amber-700 hover:bg-amber-600' }
+    );
+}
+
+async function exportLeadsCsv() {
+    const rows = getSalesProspectsFiltered().map((p) => ({
+        '#': p.sortOrder != null ? p.sortOrder : p.id,
+        Company: p.name,
+        Segment: p.segment,
+        Location: p.location || '',
+        Phone: p.phone || '',
+        Email: p.email || '',
+        Industry: p.industry || '',
+        Notes: p.notes || '',
+        'Priority target': p.priorityTarget ? 'Yes' : ''
+    }));
+    await exportToCSV(rows, 'sales-leads');
+    showToast('Leads exported', 'success');
+}
+
 // ==================== QUOTES VIEW ====================
 export function loadQuotesView() {
     salesState.currentView = 'quotes';
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
+        if (salesApi.hasAuthToken()) {
+            await refreshSalesData();
+        }
         const quotes = getQuotes();
         renderQuotesView(quotes);
     }, () => {
@@ -756,7 +1549,10 @@ export function loadWIPView() {
     salesState.currentView = 'wip';
     showLoadingSpinner();
     
-    safeExecute(() => {
+    safeExecute(async () => {
+        if (salesApi.hasAuthToken()) {
+            await refreshSalesData();
+        }
         const workOrders = getWorkOrders().filter(wo => {
             const completion = calculateWOCompletion(wo);
             return completion < 100;
@@ -969,6 +1765,7 @@ function renderLineItemChecklist(woId, lineItem) {
                                     data-wo-id="${woId}" 
                                     data-item-id="${lineItem.id}" 
                                     data-step-id="${step.id}" 
+                                    data-step-key="${step.stepKey}"
                                     data-step-name="${step.stepName}"
                                     class="w-4 h-4 cursor-pointer" 
                                     style="accent-color: var(--color-accent-primary);">
@@ -989,272 +1786,525 @@ function renderLineItemChecklist(woId, lineItem) {
     `;
 }
 
-// ==================== ARCHIVED WORK VIEW ====================
-export function loadArchivedWorkView() {
-    salesState.currentView = 'archived';
-    showLoadingSpinner();
-    
-    safeExecute(() => {
-        const container = DOMCache.get('dashboardContent');
-        if (!container) return;
-        
-        // Get archived work orders from dedicated storage (primary source)
-        const archivedStorage = storage.get(STORAGE_KEYS.ARCHIVED_WORK_ORDERS) || [];
-        
-        // Also check active work orders for any that are 100% complete but not yet archived
-        const allWorkOrders = getWorkOrders();
-        const completedActiveWOs = allWorkOrders.filter(wo => 
-            (wo.completionPercentage === 100 || wo.status === 'Completed') &&
-            wo.status !== 'Archived'
-        );
-        
-        // Combine and deduplicate by ID (archived storage takes priority)
-        const archivedIds = new Set(archivedStorage.map(wo => wo.id));
-        const uniqueCompleted = completedActiveWOs.filter(wo => !archivedIds.has(wo.id));
-        
-        const allArchived = [...archivedStorage, ...uniqueCompleted].sort((a, b) => 
-            new Date(b.completedAt || b.archivedAt || b.updatedAt || b.createdAt) - 
-            new Date(a.completedAt || a.archivedAt || a.updatedAt || a.createdAt)
-        );
-        
-        // Helper to get part info for multi-part work orders
-        const getPartInfo = (wo) => {
-            if (wo.lineItems && wo.lineItems.length > 0) {
-                if (wo.lineItems.length === 1) {
-                    return wo.lineItems[0].partNumber || 'N/A';
-                }
-                return `${wo.lineItems.length} parts`;
-            }
-            return wo.partNumber || 'N/A';
-        };
-        
-        const getQuantityInfo = (wo) => {
-            if (wo.lineItems && wo.lineItems.length > 0) {
-                const totalQty = wo.lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
-                return totalQty;
-            }
-            return wo.quantity || 'N/A';
-        };
-        
-        const archivedRows = allArchived.map(wo => {
-            const completedDate = wo.completedAt || wo.archivedAt || wo.updatedAt || wo.dueDate;
-            const docCount = getWODocuments(wo.id).length;
-            return `
-                <tr class="hover:bg-gray-800/50">
-                    <td class="px-4 py-3">
-                        <span class="font-medium text-white">${wo.woNumber}</span>
-                    </td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${wo.customerName}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${getPartInfo(wo)}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${getQuantityInfo(wo)}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(wo.dueDate)}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(completedDate)}</td>
-                    <td class="px-4 py-3">
-                        <span class="badge bg-green-600 text-green-100">Archived</span>
-                    </td>
-                    <td class="px-4 py-3">
-                        <button data-action="view-wo-docs" data-id="${wo.id}" data-number="${wo.woNumber}" 
-                            class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300 text-sm mr-2"
+// ==================== SETTINGS → ARCHIVE (quotes, work, customers) ====================
+function archiveTabButtonClass(tab, active) {
+    const base = 'px-4 py-2 rounded-lg text-sm font-medium transition-colors';
+    if (tab === active) {
+        return `${base} bg-gray-700 text-white ring-1 ring-accentGreen`;
+    }
+    return `${base} bg-gray-800/60 text-gray-400 hover:bg-gray-700 hover:text-white border border-gray-700`;
+}
+
+function refreshArchiveIfNeeded() {
+    if (salesState.currentView === 'archive') {
+        loadArchiveView(salesState.archiveTab);
+    }
+}
+
+function buildArchivedWorkPanelHtml() {
+    const archivedStorage = storage.get(STORAGE_KEYS.ARCHIVED_WORK_ORDERS) || [];
+    const allWorkOrders = getWorkOrders();
+    const completedActiveWOs = allWorkOrders.filter(wo =>
+        (wo.completionPercentage === 100 || wo.status === 'Completed') &&
+        wo.status !== 'Archived'
+    );
+    const archivedIds = new Set(archivedStorage.map(wo => wo.id));
+    const uniqueCompleted = completedActiveWOs.filter(wo => !archivedIds.has(wo.id));
+    const allArchived = [...archivedStorage, ...uniqueCompleted].sort((a, b) =>
+        new Date(b.completedAt || b.archivedAt || b.updatedAt || b.createdAt) -
+        new Date(a.completedAt || a.archivedAt || a.updatedAt || a.createdAt)
+    );
+
+    const getPartInfo = (wo) => {
+        if (wo.lineItems && wo.lineItems.length > 0) {
+            if (wo.lineItems.length === 1) return wo.lineItems[0].partNumber || 'N/A';
+            return `${wo.lineItems.length} parts`;
+        }
+        return wo.partNumber || 'N/A';
+    };
+    const getQuantityInfo = (wo) => {
+        if (wo.lineItems && wo.lineItems.length > 0) {
+            return wo.lineItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+        }
+        return wo.quantity || 'N/A';
+    };
+
+    const archivedRows = allArchived.map((wo) => {
+        const completedDate = wo.completedAt || wo.archivedAt || wo.updatedAt || wo.dueDate;
+        const docCount = getWODocuments(wo.id).length;
+        return `
+            <tr class="hover:bg-gray-800/50">
+                <td class="px-4 py-3">
+                    <span class="font-medium text-white">${wo.woNumber}</span>
+                </td>
+                <td class="px-4 py-3" style="color: var(--color-text-secondary);">${wo.customerName}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-secondary);">${getPartInfo(wo)}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-secondary);">${getQuantityInfo(wo)}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(wo.dueDate)}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(completedDate)}</td>
+                <td class="px-4 py-3">
+                    <span class="badge bg-green-600 text-green-100">Archived</span>
+                </td>
+                <td class="px-4 py-3">
+                    <button data-action="view-wo-docs" data-id="${wo.id}" data-number="${wo.woNumber}"
+                        class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300 text-sm mr-2"
+                        title="Documents (${docCount})">
+                        <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
+                    </button>
+                    <button data-action="view-archived-wo" data-id="${wo.id}" class="text-blue-400 hover:text-blue-300 text-sm">
+                        <i class="fa-solid fa-eye mr-1"></i>View
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
+                <i class="fa-solid fa-briefcase mr-2"></i>Archived work orders
+                <span class="text-xs" style="color: var(--color-text-muted);">(${allArchived.length} completed)</span>
+            </h3>
+            <button data-action="export-archived" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
+                <i class="fa-solid fa-download mr-1"></i>Export
+            </button>
+        </div>
+        <div class="card p-6">
+            ${allArchived.length > 0 ? `
+                <div class="table-container">
+                    <table class="table w-full text-sm text-left">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-3">WO #</th>
+                                <th class="px-4 py-3">Customer</th>
+                                <th class="px-4 py-3">Part #</th>
+                                <th class="px-4 py-3">Qty</th>
+                                <th class="px-4 py-3">Due Date</th>
+                                <th class="px-4 py-3">Completed</th>
+                                <th class="px-4 py-3">Status</th>
+                                <th class="px-4 py-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${archivedRows}</tbody>
+                    </table>
+                </div>
+            ` : `
+                <div class="text-center py-12">
+                    <i class="fa-solid fa-box-archive text-5xl mb-4" style="color: var(--color-text-muted);"></i>
+                    <p style="color: var(--color-text-muted);">No archived work orders yet</p>
+                    <p class="text-xs mt-2" style="color: var(--color-text-muted);">Completed work orders will appear here</p>
+                </div>
+            `}
+        </div>
+    `;
+}
+
+function buildArchivedQuotesPanelHtml() {
+    const allQuotes = getQuotes();
+    const archivedQuotes = allQuotes.filter(q => q.status === 'Won' || q.status === 'Lost');
+    archivedQuotes.sort((a, b) => {
+        const dateA = new Date(a.updatedAt || a.lostAt || a.createdAt);
+        const dateB = new Date(b.updatedAt || b.lostAt || b.createdAt);
+        return dateB - dateA;
+    });
+    const wonCount = archivedQuotes.filter(q => q.status === 'Won').length;
+    const lostCount = archivedQuotes.filter(q => q.status === 'Lost').length;
+
+    const archivedRows = archivedQuotes.map((quote) => {
+        const isWon = quote.status === 'Won';
+        const docCount = getQuoteDocuments(quote.id).length;
+        const closedDate = quote.updatedAt || quote.lostAt || quote.createdAt;
+        return `
+            <tr class="hover:bg-gray-800/50">
+                <td class="px-4 py-3">
+                    <span class="font-medium text-white">${quote.quoteNumber}</span>
+                </td>
+                <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.customerName}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.partNumber}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.quantity}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(quote.dueDate)}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(closedDate)}</td>
+                <td class="px-4 py-3">
+                    ${isWon ? `
+                        <span class="px-2 py-1 text-xs rounded-full bg-green-600 text-green-100">
+                            <i class="fa-solid fa-trophy mr-1"></i>Won
+                        </span>
+                        ${quote.convertedToWO ? `<span class="text-xs ml-1" style="color: var(--color-text-muted);">${quote.convertedToWO}</span>` : ''}
+                    ` : `
+                        <span class="px-2 py-1 text-xs rounded-full bg-red-600 text-red-100">
+                            <i class="fa-solid fa-times-circle mr-1"></i>Lost
+                        </span>
+                        ${quote.lostReason ? `<span class="text-xs ml-1" style="color: var(--color-text-muted);">${quote.lostReason}</span>` : ''}
+                    `}
+                </td>
+                <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                        <button data-action="view-quote-docs" data-id="${quote.id}" data-number="${quote.quoteNumber}"
+                            class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300"
                             title="Documents (${docCount})">
                             <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
                         </button>
-                        <button data-action="view-archived-wo" data-id="${wo.id}" class="text-blue-400 hover:text-blue-300 text-sm">
-                            <i class="fa-solid fa-eye mr-1"></i>View
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-        
-        container.innerHTML = `
-            <div class="col-span-3">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
-                        <i class="fa-solid fa-archive mr-2"></i>Archived Work Orders
-                        <span class="text-xs" style="color: var(--color-text-muted);">(${allArchived.length} completed)</span>
-                    </h3>
-                    <div class="flex space-x-2">
-                        <button data-action="export-archived" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
-                            <i class="fa-solid fa-download mr-1"></i>Export
+                        ${!isWon ? `
+                            <button data-action="reopen-quote" data-id="${quote.id}" class="text-blue-400 hover:text-blue-300 text-sm" title="Reopen Quote">
+                                <i class="fa-solid fa-redo mr-1"></i>Reopen
+                            </button>
+                        ` : ''}
+                        <button data-action="delete-quote" data-id="${quote.id}" data-name="${quote.quoteNumber}" class="text-red-400 hover:text-red-300 text-sm" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
                         </button>
                     </div>
-                </div>
-                
-                <div class="card p-6">
-                    ${allArchived.length > 0 ? `
-                        <div class="table-container">
-                            <table class="table w-full text-sm text-left">
-                                <thead>
-                                    <tr>
-                                        <th class="px-4 py-3">WO #</th>
-                                        <th class="px-4 py-3">Customer</th>
-                                        <th class="px-4 py-3">Part #</th>
-                                        <th class="px-4 py-3">Qty</th>
-                                        <th class="px-4 py-3">Due Date</th>
-                                        <th class="px-4 py-3">Completed</th>
-                                        <th class="px-4 py-3">Status</th>
-                                        <th class="px-4 py-3">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${archivedRows}
-                                </tbody>
-                            </table>
-                        </div>
-                    ` : `
-                        <div class="text-center py-12">
-                            <i class="fa-solid fa-box-archive text-5xl mb-4" style="color: var(--color-text-muted);"></i>
-                            <p style="color: var(--color-text-muted);">No archived work orders yet</p>
-                            <p class="text-xs mt-2" style="color: var(--color-text-muted);">Completed work orders will appear here</p>
-                        </div>
-                    `}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
+                <i class="fa-solid fa-file-invoice mr-2"></i>Archived quotes
+                <span class="text-xs" style="color: var(--color-text-muted);">(${archivedQuotes.length} quotes)</span>
+            </h3>
+            <button data-action="export-archived-quotes" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
+                <i class="fa-solid fa-download mr-1"></i>Export
+            </button>
+        </div>
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="card p-4 border-l-4 border-l-green-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs" style="color: var(--color-text-muted);">Won Quotes</p>
+                        <p class="text-2xl font-bold text-green-400">${wonCount}</p>
+                    </div>
+                    <i class="fa-solid fa-trophy text-3xl text-green-500/30"></i>
                 </div>
             </div>
-        `;
-    }, null, 'loadArchivedWorkView');
+            <div class="card p-4 border-l-4 border-l-red-500">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs" style="color: var(--color-text-muted);">Lost Quotes</p>
+                        <p class="text-2xl font-bold text-red-400">${lostCount}</p>
+                    </div>
+                    <i class="fa-solid fa-times-circle text-3xl text-red-500/30"></i>
+                </div>
+            </div>
+        </div>
+        <div class="card p-6">
+            ${archivedQuotes.length > 0 ? `
+                <div class="table-container">
+                    <table class="table w-full text-sm text-left">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-3">Quote #</th>
+                                <th class="px-4 py-3">Customer</th>
+                                <th class="px-4 py-3">Part #</th>
+                                <th class="px-4 py-3">Qty</th>
+                                <th class="px-4 py-3">Due Date</th>
+                                <th class="px-4 py-3">Closed</th>
+                                <th class="px-4 py-3">Outcome</th>
+                                <th class="px-4 py-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${archivedRows}</tbody>
+                    </table>
+                </div>
+            ` : `
+                <div class="text-center py-12">
+                    <i class="fa-solid fa-archive text-5xl mb-4" style="color: var(--color-text-muted);"></i>
+                    <p style="color: var(--color-text-muted);">No archived quotes yet</p>
+                    <p class="text-xs mt-2" style="color: var(--color-text-muted);">Won and Lost quotes will appear here</p>
+                </div>
+            `}
+        </div>
+    `;
 }
 
-// ==================== ARCHIVED QUOTES VIEW ====================
-export function loadArchivedQuotesView() {
-    salesState.currentView = 'archived-quotes';
+async function buildArchivedCustomersPanelHtml() {
+    let rows = [];
+    if (salesApi.hasAuthToken()) {
+        try {
+            rows = await salesApi.fetchArchivedCustomers();
+        } catch (e) {
+            console.error('fetchArchivedCustomers', e);
+            rows = [];
+        }
+    } else {
+        rows = storage.get(STORAGE_KEYS.ARCHIVED_CUSTOMERS) || [];
+    }
+
+    const admin = isAdmin();
+    const tableRows = rows.map((c) => {
+        const name = c.name || c.companyName || '—';
+        const del = c.deletedAt || c.archivedAt;
+        const escName = String(name).replace(/"/g, '&quot;');
+        return `
+            <tr class="hover:bg-gray-800/50">
+                <td class="px-4 py-3 font-medium text-white">${name}</td>
+                <td class="px-4 py-3 text-gray-400">${c.city || '—'}</td>
+                <td class="px-4 py-3 text-gray-400">${c.phone || '—'}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(del)}</td>
+                <td class="px-4 py-3 text-right">
+                    ${admin ? `
+                        <button type="button" data-action="permanently-delete-archived-customer" data-id="${c.id}" data-name="${escName}"
+                            class="text-xs px-3 py-1 rounded bg-red-900/60 text-red-200 hover:bg-red-800 border border-red-800">
+                            <i class="fa-solid fa-skull-crossbones mr-1"></i>Delete permanently
+                        </button>
+                    ` : `
+                        <span class="text-xs text-gray-500">Administrators can permanently delete</span>
+                    `}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
+                <i class="fa-solid fa-building mr-2"></i>Archived customers
+                <span class="text-xs" style="color: var(--color-text-muted);">(${rows.length})</span>
+            </h3>
+        </div>
+        <p class="text-sm text-gray-400 mb-4">
+            Customers removed from the active list are stored here. Permanent deletion removes the record and related data from the database and is only available to administrators, from this screen.
+        </p>
+        <div class="card p-6">
+            ${rows.length > 0 ? `
+                <div class="table-container">
+                    <table class="table w-full text-sm text-left">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-3">Company</th>
+                                <th class="px-4 py-3">City</th>
+                                <th class="px-4 py-3">Phone</th>
+                                <th class="px-4 py-3">Archived</th>
+                                <th class="px-4 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+            ` : `
+                <div class="text-center py-12">
+                    <i class="fa-solid fa-building text-5xl mb-4" style="color: var(--color-text-muted);"></i>
+                    <p style="color: var(--color-text-muted);">No archived customers</p>
+                    <p class="text-xs mt-2" style="color: var(--color-text-muted);">Deleting a customer from Sales → Customers moves the record here</p>
+                </div>
+            `}
+        </div>
+    `;
+}
+
+async function buildArchivedLeadsPanelHtml() {
+    let rows = [];
+    if (salesApi.hasAuthToken()) {
+        try {
+            rows = await salesApi.fetchArchivedLeads();
+        } catch (e) {
+            console.error('fetchArchivedLeads', e);
+            rows = [];
+        }
+    } else {
+        rows = storage.get(STORAGE_KEYS.ARCHIVED_LEADS) || [];
+    }
+
+    const admin = isAdmin();
+    const tableRows = rows.map((lead) => {
+        const name = lead.name || '—';
+        const del = lead.deletedAt || lead.archivedAt;
+        const escName = String(name).replace(/"/g, '&quot;');
+        return `
+            <tr class="hover:bg-gray-800/50">
+                <td class="px-4 py-3 font-medium text-white">${escapeLeadHtml(name)}</td>
+                <td class="px-4 py-3 text-gray-400">${escapeLeadHtml(lead.segment) || '—'}</td>
+                <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(del)}</td>
+                <td class="px-4 py-3 text-right">
+                    ${admin ? `
+                        <button type="button" data-action="permanently-delete-archived-lead" data-id="${lead.id}" data-name="${escName}"
+                            class="text-xs px-3 py-1 rounded bg-red-900/60 text-red-200 hover:bg-red-800 border border-red-800">
+                            <i class="fa-solid fa-skull-crossbones mr-1"></i>Delete permanently
+                        </button>
+                    ` : `
+                        <span class="text-xs text-gray-500">Administrators can permanently delete</span>
+                    `}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
+                <i class="fa-solid fa-user-plus mr-2"></i>Archived leads
+                <span class="text-xs" style="color: var(--color-text-muted);">(${rows.length})</span>
+            </h3>
+        </div>
+        <p class="text-sm text-gray-400 mb-4">
+            Leads removed from Sales → Leads are stored here. Permanent deletion removes the record from the database and is only available to administrators, from this screen.
+        </p>
+        <div class="card p-6">
+            ${rows.length > 0 ? `
+                <div class="table-container">
+                    <table class="table w-full text-sm text-left">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-3">Company</th>
+                                <th class="px-4 py-3">Segment</th>
+                                <th class="px-4 py-3">Archived</th>
+                                <th class="px-4 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+            ` : `
+                <div class="text-center py-12">
+                    <i class="fa-solid fa-user-plus text-5xl mb-4" style="color: var(--color-text-muted);"></i>
+                    <p style="color: var(--color-text-muted);">No archived leads</p>
+                    <p class="text-xs mt-2" style="color: var(--color-text-muted);">Archiving a lead from Sales → Leads moves the record here</p>
+                </div>
+            `}
+        </div>
+    `;
+}
+
+/**
+ * Settings → Archive: archived quotes, work orders, removed customers, archived leads.
+ * @param {'quotes'|'work'|'customers'|'leads'} tab
+ */
+export async function loadArchiveView(tab = 'quotes') {
+    const t = ['quotes', 'work', 'customers', 'leads'].includes(tab) ? tab : 'quotes';
+    salesState.currentView = 'archive';
+    salesState.archiveTab = t;
     showLoadingSpinner();
-    
-    safeExecute(() => {
+
+    await safeExecute(async () => {
+        if (salesApi.hasAuthToken() && (t === 'quotes' || t === 'customers' || t === 'leads')) {
+            await refreshSalesData();
+        }
         const container = DOMCache.get('dashboardContent');
         if (!container) return;
-        
-        // Get all quotes and filter for Won and Lost (archived quotes)
-        const allQuotes = getQuotes();
-        const archivedQuotes = allQuotes.filter(q => q.status === 'Won' || q.status === 'Lost');
-        
-        // Sort by closed date (most recent first)
-        archivedQuotes.sort((a, b) => {
-            const dateA = new Date(a.updatedAt || a.lostAt || a.createdAt);
-            const dateB = new Date(b.updatedAt || b.lostAt || b.createdAt);
-            return dateB - dateA;
-        });
-        
-        // Count won vs lost
-        const wonCount = archivedQuotes.filter(q => q.status === 'Won').length;
-        const lostCount = archivedQuotes.filter(q => q.status === 'Lost').length;
-        
-        const archivedRows = archivedQuotes.map(quote => {
-            const isWon = quote.status === 'Won';
-            const docCount = getQuoteDocuments(quote.id).length;
-            const closedDate = quote.updatedAt || quote.lostAt || quote.createdAt;
-            
-            return `
-                <tr class="hover:bg-gray-800/50">
-                    <td class="px-4 py-3">
-                        <span class="font-medium text-white">${quote.quoteNumber}</span>
-                    </td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.customerName}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.partNumber}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-secondary);">${quote.quantity}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(quote.dueDate)}</td>
-                    <td class="px-4 py-3" style="color: var(--color-text-muted);">${formatDate(closedDate)}</td>
-                    <td class="px-4 py-3">
-                        ${isWon ? `
-                            <span class="px-2 py-1 text-xs rounded-full bg-green-600 text-green-100">
-                                <i class="fa-solid fa-trophy mr-1"></i>Won
-                            </span>
-                            ${quote.convertedToWO ? `<span class="text-xs ml-1" style="color: var(--color-text-muted);">${quote.convertedToWO}</span>` : ''}
-                        ` : `
-                            <span class="px-2 py-1 text-xs rounded-full bg-red-600 text-red-100">
-                                <i class="fa-solid fa-times-circle mr-1"></i>Lost
-                            </span>
-                            ${quote.lostReason ? `<span class="text-xs ml-1" style="color: var(--color-text-muted);">${quote.lostReason}</span>` : ''}
-                        `}
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="flex items-center gap-2">
-                            <button data-action="view-quote-docs" data-id="${quote.id}" data-number="${quote.quoteNumber}" 
-                                class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300" 
-                                title="Documents (${docCount})">
-                                <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
-                            </button>
-                            ${!isWon ? `
-                                <button data-action="reopen-quote" data-id="${quote.id}" class="text-blue-400 hover:text-blue-300 text-sm" title="Reopen Quote">
-                                    <i class="fa-solid fa-redo mr-1"></i>Reopen
-                                </button>
-                            ` : ''}
-                            <button data-action="delete-quote" data-id="${quote.id}" data-name="${quote.quoteNumber}" class="text-red-400 hover:text-red-300 text-sm" title="Delete">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-        
+
+        let panelHtml = '';
+        if (t === 'work') panelHtml = buildArchivedWorkPanelHtml();
+        else if (t === 'customers') panelHtml = await buildArchivedCustomersPanelHtml();
+        else if (t === 'leads') panelHtml = await buildArchivedLeadsPanelHtml();
+        else panelHtml = buildArchivedQuotesPanelHtml();
+
         container.innerHTML = `
             <div class="col-span-3">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-sm font-medium" style="color: var(--color-accent-primary);">
-                        <i class="fa-solid fa-archive mr-2"></i>Archived Quotes
-                        <span class="text-xs" style="color: var(--color-text-muted);">(${archivedQuotes.length} quotes)</span>
-                    </h3>
-                    <div class="flex space-x-2">
-                        <button data-action="export-archived-quotes" class="text-sm hover:opacity-80" style="color: var(--color-text-secondary);">
-                            <i class="fa-solid fa-download mr-1"></i>Export
-                        </button>
-                    </div>
+                <div class="mb-4">
+                    <h2 class="text-xl font-semibold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-box-archive text-gray-400"></i> Archive
+                    </h2>
+                    <p class="text-sm text-gray-400 mt-1">Won/lost quotes, completed work orders, customers and leads removed from the active lists.</p>
                 </div>
-                
-                <!-- Stats Summary -->
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="card p-4 border-l-4 border-l-green-500">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-xs" style="color: var(--color-text-muted);">Won Quotes</p>
-                                <p class="text-2xl font-bold text-green-400">${wonCount}</p>
-                            </div>
-                            <i class="fa-solid fa-trophy text-3xl text-green-500/30"></i>
-                        </div>
-                    </div>
-                    <div class="card p-4 border-l-4 border-l-red-500">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-xs" style="color: var(--color-text-muted);">Lost Quotes</p>
-                                <p class="text-2xl font-bold text-red-400">${lostCount}</p>
-                            </div>
-                            <i class="fa-solid fa-times-circle text-3xl text-red-500/30"></i>
-                        </div>
-                    </div>
+                <div class="flex flex-wrap gap-2 mb-6">
+                    <button type="button" data-action="archive-tab" data-tab="quotes" class="${archiveTabButtonClass('quotes', t)}">
+                        <i class="fa-solid fa-file-invoice mr-1"></i>Archived quotes
+                    </button>
+                    <button type="button" data-action="archive-tab" data-tab="work" class="${archiveTabButtonClass('work', t)}">
+                        <i class="fa-solid fa-briefcase mr-1"></i>Archived work
+                    </button>
+                    <button type="button" data-action="archive-tab" data-tab="customers" class="${archiveTabButtonClass('customers', t)}">
+                        <i class="fa-solid fa-building mr-1"></i>Archived customers
+                    </button>
+                    <button type="button" data-action="archive-tab" data-tab="leads" class="${archiveTabButtonClass('leads', t)}">
+                        <i class="fa-solid fa-user-plus mr-1"></i>Archived leads
+                    </button>
                 </div>
-                
-                <div class="card p-6">
-                    ${archivedQuotes.length > 0 ? `
-                        <div class="table-container">
-                            <table class="table w-full text-sm text-left">
-                                <thead>
-                                    <tr>
-                                        <th class="px-4 py-3">Quote #</th>
-                                        <th class="px-4 py-3">Customer</th>
-                                        <th class="px-4 py-3">Part #</th>
-                                        <th class="px-4 py-3">Qty</th>
-                                        <th class="px-4 py-3">Due Date</th>
-                                        <th class="px-4 py-3">Closed</th>
-                                        <th class="px-4 py-3">Outcome</th>
-                                        <th class="px-4 py-3">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${archivedRows}
-                                </tbody>
-                            </table>
-                        </div>
-                    ` : `
-                        <div class="text-center py-12">
-                            <i class="fa-solid fa-archive text-5xl mb-4" style="color: var(--color-text-muted);"></i>
-                            <p style="color: var(--color-text-muted);">No archived quotes yet</p>
-                            <p class="text-xs mt-2" style="color: var(--color-text-muted);">Won and Lost quotes will appear here</p>
-                        </div>
-                    `}
-                </div>
+                <div id="archivePanel">${panelHtml}</div>
             </div>
         `;
-    }, null, 'loadArchivedQuotesView');
+    }, null, 'loadArchiveView');
+}
+
+export function loadArchivedWorkView() {
+    return loadArchiveView('work');
+}
+
+export function loadArchivedQuotesView() {
+    return loadArchiveView('quotes');
+}
+
+function runPermanentCustomerDelete(customerId, customerName) {
+    const id = parseInt(customerId, 10);
+    const doDelete = async () => {
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.permanentlyDeleteCustomer(id);
+                await refreshSalesData();
+                showToast(`Customer "${customerName}" permanently deleted`, 'success');
+                loadArchiveView('customers');
+            } catch (err) {
+                showToast(err.message || 'Failed to permanently delete customer', 'error');
+            }
+            return;
+        }
+        const ar = storage.get(STORAGE_KEYS.ARCHIVED_CUSTOMERS) || [];
+        storage.set(STORAGE_KEYS.ARCHIVED_CUSTOMERS, ar.filter(c => c.id !== id));
+        showToast(`Customer "${customerName}" permanently removed`, 'success');
+        loadArchiveView('customers');
+    };
+
+    showConfirmModal(
+        'Final confirmation',
+        `This will <strong class="text-red-300">permanently erase</strong> <strong class="text-white">${customerName}</strong> and cannot be undone.`,
+        doDelete,
+        { icon: 'fa-skull-crossbones', iconColor: 'text-red-400', confirmText: 'Delete permanently', confirmClass: 'bg-red-900 hover:bg-red-800' }
+    );
+}
+
+function permanentlyDeleteArchivedCustomer(customerId, customerName) {
+    if (!isAdmin()) {
+        showToast('Only administrators can permanently delete customers', 'error');
+        return;
+    }
+    showConfirmModal(
+        'Permanently delete customer?',
+        `Remove <strong class="text-white">${customerName}</strong> from the archive forever? Related quotes and work orders for this customer will be deleted from the database.`,
+        () => runPermanentCustomerDelete(customerId, customerName),
+        { icon: 'fa-triangle-exclamation', iconColor: 'text-amber-400', confirmText: 'Continue', confirmClass: 'bg-amber-700 hover:bg-amber-600' }
+    );
+}
+
+function runPermanentLeadDelete(leadId, leadName) {
+    const id = parseInt(leadId, 10);
+    const doDelete = async () => {
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.permanentlyDeleteLead(id);
+                await refreshSalesData();
+                showToast(`Lead "${leadName}" permanently deleted`, 'success');
+                loadArchiveView('leads');
+            } catch (err) {
+                showToast(err.message || 'Failed to permanently delete lead', 'error');
+            }
+            return;
+        }
+        const ar = storage.get(STORAGE_KEYS.ARCHIVED_LEADS) || [];
+        storage.set(STORAGE_KEYS.ARCHIVED_LEADS, ar.filter((l) => l.id !== id));
+        showToast(`Lead "${leadName}" permanently removed`, 'success');
+        loadArchiveView('leads');
+    };
+
+    showConfirmModal(
+        'Final confirmation',
+        `This will <strong class="text-red-300">permanently erase</strong> <strong class="text-white">${escapeLeadHtml(leadName)}</strong> and cannot be undone.`,
+        doDelete,
+        { icon: 'fa-skull-crossbones', iconColor: 'text-red-400', confirmText: 'Delete permanently', confirmClass: 'bg-red-900 hover:bg-red-800' }
+    );
+}
+
+function permanentlyDeleteArchivedLead(leadId, leadName) {
+    if (!isAdmin()) {
+        showToast('Only administrators can permanently delete archived leads', 'error');
+        return;
+    }
+    showConfirmModal(
+        'Permanently delete lead?',
+        `Remove <strong class="text-white">${escapeLeadHtml(leadName)}</strong> from the archive forever?`,
+        () => runPermanentLeadDelete(leadId, leadName),
+        { icon: 'fa-triangle-exclamation', iconColor: 'text-amber-400', confirmText: 'Continue', confirmClass: 'bg-amber-700 hover:bg-amber-600' }
+    );
 }
 
 // ==================== ACTION HANDLERS ====================
@@ -1384,7 +2434,7 @@ function showAddCustomerModal() {
             <form id="addCustomerForm" class="space-y-4">
                 <div>
                     <label class="form-label">Company Name *</label>
-                    <input type="text" name="companyName" required class="form-input w-full" placeholder="Enter company name">
+                    <input type="text" name="name" required class="form-input w-full" placeholder="Enter company name">
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -1427,27 +2477,63 @@ function showAddCustomerModal() {
     
     createModal('addCustomerModal', content, { width: 'w-full max-w-lg' });
     
-    document.getElementById('addCustomerForm').addEventListener('submit', (e) => {
+    document.getElementById('addCustomerForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
+        const name = (formData.get('name') || '').trim();
+        const contactName = (formData.get('contactName') || '').trim();
+        const phone = formData.get('phone') || '';
+        const email = formData.get('email') || '';
+        const address = formData.get('address') || '';
+        const terms = formData.get('terms') || 'NET 30';
+
+        if (salesApi.hasAuthToken()) {
+            const contacts = [];
+            if (contactName) {
+                contacts.push({
+                    name: contactName,
+                    phone: phone || null,
+                    email: email || null,
+                    isPrimary: true
+                });
+            }
+            try {
+                await salesApi.createCustomer({
+                    name,
+                    addressLine1: address || null,
+                    defaultTerms: terms,
+                    phone: phone || null,
+                    contacts: contacts.length ? contacts : undefined
+                });
+                await refreshSalesData();
+                closeModal('addCustomerModal');
+                showToast(`Customer "${name}" added successfully!`, 'success');
+                loadCustomersView();
+            } catch (err) {
+                showToast(err.message || 'Failed to add customer', 'error');
+            }
+            return;
+        }
+
         const customer = {
             id: Date.now(),
-            companyName: formData.get('companyName'),
-            contactName: formData.get('contactName'),
-            phone: formData.get('phone'),
-            email: formData.get('email'),
-            address: formData.get('address'),
-            terms: formData.get('terms'),
+            name,
+            companyName: name,
+            contactName,
+            phone,
+            email,
+            address,
+            terms,
             openWOCount: 0,
             createdAt: new Date().toISOString()
         };
-        
+
         const customers = getCustomers();
         customers.push(customer);
         storage.set(STORAGE_KEYS.CUSTOMERS, customers);
-        
+
         closeModal('addCustomerModal');
-        showToast(`Customer "${customer.companyName}" added successfully!`, 'success');
+        showToast(`Customer "${name}" added successfully!`, 'success');
         loadCustomersView();
     });
 }
@@ -1470,7 +2556,7 @@ function showAddQuoteModal() {
                     <label class="form-label">Customer *</label>
                     <select name="customerId" required class="form-input w-full">
                         <option value="">Select customer...</option>
-                        ${customers.map(c => `<option value="${c.id}">${c.companyName}</option>`).join('')}
+                        ${customers.map(c => `<option value="${c.id}">${c.name || c.companyName || ''}</option>`).join('')}
                     </select>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
@@ -1524,31 +2610,63 @@ function showAddQuoteModal() {
     
     createModal('addQuoteModal', content, { width: 'w-full max-w-lg' });
     
-    document.getElementById('addQuoteForm').addEventListener('submit', (e) => {
+    document.getElementById('addQuoteForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        const customerId = parseInt(formData.get('customerId'));
+        const customerId = parseInt(formData.get('customerId'), 10);
         const customer = customers.find(c => c.id === customerId);
-        
+        const qty = Math.max(1, parseInt(formData.get('quantity'), 10) || 1);
+        const unitPrice = parseFloat(formData.get('unitPrice')) || 0;
+        const status = formData.get('status') || 'New';
+
+        if (salesApi.hasAuthToken()) {
+            try {
+                const created = await salesApi.createQuote({
+                    customerId,
+                    quoteDueDate: formData.get('dueDate') || null,
+                    items: [{
+                        partNumber: (formData.get('partNumber') || '').trim(),
+                        quantity: qty,
+                        unit: 'EA',
+                        unitPrice,
+                        description: formData.get('description') || null,
+                        material: formData.get('material') || null
+                    }],
+                    notes: null,
+                    internalNotes: null
+                });
+                if (status && status !== 'New') {
+                    await salesApi.updateQuote(created.id, { status });
+                }
+                await refreshSalesData();
+                closeModal('addQuoteModal');
+                showToast(`Quote "${created.quoteNumber}" created successfully!`, 'success');
+                loadQuotesView();
+            } catch (err) {
+                showToast(err.message || 'Failed to create quote', 'error');
+            }
+            return;
+        }
+
         const quote = {
             id: Date.now(),
             quoteNumber: 'Q-' + Date.now().toString().slice(-6),
             customerId: customerId,
-            customerName: customer?.companyName || 'Unknown',
+            customerName: customer?.name || customer?.companyName || 'Unknown',
             partNumber: formData.get('partNumber'),
-            quantity: parseInt(formData.get('quantity')),
+            quantity: qty,
             description: formData.get('description'),
             material: formData.get('material'),
             dueDate: formData.get('dueDate'),
-            unitPrice: parseFloat(formData.get('unitPrice')) || 0,
-            status: formData.get('status'),
+            unitPrice,
+            status,
             createdAt: new Date().toISOString()
         };
-        
+
         const quotes = getQuotes();
         quotes.push(quote);
         storage.set(STORAGE_KEYS.QUOTES, quotes);
-        
+
         closeModal('addQuoteModal');
         showToast(`Quote "${quote.quoteNumber}" created successfully!`, 'success');
         loadQuotesView();
@@ -1579,7 +2697,7 @@ function showAddWorkOrderModal() {
                         <label class="form-label">Customer *</label>
                         <select name="customerId" required class="form-input w-full">
                             <option value="">Select customer...</option>
-                            ${customers.map(c => `<option value="${c.id}">${c.companyName}</option>`).join('')}
+                            ${customers.map(c => `<option value="${c.id}">${c.name || c.companyName || ''}</option>`).join('')}
                         </select>
                     </div>
                     <div>
@@ -1656,26 +2774,59 @@ function showAddWorkOrderModal() {
     // Setup event handlers for line items
     setupLineItemHandlers();
     
-    document.getElementById('addWOForm').addEventListener('submit', (e) => {
+    document.getElementById('addWOForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         if (newWOLineItems.length === 0) {
             showToast('Please add at least one part', 'error');
             return;
         }
-        
+
         const formData = new FormData(e.target);
-        const customerId = parseInt(formData.get('customerId'));
+        const customerId = parseInt(formData.get('customerId'), 10);
         const customer = customers.find(c => c.id === customerId);
-        
+        const dueDate = formData.get('dueDate');
+        const priority = formData.get('priority') || 'Normal';
+        const notes = formData.get('notes') || '';
+
+        if (salesApi.hasAuthToken()) {
+            try {
+                let lastWo = '';
+                for (const item of newWOLineItems) {
+                    const wo = await salesApi.createWorkOrder({
+                        customerId,
+                        partNumber: item.partNumber,
+                        quantity: Math.max(1, parseInt(item.quantity, 10) || 1),
+                        description: item.description || null,
+                        material: item.material || null,
+                        dueDate,
+                        priority,
+                        notes,
+                        unit: 'EA'
+                    });
+                    lastWo = wo.woNumber;
+                }
+                await refreshSalesData();
+                closeModal('addWOModal');
+                showToast(
+                    `Created ${newWOLineItems.length} work order(s)${lastWo ? `. Last: ${lastWo}` : ''}!`,
+                    'success'
+                );
+                loadWIPView();
+            } catch (err) {
+                showToast(err.message || 'Failed to create work order', 'error');
+            }
+            return;
+        }
+
         const workOrder = {
             id: Date.now(),
             woNumber: 'WO-' + Date.now().toString().slice(-6),
             customerId: customerId,
-            customerName: customer?.companyName || 'Unknown',
-            dueDate: formData.get('dueDate'),
-            priority: formData.get('priority'),
-            notes: formData.get('notes'),
+            customerName: customer?.name || customer?.companyName || 'Unknown',
+            dueDate,
+            priority,
+            notes,
             status: 'Open',
             lineItems: newWOLineItems.map((item, idx) => ({
                 id: idx + 1,
@@ -1688,11 +2839,11 @@ function showAddWorkOrderModal() {
             })),
             createdAt: new Date().toISOString()
         };
-        
+
         const workOrders = getWorkOrders();
         workOrders.push(workOrder);
         saveWorkOrders(workOrders);
-        
+
         closeModal('addWOModal');
         showToast(`Work Order "${workOrder.woNumber}" created with ${newWOLineItems.length} part(s)!`, 'success');
         loadWIPView();
@@ -1802,7 +2953,7 @@ function showEditCustomerModal(customerId) {
                 <input type="hidden" name="id" value="${customer.id}">
                 <div>
                     <label class="form-label">Company Name *</label>
-                    <input type="text" name="companyName" required class="form-input w-full" value="${customer.companyName || ''}">
+                    <input type="text" name="name" required class="form-input w-full" value="${(customer.name || customer.companyName || '').replace(/"/g, '&quot;')}">
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -1820,16 +2971,16 @@ function showEditCustomerModal(customerId) {
                 </div>
                 <div>
                     <label class="form-label">Address</label>
-                    <textarea name="address" class="form-input w-full" rows="2">${customer.address || ''}</textarea>
+                    <textarea name="address" class="form-input w-full" rows="2">${customer.addressLine1 || customer.address || ''}</textarea>
                 </div>
                 <div>
                     <label class="form-label">Terms</label>
                     <select name="terms" class="form-input w-full">
-                        <option value="NET 30" ${customer.terms === 'NET 30' ? 'selected' : ''}>NET 30</option>
-                        <option value="NET 15" ${customer.terms === 'NET 15' ? 'selected' : ''}>NET 15</option>
-                        <option value="NET 45" ${customer.terms === 'NET 45' ? 'selected' : ''}>NET 45</option>
-                        <option value="NET 60" ${customer.terms === 'NET 60' ? 'selected' : ''}>NET 60</option>
-                        <option value="COD" ${customer.terms === 'COD' ? 'selected' : ''}>COD</option>
+                        <option value="NET 30" ${(customer.defaultTerms || customer.terms) === 'NET 30' ? 'selected' : ''}>NET 30</option>
+                        <option value="NET 15" ${(customer.defaultTerms || customer.terms) === 'NET 15' ? 'selected' : ''}>NET 15</option>
+                        <option value="NET 45" ${(customer.defaultTerms || customer.terms) === 'NET 45' ? 'selected' : ''}>NET 45</option>
+                        <option value="NET 60" ${(customer.defaultTerms || customer.terms) === 'NET 60' ? 'selected' : ''}>NET 60</option>
+                        <option value="COD" ${(customer.defaultTerms || customer.terms) === 'COD' ? 'selected' : ''}>COD</option>
                     </select>
                 </div>
                 <div class="flex space-x-3 pt-4">
@@ -1845,16 +2996,36 @@ function showEditCustomerModal(customerId) {
     
     createModal('editCustomerModal', content, { width: 'w-full max-w-lg' });
     
-    document.getElementById('editCustomerForm').addEventListener('submit', (e) => {
+    document.getElementById('editCustomerForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        const id = parseInt(formData.get('id'));
-        
+        const id = parseInt(formData.get('id'), 10);
+
+        if (salesApi.hasAuthToken()) {
+            try {
+                await salesApi.updateCustomer(id, {
+                    name: (formData.get('name') || '').trim(),
+                    addressLine1: formData.get('address') || null,
+                    defaultTerms: formData.get('terms'),
+                    phone: formData.get('phone') || null
+                });
+                await refreshSalesData();
+                closeModal('editCustomerModal');
+                showToast('Customer updated successfully!', 'success');
+                loadCustomersView();
+            } catch (err) {
+                showToast(err.message || 'Failed to update customer', 'error');
+            }
+            return;
+        }
+
         const index = customers.findIndex(c => c.id === id);
         if (index !== -1) {
+            const nm = (formData.get('name') || '').trim();
             customers[index] = {
                 ...customers[index],
-                companyName: formData.get('companyName'),
+                name: nm,
+                companyName: nm,
                 contactName: formData.get('contactName'),
                 phone: formData.get('phone'),
                 email: formData.get('email'),
@@ -1870,15 +3041,44 @@ function showEditCustomerModal(customerId) {
     });
 }
 
-// ==================== DELETE CUSTOMER ====================
+// ==================== DELETE CUSTOMER (soft → archive) ====================
 function deleteCustomer(customerId, customerName) {
-    showDeleteConfirm(customerName, 'customer', customerId, () => {
-        const customers = getCustomers();
-        const filtered = customers.filter(c => c.id !== parseInt(customerId));
-        storage.set(STORAGE_KEYS.CUSTOMERS, filtered);
-        showToast(`Customer "${customerName}" deleted`, 'success');
-        loadCustomersView();
-    });
+    showConfirmModal(
+        'Archive customer?',
+        `Remove <strong class="text-white">${customerName}</strong> from the active customer list? The record is kept under <strong class="text-white">Settings → Archive → Archived customers</strong>. Permanent removal is only from there (administrators).`,
+        async () => {
+            if (salesApi.hasAuthToken()) {
+                try {
+                    await salesApi.deleteCustomer(customerId);
+                    await refreshSalesData();
+                    showToast(`Customer "${customerName}" archived`, 'success');
+                    loadCustomersView();
+                } catch (err) {
+                    showToast(err.message || 'Failed to archive customer', 'error');
+                }
+                return;
+            }
+            const customers = getCustomers();
+            const id = parseInt(customerId, 10);
+            const found = customers.find(c => c.id === id);
+            if (!found) {
+                showToast('Customer not found', 'error');
+                return;
+            }
+            const filtered = customers.filter(c => c.id !== id);
+            storage.set(STORAGE_KEYS.CUSTOMERS, filtered);
+            const archived = storage.get(STORAGE_KEYS.ARCHIVED_CUSTOMERS) || [];
+            archived.unshift({
+                ...found,
+                deletedAt: new Date().toISOString(),
+                archivedAt: new Date().toISOString()
+            });
+            storage.set(STORAGE_KEYS.ARCHIVED_CUSTOMERS, archived);
+            showToast(`Customer "${customerName}" archived`, 'success');
+            loadCustomersView();
+        },
+        { icon: 'fa-archive', iconColor: 'text-amber-400', confirmText: 'Archive customer', confirmClass: 'bg-amber-700 hover:bg-amber-600' }
+    );
 }
 
 // ==================== CONTACTS MANAGEMENT ====================
@@ -2188,7 +3388,7 @@ function reopenQuote(quoteId) {
         quotes[index].updatedAt = new Date().toISOString();
         storage.set(STORAGE_KEYS.QUOTES, quotes);
         showToast(`Quote ${quotes[index].quoteNumber} reopened`, 'success');
-        loadArchivedQuotesView();
+        refreshArchiveIfNeeded();
     }
 }
 
@@ -2199,10 +3399,8 @@ function deleteQuote(quoteId, quoteName) {
         storage.set(STORAGE_KEYS.QUOTES, filtered);
         showToast(`Quote "${quoteName}" deleted`, 'success');
         
-        // Refresh the current view
-        if (salesState.currentView === 'archived-quotes') {
-            loadArchivedQuotesView();
-        } else {
+        refreshArchiveIfNeeded();
+        if (salesState.currentView !== 'archive') {
             loadQuotesView();
         }
     });
@@ -2365,7 +3563,7 @@ function showEditQuoteModal(quoteId) {
                 <div>
                     <label class="form-label">Customer *</label>
                     <select name="customerId" required class="form-input w-full">
-                        ${customers.map(c => `<option value="${c.id}" ${c.id === quote.customerId ? 'selected' : ''}>${c.companyName}</option>`).join('')}
+                        ${customers.map(c => `<option value="${c.id}" ${c.id === quote.customerId ? 'selected' : ''}>${c.name || c.companyName || ''}</option>`).join('')}
                     </select>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
@@ -2433,7 +3631,7 @@ function showEditQuoteModal(quoteId) {
             quotes[index] = {
                 ...quotes[index],
                 customerId: customerId,
-                customerName: customer?.companyName || 'Unknown',
+                customerName: customer?.name || customer?.companyName || 'Unknown',
                 partNumber: formData.get('partNumber'),
                 quantity: parseInt(formData.get('quantity')),
                 description: formData.get('description'),
@@ -2671,6 +3869,13 @@ function convertQuoteToWorkOrder(quoteId) {
 
 export function registerActionHandlers(registerFn) {
     registerFn('toggle-customer', (target) => toggleCustomerExpand(target.dataset.id));
+    registerFn('toggle-lead', (target) => toggleLeadExpand(target.dataset.id));
+    registerFn('add-lead', () => showAddLeadModal());
+    registerFn('edit-lead', (target) => showEditLeadModal(target.dataset.id));
+    registerFn('delete-lead', (target) => deleteLead(target.dataset.id, target.dataset.name));
+    registerFn('export-leads', () => exportLeadsCsv());
+    registerFn('permanently-delete-archived-lead', (target) =>
+        permanentlyDeleteArchivedLead(target.dataset.id, target.dataset.name));
     registerFn('toggle-wo', (target) => toggleWOExpand(target.dataset.id));
     registerFn('refresh-wip', () => loadWIPView());
     registerFn('add-customer', () => showAddCustomerModal());
@@ -2690,6 +3895,9 @@ export function registerActionHandlers(registerFn) {
     registerFn('export-archived', () => exportArchivedWork());
     registerFn('view-archived-wo', (target) => viewArchivedWorkOrder(target.dataset.id));
     registerFn('export-archived-quotes', () => exportArchivedQuotes());
+    registerFn('archive-tab', (target) => loadArchiveView(target.dataset.tab || 'quotes'));
+    registerFn('permanently-delete-archived-customer', (target) =>
+        permanentlyDeleteArchivedCustomer(target.dataset.id, target.dataset.name));
     registerFn('reopen-quote', (target) => reopenQuote(target.dataset.id));
     registerFn('delete-quote', (target) => deleteQuote(target.dataset.id, target.dataset.name));
     
@@ -2717,15 +3925,19 @@ export function registerActionHandlers(registerFn) {
     
     // Step completion with line item support
     registerFn('complete-step', (target) => {
-        const woId = parseInt(target.dataset.woId);
-        const stepId = parseInt(target.dataset.stepId);
-        const itemId = target.dataset.itemId ? parseInt(target.dataset.itemId) : null;
-        
+        const woId = parseInt(target.dataset.woId, 10);
+        const stepId = parseInt(target.dataset.stepId, 10);
+        const itemId = target.dataset.itemId !== undefined && target.dataset.itemId !== ''
+            ? parseInt(target.dataset.itemId, 10)
+            : null;
+        const stepKeyFb = target.dataset.stepKey || null;
+
         const result = updateChecklistStep(
             woId, 
             stepId, 
             { isCompleted: true, completedAt: new Date().toISOString(), completedByName: 'Current User' },
-            itemId
+            itemId,
+            stepKeyFb
         );
         if (result) {
             showToast(`Step "${target.dataset.stepName}" completed!`, 'success');

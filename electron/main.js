@@ -14,7 +14,19 @@ const Store = require('electron-store');
 // Must be registered BEFORE any initialization that could throw,
 // so crashes during startup produce a visible error instead of silent exit.
 process.on('uncaughtException', (error) => {
-    console.error('UNCAUGHT EXCEPTION:', error.message, error.stack);
+    // Broken stdout/stderr (closed terminal, detached process) — not an app bug; do not exit.
+    if (error && error.code === 'EPIPE') {
+        try {
+            fs.appendFileSync(
+                path.join(os.tmpdir(), 'bperp-crash.log'),
+                `[${new Date().toISOString()}] UNCAUGHT (ignored EPIPE): ${error.message}\n`
+            );
+        } catch (_) {}
+        return;
+    }
+    try {
+        console.error('UNCAUGHT EXCEPTION:', error.message, error.stack);
+    } catch (_) {}
     try {
         fs.appendFileSync(
             path.join(os.tmpdir(), 'bperp-crash.log'),
@@ -30,7 +42,9 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason) => {
     const msg = reason instanceof Error ? reason.message : String(reason);
     const stack = reason instanceof Error ? reason.stack : '';
-    console.error('UNHANDLED REJECTION:', msg);
+    try {
+        console.error('UNHANDLED REJECTION:', msg);
+    } catch (_) {}
     try {
         fs.appendFileSync(
             path.join(os.tmpdir(), 'bperp-crash.log'),
@@ -65,7 +79,8 @@ const store = new Store({
             maximized: false
         },
         server: {
-            port: 3000
+            port: 3000,
+            url: ''   // When set, connect to remote backend (NAS). Empty = standalone (local backend).
         }
     }
 });
@@ -77,6 +92,11 @@ let setupWindow = null;
 let backendProcess = null;
 let tray = null;
 let isQuitting = false;
+/** When false, next main window `close` completes the quit (no labor clock-out on exit — shift stays open). */
+let allowMainWindowClose = false;
+
+/** Base window title from renderer `document.title` (shop branding); we append version and mode. */
+let lastRendererDocumentTitle = 'BPERP';
 
 // Paths
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -92,10 +112,7 @@ if (!isDev) {
         module.paths.unshift(backendNodeModules);
     }
 }
-// Frontend is served by the backend, not loaded directly in production
-const frontendPath = isDev
-    ? path.join(__dirname, '..', 'frontend')
-    : path.join(process.resourcesPath, 'app.asar', 'frontend');
+// Static UI is served by the Express backend from resources/frontend (extraResources), not from app.asar.
 
 // ==================== ASSET PATHS ====================
 // In packaged builds, __dirname is inside app.asar where binary assets (icons)
@@ -108,13 +125,58 @@ const assetsPath = isDev
 const logFile = path.join(app.getPath('userData'), 'bperp.log');
 fs.mkdirSync(path.dirname(logFile), { recursive: true });
 const logStream = fs.createWriteStream(logFile, { flags: 'a' });
-logStream.on('error', (err) => console.error('Log stream error:', err.message));
+logStream.on('error', (err) => {
+    try {
+        console.error('Log stream error:', err.message);
+    } catch (_) {}
+});
 
 function log(level, message, ...args) {
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message} ${args.length ? JSON.stringify(args) : ''}`;
-    console.log(logMessage);
-    logStream.write(logMessage + '\n');
+    try {
+        console.log(logMessage);
+    } catch (err) {
+        // EPIPE when stdout is closed (e.g. terminal detached, headless) — not fatal for the app
+        if (!err || err.code !== 'EPIPE') {
+            try {
+                fs.appendFileSync(logFile, `${logMessage} [console.log failed: ${err && err.message}]\n`);
+            } catch (_) {}
+        }
+    }
+    try {
+        logStream.write(logMessage + '\n');
+    } catch (err) {
+        try {
+            fs.appendFileSync(logFile, `${logMessage} [logStream failed: ${err && err.message}]\n`);
+        } catch (_) {}
+    }
+}
+
+/** Shared Help / tray “About” dialog (includes user data path for support). */
+function showAboutDialog() {
+    const serverUrl = (store.get('server.url') || '').trim();
+    const modeLine = serverUrl
+        ? `Mode: Network (UI loaded from server)\nServer URL: ${serverUrl}`
+        : 'Mode: Standalone (bundled UI + local backend)';
+    const detail = [
+        `Version: ${app.getVersion()}`,
+        `Packaged: ${app.isPackaged ? 'yes' : 'no'}`,
+        modeLine,
+        `Electron: ${process.versions.electron}`,
+        `Node: ${process.versions.node}`,
+        '',
+        `User data: ${app.getPath('userData')}`,
+        '',
+        '© 2026 Bray Precision LLC'
+    ].join('\n');
+    const parentWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    dialog.showMessageBox(parentWin, {
+        type: 'info',
+        title: 'About BPERP',
+        message: 'BPERP - Manufacturing ERP',
+        detail
+    });
 }
 
 // ==================== SINGLE INSTANCE LOCK ====================
@@ -181,18 +243,47 @@ function createSetupWindow() {
     log('info', 'Setup wizard window created');
 }
 
+/** Keeps shop name in the title while appending version and Standalone vs Network (Shop Branding sets document.title, which would otherwise replace our hint). */
+function applyMainWindowTitle() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const v = app.getVersion();
+    const remote = (store.get('server.url') || '').trim();
+    const mode = remote ? 'Network · UI from server' : 'Standalone';
+    const base = lastRendererDocumentTitle || 'BPERP';
+    mainWindow.setTitle(`${base} · v${v} · ${mode}`);
+}
+
+/** Keep min size within the monitor work area so the WM can maximize (fixed 1024×768 breaks on 768px-tall laptops with panels). */
+function getMainWindowMinSize() {
+    try {
+        const work = screen.getPrimaryDisplay().workAreaSize;
+        return {
+            minWidth: Math.min(1024, Math.max(400, work.width)),
+            minHeight: Math.min(768, Math.max(400, work.height))
+        };
+    } catch (e) {
+        return { minWidth: 1024, minHeight: 768 };
+    }
+}
+
 // ==================== MAIN WINDOW ====================
 function createMainWindow() {
+    allowMainWindowClose = false;
     const windowConfig = store.get('window');
-    
+    const mins = getMainWindowMinSize();
+
     mainWindow = new BrowserWindow({
         width: windowConfig.width,
         height: windowConfig.height,
-        minWidth: 1024,
-        minHeight: 768,
+        minWidth: mins.minWidth,
+        minHeight: mins.minHeight,
         show: false,
         frame: true,
         autoHideMenuBar: true,
+        resizable: true,
+        maximizable: true,
+        minimizable: true,
+        fullscreenable: true,
         icon: path.join(assetsPath, 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
@@ -200,15 +291,26 @@ function createMainWindow() {
             preload: path.join(__dirname, 'preload.js')
         }
     });
-    
-    // On Linux, ensure window respects taskbar/panel
-    if (process.platform === 'linux') {
-        mainWindow.setMaximizable(true);
-    }
 
-    // Load the frontend (cache-bust query param forces fresh fetch, avoids stale UI e.g. missing Products/Parts tabs)
-    const serverPort = store.get('server.port');
-    mainWindow.loadURL(`http://localhost:${serverPort}/?nocache=${Date.now()}`);
+    // Load the frontend - from remote URL (NAS) or localhost (standalone)
+    const serverUrl = store.get('server.url');
+    if (serverUrl) {
+        const url = serverUrl.replace(/\/$/, '') + `/?nocache=${Date.now()}`;
+        mainWindow.loadURL(url);
+
+        // Handle load failure (server unreachable)
+        mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+            if (event.isMainFrame && (errorCode === -2 || errorCode === -3 || errorCode === -6)) {
+                // -2: ERR_FAILED, -3: ERR_ABORTED, -6: ERR_CONNECTION_REFUSED
+                log('warn', 'Remote load failed:', errorCode, errorDescription);
+                mainWindow.loadFile(path.join(__dirname, 'offline.html'));
+            }
+        });
+        log('info', 'Loading from remote server:', url);
+    } else {
+        const serverPort = store.get('server.port');
+        mainWindow.loadURL(`http://localhost:${serverPort}/?nocache=${Date.now()}`);
+    }
 
     // Show window when ready
     mainWindow.once('ready-to-show', () => {
@@ -218,11 +320,18 @@ function createMainWindow() {
         }
         
         mainWindow.show();
-        
+
+        // Linux: WM often needs controls re-applied after the window is mapped (maximize button otherwise no-ops).
+        if (process.platform === 'linux') {
+            mainWindow.setMinimizable(true);
+            mainWindow.setMaximizable(true);
+            mainWindow.setResizable(true);
+        }
+
         if (windowConfig.maximized) {
             mainWindow.maximize();
         }
-        
+
         log('info', 'Main window ready and shown');
     });
 
@@ -239,10 +348,18 @@ function createMainWindow() {
         store.set('window.maximized', false);
     });
 
-    // Handle close - quit the app completely
-    mainWindow.on('close', () => {
+    // Close immediately — do not auto clock-out on quit (users may leave the app open while developing).
+    mainWindow.on('close', (e) => {
+        if (allowMainWindowClose) {
+            isQuitting = true;
+            return;
+        }
+        e.preventDefault();
+        allowMainWindowClose = true;
         isQuitting = true;
-        app.quit();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.close();
+        }
     });
 
     mainWindow.on('closed', () => {
@@ -253,6 +370,19 @@ function createMainWindow() {
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url);
         return { action: 'deny' };
+    });
+
+    mainWindow.on('page-title-updated', (event, title) => {
+        event.preventDefault();
+        const t = title && String(title).trim() ? String(title).trim() : '';
+        if (t) {
+            lastRendererDocumentTitle = t;
+        }
+        applyMainWindowTitle();
+    });
+
+    mainWindow.webContents.on('did-finish-load', () => {
+        applyMainWindowTitle();
     });
 
     // Dev tools in development mode
@@ -296,6 +426,11 @@ function createTray() {
         },
         { type: 'separator' },
         {
+            label: 'About BPERP',
+            click: () => showAboutDialog()
+        },
+        { type: 'separator' },
+        {
             label: 'Quit',
             click: () => {
                 isQuitting = true;
@@ -318,21 +453,92 @@ function createTray() {
 }
 
 // ==================== BACKEND MANAGEMENT ====================
-function getBackendEnv() {
-    const dbConfig = store.get('database');
+/**
+ * SQLite file for the forked backend. Empty string = let server.js use backend/bperp.db (dev clone).
+ * Packaged installs must not write under resources/ (AppImage is read-only; Linux deb is often root-owned under /opt).
+ */
+function getResolvedDatabasePath() {
+    const explicit = ((store.get('database') || {}).path || '').trim();
+    if (explicit) {
+        return explicit;
+    }
+    if (app.isPackaged) {
+        return path.join(app.getPath('userData'), 'bperp.db');
+    }
+    return '';
+}
 
+function getBackendEnv() {
     return {
         ...process.env,
         NODE_ENV: isDev ? 'development' : 'production',
         PORT: store.get('server.port'),
-        DB_PATH: dbConfig.path || ''
+        DB_PATH: getResolvedDatabasePath()
     };
+}
+
+/** POST /api/setup/init — must not hang forever (broken pipe / stuck server). */
+const SETUP_INIT_TIMEOUT_MS = 45000;
+
+function postSetupInitAdmin(targetUrl, adminPayload) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(targetUrl);
+        const protocol = urlObj.protocol === 'https:' ? require('https') : require('http');
+        const body = JSON.stringify(adminPayload);
+        const timeoutMs = SETUP_INIT_TIMEOUT_MS;
+
+        const req = protocol.request(
+            {
+                hostname: urlObj.hostname,
+                port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+                path: '/api/setup/init',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body)
+                },
+                timeout: timeoutMs
+            },
+            (res) => {
+                let data = '';
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                res.on('end', () => {
+                    try {
+                        const json = data ? JSON.parse(data) : {};
+                        if (res.statusCode >= 200 && res.statusCode < 300) {
+                            resolve(json);
+                        } else {
+                            reject(new Error(json.error || `HTTP ${res.statusCode}`));
+                        }
+                    } catch (e) {
+                        reject(new Error('Invalid response from server'));
+                    }
+                });
+            }
+        );
+
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(
+                new Error(
+                    `Admin setup timed out after ${timeoutMs / 1000}s (no response from ${targetUrl})`
+                )
+            );
+        });
+        req.write(body);
+        req.end();
+    });
 }
 
 function startBackend() {
     return new Promise((resolve, reject) => {
         log('info', 'Starting backend server...');
-        
+        const dbPathForLog = getResolvedDatabasePath() || path.join(backendPath, 'bperp.db');
+        log('info', `SQLite database file: ${dbPathForLog}`);
+
         const serverPath = path.join(backendPath, 'server.js');
         
         if (!fs.existsSync(serverPath)) {
@@ -351,39 +557,73 @@ function startBackend() {
         });
         
         let started = false;
+        let startupSettled = false;
+
+        function failStartup(message) {
+            if (startupSettled) return;
+            startupSettled = true;
+            clearTimeout(timeout);
+            log('error', message);
+            reject(new Error(message));
+        }
+
         const timeout = setTimeout(() => {
             if (!started) {
-                log('error', 'Backend startup timeout');
-                reject(new Error('Backend startup timeout'));
+                failStartup(
+                    'Backend startup timeout (no "Server running" on stdout). ' +
+                    'If the log shows better-sqlite3 / NODE_MODULE_VERSION, run from repo root: npm run rebuild:backend'
+                );
             }
         }, 30000);
-        
+
         backendProcess.stdout.on('data', (data) => {
             const output = data.toString();
             log('backend', output.trim());
-            
+
             if (output.includes('Server running') || output.includes('listening')) {
                 started = true;
+                startupSettled = true;
                 clearTimeout(timeout);
                 log('info', 'Backend server started successfully');
                 resolve();
             }
         });
-        
+
         backendProcess.stderr.on('data', (data) => {
-            log('backend-error', data.toString().trim());
+            const text = data.toString();
+            log('backend-error', text.trim());
+            // Fail fast: migration or native module errors never reach stdout
+            if (
+                !started &&
+                (text.includes('ERR_DLOPEN_FAILED') ||
+                    text.includes('NODE_MODULE_VERSION') ||
+                    text.includes('Migrations failed') ||
+                    text.includes('better_sqlite3'))
+            ) {
+                failStartup(
+                    'Backend failed to start (native SQLite module or migration). ' +
+                    'Rebuild for Electron: from repo root run npm run rebuild:backend, then npm start.'
+                );
+            }
         });
-        
+
         backendProcess.on('error', (error) => {
             log('error', 'Backend process error:', error.message);
-            clearTimeout(timeout);
-            reject(error);
+            failStartup(error.message);
         });
-        
+
         backendProcess.on('exit', (code) => {
             log('info', `Backend process exited with code: ${code}`);
             backendProcess = null;
-            
+
+            if (!started && code !== 0) {
+                failStartup(
+                    `Backend exited with code ${code} before listening. ` +
+                    'If you use npm install in backend/ with system Node, run: npm run rebuild:backend (repo root) so better-sqlite3 matches Electron.'
+                );
+                return;
+            }
+
             // Restart if unexpected exit and not quitting
             if (code !== 0 && !isQuitting && mainWindow) {
                 log('info', 'Attempting to restart backend...');
@@ -450,6 +690,58 @@ function setupIpcHandlers() {
     ipcMain.handle('set-config-value', (event, key, value) => {
         store.set(key, value);
         return true;
+    });
+    
+    // Server URL (for remote/NAS mode)
+    ipcMain.handle('get-server-url', () => store.get('server.url') || '');
+    ipcMain.handle('set-server-url', (event, url) => {
+        store.set('server.url', (url || '').trim());
+        applyMainWindowTitle();
+        return true;
+    });
+    ipcMain.handle('retry-connection', () => {
+        if (mainWindow) {
+            const serverUrl = store.get('server.url');
+            if (serverUrl) {
+                const url = serverUrl.replace(/\/$/, '') + `/?nocache=${Date.now()}`;
+                mainWindow.loadURL(url);
+            }
+        }
+    });
+    ipcMain.handle('reopen-setup', () => {
+        store.set('firstRun', true);
+        if (mainWindow) {
+            mainWindow.close();
+            mainWindow = null;
+        }
+        createSetupWindow();
+    });
+    ipcMain.handle('test-server-connection', async (event, url) => {
+        const baseUrl = (url || store.get('server.url') || '').trim().replace(/\/$/, '');
+        if (!baseUrl) return { success: false, error: 'No server URL provided' };
+        try {
+            const urlObj = new URL(baseUrl);
+            const protocol = urlObj.protocol === 'https:' ? require('https') : require('http');
+            const res = await new Promise((resolve, reject) => {
+                const req = protocol.request({
+                    hostname: urlObj.hostname,
+                    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+                    path: '/api/health',
+                    method: 'GET',
+                    timeout: 5000
+                }, resolve);
+                req.on('error', reject);
+                req.on('timeout', () => { req.destroy(); reject(new Error('Connection timed out')); });
+                req.end();
+            });
+            if (res.statusCode === 200) {
+                return { success: true };
+            }
+            return { success: false, error: `Server returned ${res.statusCode}` };
+        } catch (err) {
+            log('warn', 'Server connection test failed:', err.message);
+            return { success: false, error: err.message };
+        }
     });
     
     // Database - SQLite path testing
@@ -559,6 +851,23 @@ function setupIpcHandlers() {
     ipcMain.handle('get-version', () => {
         return app.getVersion();
     });
+
+    ipcMain.handle('get-app-info', () => {
+        const serverUrl = (store.get('server.url') || '').trim();
+        const info = {
+            version: app.getVersion(),
+            isPackaged: app.isPackaged,
+            userDataPath: app.getPath('userData'),
+            serverUrl,
+            electronVersion: process.versions.electron,
+            nodeVersion: process.versions.node
+        };
+        if (!serverUrl) {
+            info.sqliteDatabasePath =
+                getResolvedDatabasePath() || path.join(backendPath, 'bperp.db');
+        }
+        return info;
+    });
     
     ipcMain.handle('get-logs', () => {
         try {
@@ -582,6 +891,9 @@ function setupIpcHandlers() {
         isQuitting = true;
         app.quit();
     });
+
+    /** Legacy: auto clock-out on quit is disabled; kept for older renderers that still invoke it. */
+    ipcMain.handle('labor-clock-out-done', () => true);
     
     ipcMain.handle('minimize-app', () => {
         if (mainWindow) mainWindow.minimize();
@@ -589,6 +901,10 @@ function setupIpcHandlers() {
     
     ipcMain.handle('maximize-app', () => {
         if (mainWindow) {
+            if (process.platform === 'linux') {
+                mainWindow.setMaximizable(true);
+                mainWindow.setResizable(true);
+            }
             if (mainWindow.isMaximized()) {
                 mainWindow.unmaximize();
             } else {
@@ -601,114 +917,74 @@ function setupIpcHandlers() {
         return mainWindow ? mainWindow.isMaximized() : false;
     });
     
-    // Setup wizard completion
-    ipcMain.handle('complete-setup', async (event, config) => {
-        // Save configuration
-        store.set('database', config.database);
-        
-        log('info', 'Setup configuration received');
-        log('info', 'Database type: ' + config.database.type);
-        
-        // Close setup window
+    // Setup wizard completion (standalone or remote/NAS mode)
+    ipcMain.handle('complete-setup', async (event, setupConfig) => {
+        const mode = setupConfig.mode || 'network';
+        const serverUrl = (setupConfig.server?.url || '').trim().replace(/\/$/, '');
+
+        if (mode === 'network' && !serverUrl) {
+            return { success: false, error: 'Server URL is required for network mode' };
+        }
+
+        if (mode === 'network') {
+            store.set('server.url', serverUrl);
+        } else {
+            store.set('server.url', '');
+        }
+        log('info', `Setup configuration received, mode: ${mode}` + (serverUrl ? `, server: ${serverUrl}` : ''));
+
         if (setupWindow) {
             setupWindow.close();
         }
-        
-        // Show splash screen
+
         createSplashWindow();
-        
-        // Start backend and main window
+
         try {
-            log('info', 'Starting backend server...');
-            await startBackend();
-            
-            // Wait a moment for the server to be fully ready
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Create initial admin user if provided
-            if (config.admin && config.admin.username && config.admin.password) {
-                log('info', 'Creating initial admin user...');
-                const serverPort = store.get('server.port');
-                
+            // Standalone mode: start the local backend first
+            if (mode === 'standalone') {
+                log('info', 'Standalone mode: starting local backend...');
+                await startBackend();
+            }
+
+            // Create initial admin user if provided (setup not already complete)
+            if (setupConfig.admin && setupConfig.admin.username && setupConfig.admin.password) {
+                const targetUrl = mode === 'standalone'
+                    ? `http://localhost:${store.get('server.port')}`
+                    : serverUrl;
+                log('info', `POST /api/setup/init → ${targetUrl} (timeout ${SETUP_INIT_TIMEOUT_MS / 1000}s)`);
+
                 try {
-                    const http = require('http');
-                    const adminData = JSON.stringify({
-                        username: config.admin.username,
-                        name: config.admin.name || config.admin.username,
-                        email: config.admin.email || null,
-                        password: config.admin.password
+                    await postSetupInitAdmin(targetUrl, {
+                        username: setupConfig.admin.username,
+                        name: setupConfig.admin.name || setupConfig.admin.username,
+                        email: setupConfig.admin.email || null,
+                        password: setupConfig.admin.password
                     });
-                    
-                    const result = await new Promise((resolve, reject) => {
-                        const req = http.request({
-                            hostname: 'localhost',
-                            port: serverPort,
-                            path: '/api/setup/init',
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Content-Length': Buffer.byteLength(adminData)
-                            }
-                        }, (res) => {
-                            let data = '';
-                            res.on('data', chunk => data += chunk);
-                            res.on('end', () => {
-                                try {
-                                    const json = JSON.parse(data);
-                                    if (res.statusCode >= 200 && res.statusCode < 300) {
-                                        resolve(json);
-                                    } else {
-                                        reject(new Error(json.error || 'Failed to create admin user'));
-                                    }
-                                } catch (e) {
-                                    reject(new Error('Invalid response from server'));
-                                }
-                            });
-                        });
-                        
-                        req.on('error', reject);
-                        req.write(adminData);
-                        req.end();
-                    });
-                    
-                    log('info', 'Admin user created successfully: ' + config.admin.username);
+                    log('info', 'Admin user created successfully');
                 } catch (adminError) {
-                    // If setup already completed (users exist), this is fine
-                    if (adminError.message.includes('already')) {
+                    if (adminError.message && adminError.message.includes('already')) {
                         log('info', 'Users already exist, skipping admin creation');
                     } else {
                         log('warn', 'Failed to create admin user: ' + adminError.message);
-                        // Continue anyway - user can be created manually
                     }
                 }
             }
-            
-            // Mark setup as complete
+
             store.set('firstRun', false);
-            
             createMainWindow();
             return { success: true };
         } catch (error) {
-            log('error', 'Failed to start after setup: ' + error.message);
-            
-            // Close splash if open
+            log('error', 'Setup failed: ' + error.message);
             if (splashWindow) {
                 splashWindow.close();
                 splashWindow = null;
             }
-            
-            // Reset firstRun so user can try again
             store.set('firstRun', true);
-            
-            // Show error dialog
-            dialog.showErrorBox(
-                'Startup Error',
-                `Failed to start BPERP:\n\n${error.message}\n\nThis usually means the database file is not accessible.\n\nPlease ensure the NAS path is reachable and your database path is correct.`
-            );
-            
-            // Show setup wizard again
+            const errorContext = mode === 'standalone'
+                ? 'Failed to start local BPERP server.'
+                : 'Failed to connect to BPERP. Ensure the server is running on your NAS.';
+            dialog.showErrorBox('Setup Error', `${errorContext}\n\n${error.message}`);
             createSetupWindow();
-            
             return { success: false, error: error.message };
         }
     });
@@ -792,14 +1068,7 @@ function createAppMenu() {
                 { type: 'separator' },
                 {
                     label: 'About BPERP',
-                    click: () => {
-                        dialog.showMessageBox(mainWindow, {
-                            type: 'info',
-                            title: 'About BPERP',
-                            message: 'BPERP - Manufacturing ERP',
-                            detail: `Version: ${app.getVersion()}\nElectron: ${process.versions.electron}\nNode: ${process.versions.node}\n\n© 2026 Bray Precision LLC`
-                        });
-                    }
+                    click: () => showAboutDialog()
                 }
             ]
         }
@@ -843,26 +1112,40 @@ app.whenReady().then(async () => {
     if (isFirstRun) {
         log('info', 'First run detected, showing setup wizard');
         createSetupWindow();
+        if (process.env.BPERP_DEBUG_SETUP === '1' && setupWindow) {
+            setupWindow.webContents.once('did-finish-load', () => {
+                setupWindow.webContents.openDevTools({ mode: 'detach' });
+            });
+            log('info', 'BPERP_DEBUG_SETUP=1: opening setup wizard DevTools after load');
+        }
     } else {
         // Show splash and start normally
         createSplashWindow();
         
-        try {
-            await startBackend();
+        const serverUrl = store.get('server.url');
+        if (serverUrl) {
+            // Remote mode: connect to NAS, no local backend
+            log('info', 'Remote mode: connecting to', serverUrl);
             createMainWindow();
-        } catch (error) {
-            log('error', 'Failed to start:', error.message);
-            
-            if (splashWindow) {
-                splashWindow.close();
+        } else {
+            // Standalone mode: start local backend
+            try {
+                await startBackend();
+                createMainWindow();
+            } catch (error) {
+                log('error', 'Failed to start:', error.message);
+                
+                if (splashWindow) {
+                    splashWindow.close();
+                }
+                
+                dialog.showErrorBox(
+                    'Startup Error',
+                    `Failed to start BPERP:\n\n${error.message}\n\nPlease check the logs at:\n${logFile}`
+                );
+                
+                app.quit();
             }
-            
-            dialog.showErrorBox(
-                'Startup Error',
-                `Failed to start BPERP:\n\n${error.message}\n\nPlease check the logs at:\n${logFile}`
-            );
-            
-            app.quit();
         }
     }
 });
@@ -890,7 +1173,10 @@ app.on('activate', () => {
 app.on('before-quit', async () => {
     isQuitting = true;
     log('info', 'Application quitting...');
-    await stopBackend();
+    // Only stop backend in standalone mode (no remote server URL)
+    if (!store.get('server.url')) {
+        await stopBackend();
+    }
 });
 
 // Error handlers are registered at the top of this file (before initialization)

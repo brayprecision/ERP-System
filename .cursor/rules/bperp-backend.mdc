@@ -1,0 +1,63 @@
+---
+description: BPERP Express routes, middleware, API shape, auth
+globs:
+  - backend/**/*
+---
+
+# BPERP — Backend patterns
+
+## Route factory pattern
+
+Routes export a factory that receives the database instance:
+
+```javascript
+// backend/routes/example.js
+module.exports = function(db) {
+    const router = require('express').Router();
+    const { requireAuth } = require('../middleware/auth')(db);
+
+    router.get('/', requireAuth, async (req, res) => {
+        const rows = db.prepare('SELECT * FROM table').all();
+        res.json({ success: true, data: rows });
+    });
+
+    return router;
+};
+```
+
+**Note:** `better-sqlite3` is synchronous. Prefer `.all()`, `.get()`, `.run()` over `await pool.query()` where the codebase still passes `pool`; long-term use a `Database` instance consistently.
+
+## API response format
+
+```javascript
+// Success
+{ success: true, data: T }
+{ success: true, data: T[], pagination: { page, limit, total, totalPages } }
+
+// Error
+{ success: false, error: "Error message" }
+```
+
+## Middleware stack
+
+```javascript
+const { requireAuth, requireAdmin, requireRole } = require('../middleware/auth')(db);
+const { validate, schemas } = require('../middleware/validation');
+const { apiLimiter } = require('../middleware/rateLimit');
+
+router.post('/',
+    requireAuth,
+    validate(schemas.customer),
+    apiLimiter,
+    handler
+);
+```
+
+## Authentication
+
+- Token: `Authorization: Bearer <token>`
+- Stored in `user_sessions` with expiration
+- Roles: `Administrator`, `Machinist`, `Operator`
+- Passwords: bcrypt (12 rounds)
+
+Ensure session and auth queries match the actual DB layer (SQLite / `better-sqlite3`).

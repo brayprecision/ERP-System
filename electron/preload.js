@@ -65,6 +65,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
      */
     runMigrations: () => ipcRenderer.invoke('run-migrations'),
     
+    // ==================== SERVER URL (Remote/NAS mode) ====================
+    
+    /**
+     * Get the server URL (empty = standalone mode)
+     * @returns {Promise<string>} Server URL
+     */
+    getServerUrl: () => ipcRenderer.invoke('get-server-url'),
+    
+    /**
+     * Set the server URL for remote mode
+     * @param {string} url - Server URL (e.g. http://192.168.1.100:3000)
+     * @returns {Promise<boolean>} Success status
+     */
+    setServerUrl: (url) => ipcRenderer.invoke('set-server-url', url),
+    
+    /**
+     * Test connection to the server
+     * @param {string} [url] - Optional URL to test (uses stored URL if omitted)
+     * @returns {Promise<{success: boolean, error?: string}>} Connection result
+     */
+    testServerConnection: (url) => ipcRenderer.invoke('test-server-connection', url),
+    
+    /**
+     * Retry loading the server (used from offline error page)
+     */
+    retryConnection: () => ipcRenderer.invoke('retry-connection'),
+    
+    /**
+     * Reopen setup wizard to change server URL
+     */
+    reopenSetup: () => ipcRenderer.invoke('reopen-setup'),
+    
     // ==================== SYSTEM ====================
     
     /**
@@ -72,6 +104,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * @returns {Promise<string>} Version string
      */
     getVersion: () => ipcRenderer.invoke('get-version'),
+
+    /**
+     * Desktop diagnostics: version, packaged flag, userData path, server URL, runtime versions
+     * @returns {Promise<{ version: string, isPackaged: boolean, userDataPath: string, serverUrl: string, electronVersion: string, nodeVersion: string, sqliteDatabasePath?: string }>}
+     */
+    getAppInfo: () => ipcRenderer.invoke('get-app-info'),
     
     /**
      * Get recent application logs
@@ -96,6 +134,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * Quit the application
      */
     quit: () => ipcRenderer.invoke('quit-app'),
+
+    /**
+     * Legacy: main process no longer sends request-labor-clock-out (no auto clock-out on quit).
+     * Kept so older code calling onRequestLaborClockOut does not throw.
+     */
+    onRequestLaborClockOut: (callback) => {
+        ipcRenderer.on('request-labor-clock-out', () => {
+            Promise.resolve(callback()).catch(() => {});
+        });
+    },
+
+    /** Legacy no-op IPC handler in main. */
+    notifyLaborClockOutDone: () => ipcRenderer.invoke('labor-clock-out-done'),
     
     /**
      * Minimize the main window

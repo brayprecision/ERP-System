@@ -115,6 +115,23 @@ const customerSchema = z.object({
     })).optional()
 });
 
+const leadCreateSchema = z.object({
+    name: z.string()
+        .min(1, 'Company name is required')
+        .max(200, 'Name too long')
+        .trim(),
+    segment: z.string().max(500).optional().nullable(),
+    location: z.string().max(2000).optional().nullable(),
+    phone: z.string().max(120).optional().nullable(),
+    email: z.string().max(255).optional().nullable(),
+    industry: z.string().max(2000).optional().nullable(),
+    notes: z.string().max(8000).optional().nullable(),
+    priorityTarget: z.boolean().optional(),
+    sortOrder: z.number().int().optional().nullable()
+});
+
+const leadUpdateSchema = leadCreateSchema.partial();
+
 const contactSchema = z.object({
     name: z.string()
         .min(1, 'Contact name is required')
@@ -236,7 +253,7 @@ const quoteSchema = z.object({
         partNumber: z.string().min(1, 'Part number is required').max(100),
         revision: z.string().max(50).optional().nullable(),
         description: z.string().max(1000).optional().nullable(),
-        quantity: z.coerce.number().int().positive(),
+        quantity: z.coerce.number().min(0.0001, 'Quantity must be positive'),
         unit: z.string().max(20).optional(),
         material: z.string().max(200).optional().nullable(),
         materialCost: z.number().min(0).optional(),
@@ -255,8 +272,7 @@ const quoteItemSchema = z.object({
     revision: z.string().max(50).optional().nullable(),
     description: z.string().max(1000).optional().nullable(),
     quantity: z.coerce.number()
-        .int('Quantity must be an integer')
-        .positive('Quantity must be at least 1'),
+        .min(0.0001, 'Quantity must be positive'),
     unit: z.string().max(20).optional(),
     material: z.string().max(200).optional().nullable(),
     materialCost: z.number().min(0).optional(),
@@ -282,8 +298,7 @@ const workOrderSchema = z.object({
     revision: z.string().max(50).optional().nullable(),
     description: z.string().max(1000).optional().nullable(),
     quantity: z.coerce.number()
-        .int('Quantity must be an integer')
-        .positive('Quantity must be at least 1'),
+        .min(0.0001, 'Quantity must be positive'),
     unit: z.string().max(20).optional(),
     material: z.string().max(200).optional().nullable(),
     dueDate: z.string().min(1, 'Due date is required'),
@@ -293,6 +308,49 @@ const workOrderSchema = z.object({
     notes: z.string().max(2000).optional().nullable(),
     internalNotes: z.string().max(2000).optional().nullable()
 });
+
+// ==================== LABOR / TIME TRACKING ====================
+
+const laborSegmentStartSchema = z.object({
+    workOrderId: z.coerce.number().int().positive(),
+    workflowStepKey: z.string().min(1).max(120).trim(),
+    lineItemId: z.coerce.number().int().positive().optional().nullable()
+});
+
+const laborSegmentStopSchema = z.object({
+    workOrderId: z.coerce.number().int().positive(),
+    workflowStepKey: z.string().min(1).max(120).trim(),
+    lineItemId: z.coerce.number().int().positive().optional().nullable()
+});
+
+const laborHistoryQuerySchema = z.object({
+    userId: z.coerce.number().int().positive(),
+    from: z.string().min(1),
+    to: z.string().min(1)
+});
+
+const laborMiscSegmentStartSchema = z.object({
+    miscTaskId: z.union([z.coerce.number(), z.string().min(1).max(80)]),
+    miscTaskTitle: z.string().max(500).optional().nullable()
+});
+
+const laborMiscSegmentStopSchema = z.object({
+    miscTaskId: z.union([z.coerce.number(), z.string().min(1).max(80)])
+});
+
+/** Manual correction of shop shift times (ISO 8601 strings; endedAt null = still on shift) */
+const laborShiftPatchSchema = z
+    .object({
+        startedAt: z.string().min(1, 'Clock in time is required'),
+        endedAt: z.string().optional().nullable()
+    })
+    .refine(
+        (data) => {
+            if (!data.endedAt) return true;
+            return new Date(data.endedAt) >= new Date(data.startedAt);
+        },
+        { message: 'Clock out must be at or after clock in' }
+    );
 
 // ==================== ID PARAMETER SCHEMA ====================
 
@@ -402,6 +460,8 @@ module.exports = {
         updatePermissions: updatePermissionsSchema,
         appearanceSettings: appearanceSettingsSchema,
         customer: customerSchema,
+        leadCreate: leadCreateSchema,
+        leadUpdate: leadUpdateSchema,
         contact: contactSchema,
         material: materialSchema,
         tool: toolSchema,
@@ -412,6 +472,12 @@ module.exports = {
         quote: quoteSchema,
         quoteItem: quoteItemSchema,
         workOrder: workOrderSchema,
+        laborSegmentStart: laborSegmentStartSchema,
+        laborSegmentStop: laborSegmentStopSchema,
+        laborHistoryQuery: laborHistoryQuerySchema,
+        laborShiftPatch: laborShiftPatchSchema,
+        laborMiscSegmentStart: laborMiscSegmentStartSchema,
+        laborMiscSegmentStop: laborMiscSegmentStopSchema,
         idParam: idParamSchema
     },
     // Middleware creators

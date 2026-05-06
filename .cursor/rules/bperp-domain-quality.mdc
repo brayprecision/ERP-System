@@ -1,0 +1,120 @@
+---
+description: Manufacturing domain rules, errors, security, testing, AI do/don't checklist
+alwaysApply: true
+---
+
+# BPERP — Domain, quality, testing, AI guidelines
+
+## Common tasks
+
+### New API route
+
+1. Add `backend/routes/newroute.js` (factory pattern).
+2. Mount in `backend/server.js`: `app.use('/api/newroute', require('./routes/newroute')(pool));`
+3. Add Zod schema in `backend/middleware/validation.js`.
+4. Add rate limiting if sensitive.
+
+### New frontend module
+
+1. Create `frontend/js/modules/newmodule.js` with `init()` and views.
+2. Import in `frontend/js/app.js` and expose on `window.BPERP`.
+3. Add sidebar/nav in `frontend/index.html` if needed.
+
+### Database migration
+
+1. Add `backend/migrations/scripts/YYYYMMDD_HHMMSS_description.js`.
+2. Export `up` / `down` compatible with the project’s migration runner.
+3. Run `cd backend && npm run migrate`.
+
+### Building installers
+
+```bash
+npm run build:win                  # or: npm run backend:install:prod && npm run rebuild:backend && npx electron-builder --win --publish never
+npm run build:linux                # AppImage + deb (no rpm); uses backend:install:prod + rebuild:backend; --publish never
+npm run pack:linux                 # linux-unpacked only (faster)
+```
+
+Local full backend dev deps: `npm run backend:install` (after packaging, if tests/nodemon are missing).
+
+## Manufacturing-specific patterns
+
+- **Quantities:** allow decimals where real (e.g. 2.5 ft of material).
+- **Money:** no raw floating point for currency; use proper decimal handling.
+- **Part / WO numbers:** treat as stable identifiers.
+- **Inventory:** exact counts; audit changes.
+
+**Status workflows (conceptual):**
+
+- Quote: Draft → Sent → Won/Lost
+- Work order: Pending → In Progress → QC → Complete → Shipped
+- Task: Pending → In Progress → Blocked → Complete
+- Maintenance: Scheduled → In Progress → Complete → Deferred
+
+**Audit:** log inventory changes (user, time, reason); quote revisions; work order history for traceability.
+
+## Error handling and safety
+
+**Backend:** try/catch on async work; log details server-side; return generic errors to clients; use transactions for multi-step writes.
+
+**Frontend:** loading and error UI; validate on client, always validate on server.
+
+## Security
+
+- RBAC with the three roles; validate on client and server.
+- Rate limit login, user creation, exports, imports.
+- bcrypt (12 rounds); expire sessions.
+- No secrets in localStorage; parameterized SQL (`?` with better-sqlite3); sane CORS; sanitize HTML from users.
+
+## Testing
+
+- Jest + Supertest; tests under `backend/tests/`.
+- Integration tests use isolated DB (e.g. `.env.test`).
+
+```bash
+cd backend && npm test
+cd backend && npm test -- --watch
+cd backend && npm test -- users
+```
+
+## Code quality checklist (before commit)
+
+- [ ] Documentation updated (see `.cursor/rules/documentation-updates.mdc`)
+- [ ] Async paths use try/catch
+- [ ] Parameterized SQL
+- [ ] Zod validation where inputs enter the API
+- [ ] Auth on protected routes
+- [ ] Rate limits on sensitive routes
+- [ ] Correct HTTP status codes
+- [ ] camelCase API / snake_case DB
+- [ ] Frontend loading and error states
+- [ ] No internal error leakage to clients
+- [ ] Decimals correct for money and quantities
+
+## AI assistant — principles
+
+1. Clean, maintainable code for internal use.
+2. Stack: Express + vanilla JS, no React/Vue/Angular.
+3. JS routes are fine; no required TS migration.
+4. No frontend bundler requirement.
+5. Manufacturing accuracy and reliability matter.
+6. Single-shop deployment: Standalone or Network (NAS); no multi-tenant or licensing.
+7. Windows and Linux only; no macOS targets.
+8. Electron: `fork()` for backend child; avoid `spawn('node', ...)`.
+9. Prefer data that stays fresh across workstations (auto-refresh direction).
+
+## Do
+
+- Update docs per `documentation-updates.mdc`.
+- Reuse middleware and patterns; add migrations for schema changes.
+- Store user preferences in the database, not only localStorage.
+
+## Don’t
+
+- Skip documentation updates for user-facing changes.
+- Add React/Vue/Angular.
+- Expose stack traces or secrets to clients.
+- Skip server-side validation.
+- Use float for money.
+- Sacrifice readability for cleverness.
+- Build for macOS or add licensing / multi-tenant product features.
+- Keep user profiles only in localStorage.

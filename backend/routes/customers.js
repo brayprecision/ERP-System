@@ -65,7 +65,8 @@ const transformCustomer = (row) => ({
     notes: row.notes,
     isActive: row.is_active,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    deletedAt: row.deleted_at || null
 });
 
 const transformContact = (row) => ({
@@ -84,7 +85,7 @@ const transformContact = (row) => ({
 });
 
 module.exports = (pool) => {
-    const { requireAuth } = require('../middleware/auth')(pool);
+    const { requireAuth, requireAdmin } = require('../middleware/auth')(pool);
     router.use(requireAuth);
 
     // ==================== CUSTOMERS ====================
@@ -168,6 +169,42 @@ module.exports = (pool) => {
         } catch (err) {
             console.error('Error fetching customers:', err);
             sendError(res, 500, 'Failed to fetch customers');
+        }
+    });
+
+    // GET soft-deleted customers (archive) — must be registered before GET /:id
+    router.get('/archived', async (req, res) => {
+        try {
+            const { page = 1, limit = 100 } = req.query;
+            const lim = parseInt(limit, 10) || 100;
+            const pg = parseInt(page, 10) || 1;
+            const offset = (pg - 1) * lim;
+
+            const countResult = await pool.query(
+                'SELECT COUNT(*) as count FROM customers WHERE deleted_at IS NOT NULL'
+            );
+            const total = parseInt(countResult.rows[0].count, 10);
+
+            const result = await pool.query(
+                `SELECT * FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT $1 OFFSET $2`,
+                [lim, offset]
+            );
+
+            const customers = result.rows.map((row) => transformCustomer(row));
+
+            res.json({
+                success: true,
+                data: customers,
+                pagination: {
+                    page: pg,
+                    limit: lim,
+                    total,
+                    totalPages: Math.ceil(total / lim) || 0
+                }
+            });
+        } catch (err) {
+            console.error('Error fetching archived customers:', err);
+            sendError(res, 500, 'Failed to fetch archived customers');
         }
     });
     
@@ -384,6 +421,38 @@ module.exports = (pool) => {
         } catch (err) {
             console.error('Error deleting customer:', err);
             sendError(res, 500, 'Failed to delete customer');
+        }
+    });
+
+    // Permanently delete a soft-deleted customer (Administrator only) — must be before DELETE /:id if paths overlap; here path is distinct
+    router.delete('/:id/permanent', requireAdmin, async (req, res) => {
+        try {
+            const customerId = parseInt(req.params.id, 10);
+            if (Number.isNaN(customerId)) {
+                return sendError(res, 400, 'Invalid customer id');
+            }
+
+            const check = await pool.query(
+                'SELECT id FROM customers WHERE id = $1 AND deleted_at IS NOT NULL',
+                [customerId]
+            );
+            if (check.rows.length === 0) {
+                return sendError(res, 404, 'Archived customer not found');
+            }
+
+            await pool.query('UPDATE shipping_tasks SET customer_id = NULL WHERE customer_id = $1', [customerId]);
+            await pool.query('UPDATE shipping_tasks SET work_order_id = NULL WHERE work_order_id IN (SELECT id FROM work_orders WHERE customer_id = $1)', [customerId]);
+            await pool.query('UPDATE work_order_archive SET customer_id = NULL WHERE customer_id = $1', [customerId]);
+            await pool.query('DELETE FROM tasks WHERE work_order_id IN (SELECT id FROM work_orders WHERE customer_id = $1)', [customerId]);
+            await pool.query('DELETE FROM work_orders WHERE customer_id = $1', [customerId]);
+            await pool.query('DELETE FROM quotes WHERE customer_id = $1', [customerId]);
+            await pool.query('DELETE FROM contacts WHERE customer_id = $1', [customerId]);
+            await pool.query('DELETE FROM customers WHERE id = $1 AND deleted_at IS NOT NULL', [customerId]);
+
+            sendSuccess(res, { id: customerId }, 'Customer permanently deleted');
+        } catch (err) {
+            console.error('Error permanently deleting customer:', err);
+            sendError(res, 500, 'Failed to permanently delete customer');
         }
     });
     

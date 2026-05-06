@@ -1,0 +1,58 @@
+---
+description: BPERP core schema tables — update when adding entities or migrations
+globs:
+  - backend/**/*
+  - database/**/*
+---
+
+# BPERP — Database schema reference
+
+When you add or rename tables, update this file, `README.md`, `backend/README.md`, and `CHANGELOG.md` as appropriate.
+
+## Core tables
+
+| Table | Purpose |
+|-------|---------|
+| `users` | User accounts with roles, permissions, appearance |
+| `user_sessions` | Active auth tokens |
+| `role_defaults` | Default permissions per role |
+| `user_activity_log` | Audit trail |
+
+## Inventory tables
+
+| Table | Purpose |
+|-------|---------|
+| `products` | Finished assemblies for sale |
+| `parts` | Components (purchased or manufactured) |
+| `materials` | Raw materials |
+| `tooling` | Cutting tools, inserts |
+| `misc_items` | Consumables, supplies |
+
+## Sales tables
+
+| Table | Purpose |
+|-------|---------|
+| `customers` | Customer records |
+| `contacts` | Contacts per customer |
+| `sales_leads` | Sales prospects (editable; soft-delete archive) |
+| `quotes` | Quote header + status workflow |
+| `quote_items` | Quote line items |
+| `work_orders` | Work orders (part fields on row; UI may show synthetic line items) |
+| `wo_checklist` | Workflow checklist steps per work order |
+
+## Production tables
+
+| Table | Purpose |
+|-------|---------|
+| `workcenters` | Work areas (Mill, Lathe, etc.) |
+| `machines` | Individual machines |
+| `tasks` | Workflow tasks with assignments |
+| `maintenance_tasks` | Scheduled maintenance |
+| `labor_shifts` | User shop shifts (clock in/out) |
+| `labor_work_order_segments` | Time on a work order at a workflow step (optional `line_item_id`) |
+| `labor_misc_task_segments` | Time on a misc task (`misc_task_id` text, optional title snapshot) within a shift |
+
+## Naming
+
+- DB columns: `snake_case`
+- API JSON: `camelCase` (transform in routes)

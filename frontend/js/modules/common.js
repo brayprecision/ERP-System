@@ -511,6 +511,9 @@ export async function createBackup() {
         work_orders: JSON.parse(localStorage.getItem('bperp_work_orders') || 'null'),
         wo_documents: JSON.parse(localStorage.getItem('bperp_wo_documents') || 'null'),
         archived_work_orders: JSON.parse(localStorage.getItem('bperp_archived_work_orders') || 'null'),
+        archived_customers: JSON.parse(localStorage.getItem('bperp_archived_customers') || 'null'),
+        leads: JSON.parse(localStorage.getItem('bperp_leads') || 'null'),
+        archived_leads: JSON.parse(localStorage.getItem('bperp_archived_leads') || 'null'),
         customers: JSON.parse(localStorage.getItem('bperp_customers') || 'null'),
         materials: JSON.parse(localStorage.getItem('bperp_materials') || 'null'),
         tooling: JSON.parse(localStorage.getItem('bperp_tooling') || 'null'),
@@ -523,7 +526,9 @@ export async function createBackup() {
             // Shop branding (logo, name, tagline)
             shop_branding: JSON.parse(localStorage.getItem('bperp_shop_branding') || 'null'),
             // Current user session (for reference, not for restore)
-            current_user: JSON.parse(localStorage.getItem('bperp_current_user') || 'null')
+            current_user: JSON.parse(localStorage.getItem('bperp_current_user') || 'null'),
+            // Local labor when offline / demo session (mirrors API shapes)
+            labor_local: JSON.parse(localStorage.getItem('bperp_labor_local') || 'null')
         };
     
     try {
@@ -625,6 +630,9 @@ export async function restoreFromBackup(fileInput) {
                 work_orders: 'bperp_work_orders',
                 wo_documents: 'bperp_wo_documents',
                 archived_work_orders: 'bperp_archived_work_orders',
+                archived_customers: 'bperp_archived_customers',
+                leads: 'bperp_leads',
+                archived_leads: 'bperp_archived_leads',
                 customers: 'bperp_customers',
                 materials: 'bperp_materials',
                 tooling: 'bperp_tooling',
@@ -632,7 +640,8 @@ export async function restoreFromBackup(fileInput) {
                 misc_tasks: 'bperp_misc_tasks',
                 users_list: 'bperp_users_list',
                 theme_preferences: 'bperp_theme_preferences',
-                shop_branding: 'bperp_shop_branding'
+                shop_branding: 'bperp_shop_branding',
+                labor_local: 'bperp_labor_local'
             };
             
             for (const [key, storageKey] of Object.entries(storageKeys)) {

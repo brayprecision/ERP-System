@@ -1,0 +1,69 @@
+---
+description: BPERP vanilla JS modules, BPERP namespace, UI patterns
+globs:
+  - frontend/**/*
+---
+
+# BPERP — Frontend patterns
+
+## Module structure
+
+```javascript
+// frontend/js/modules/example.js
+import { DOMCache, showToast, createModal } from './common.js';
+import storage from './storage.js';
+
+const state = { items: [], loading: false };
+
+export async function init() {
+    registerEventHandlers();
+    await loadData();
+}
+
+export function renderView() {
+    const container = DOMCache.get('mainContent');
+    container.innerHTML = `...`;
+}
+
+function registerEventHandlers() {
+    document.addEventListener('click', (e) => {
+        if (e.target.matches('[data-action="example"]')) {
+            handleAction(e);
+        }
+    });
+}
+```
+
+## Global namespace
+
+```javascript
+window.BPERP = {
+    common,      // DOM utilities, modals, toasts
+    storage,     // localStorage wrapper with caching
+    inventory,   // Products, parts, materials, tooling, misc
+    sales,       // Customers, leads (API + offline), quotes, work orders
+    tasks,       // Workflow tasks
+    maintenance, // Machine profiles, maintenance tasks
+    search,      // Global search
+    users,       // Auth, permissions
+    navigate,    // SPA routing
+    config       // App configuration
+};
+```
+
+## Routing (`app.js`)
+
+- `navigate(route)` resolves `routes[route]` and updates sidebar active state.
+- **`tasks-maintenance`** (**Machines**) uses `maintenance.loadMaintenanceTasks()`, not the tasks module. `navigate()` must call `modules.tasks.deactivate()` when entering **Machines** (and when leaving `tasks-*` for non-task routes) so the tasks module’s `masterTimer` refresh does not repaint `#dashboardContent` after the user has navigated away.
+
+## Event delegation
+
+Use `data-action` for clicks:
+
+```html
+<button data-action="delete-item" data-id="${item.id}">Delete</button>
+```
+
+## Theming
+
+Eight themes via CSS variables in `dashboard.css`: automation (default), industrial, cyber, classic, crimson, ultraviolet, amber, midnight.

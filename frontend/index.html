@@ -120,6 +120,10 @@
                         <i class="fa-solid fa-chevron-down text-xs transition-transform dropdown-chevron"></i>
                     </button>
                     <div class="sidebar-dropdown-menu hidden mt-1 ml-4 border-l-2 border-gray-700 pl-4 space-y-1" data-dropdown-menu="inventory">
+                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="inventory-kanban">
+                            <i class="fa-solid fa-columns text-amber-400"></i>
+                            <span>Kanban</span>
+                        </button>
                         <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="inventory-products">
                             <i class="fa-solid fa-cube text-emerald-400"></i>
                             <span>Products</span>
@@ -157,17 +161,13 @@
                             <i class="fa-solid fa-building text-blue-400"></i>
                             <span>Customers</span>
                         </button>
+                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="sales-leads">
+                            <i class="fa-solid fa-user-plus text-emerald-400"></i>
+                            <span>Leads</span>
+                        </button>
                         <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="sales-quotes">
                             <i class="fa-solid fa-file-invoice text-cyan-400"></i>
                             <span>Quotes</span>
-                        </button>
-                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="sales-archived-quotes">
-                            <i class="fa-solid fa-file-circle-xmark text-gray-400"></i>
-                            <span>Archived Quotes</span>
-                        </button>
-                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="sales-archived-work">
-                            <i class="fa-solid fa-archive text-gray-400"></i>
-                            <span>Archived Work</span>
                         </button>
                     </div>
                 </div>
@@ -187,8 +187,12 @@
                             <span>All Tasks</span>
                         </button>
                         <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="tasks-maintenance">
-                            <i class="fa-solid fa-wrench text-red-400"></i>
-                            <span>Machine Maintenance</span>
+                            <i class="fa-solid fa-industry text-purple-400"></i>
+                            <span>Machines</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="tasks-time-tracking">
+                            <i class="fa-solid fa-clock text-amber-400"></i>
+                            <span>Time Tracking</span>
                         </button>
                     </div>
                 </div>
@@ -211,9 +215,21 @@
                             <i class="fa-solid fa-users text-blue-400"></i>
                             <span>Users & Permissions</span>
                         </button>
+                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="settings-archive">
+                            <i class="fa-solid fa-box-archive text-amber-400"></i>
+                            <span>Archive</span>
+                        </button>
                         <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="settings-backup">
                             <i class="fa-solid fa-database text-green-400"></i>
                             <span>Backup & Restore</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="settings-server" id="settingsServerNav" style="display: none;">
+                            <i class="fa-solid fa-server text-cyan-400"></i>
+                            <span>Server Connection</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="settings-about" id="settingsAboutNav" style="display: none;">
+                            <i class="fa-solid fa-circle-info text-sky-400"></i>
+                            <span>About this app</span>
                         </button>
                         <button class="w-full flex items-center gap-3 py-2 px-3 text-sm text-gray-400 hover:bg-gray-700 hover:text-white rounded transition-colors" data-route="settings-preferences">
                             <i class="fa-solid fa-cog text-gray-400"></i>
@@ -223,6 +239,16 @@
                 </div>
                 
             </nav>
+            
+            <!-- Shop labor clock (shift) -->
+            <div id="sidebarLaborClock" class="px-4 py-3 border-t border-gray-800">
+                <p class="text-xs text-gray-500 mb-2 uppercase tracking-wide">Time clock</p>
+                <button type="button" id="laborClockBtn"
+                    class="w-full text-sm font-medium px-3 py-2 rounded-lg bg-gray-700 text-gray-400">
+                    <i class="fa-solid fa-clock mr-2"></i>Clock In
+                </button>
+                <p id="laborClockHint" class="text-xs mt-1 text-gray-500"></p>
+            </div>
             
             <!-- User Info -->
             <div class="p-4 border-t border-gray-800">
@@ -278,6 +304,21 @@
             
             <!-- Dashboard Content -->
             <div class="flex-1 overflow-auto p-6">
+                <!-- Shop clock on Tasks routes + Work In Progress (same as sidebar Time clock) -->
+                <div id="tasksLaborClockBar" class="hidden mb-4 rounded-lg border border-gray-700 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" style="background: var(--color-card-bg, #1f2937);">
+                    <div class="text-sm text-gray-400">
+                        <i class="fa-solid fa-user-clock mr-2" style="color: var(--color-accent-primary);"></i>
+                        <span class="text-white font-medium">Shop shift</span>
+                        <span class="hidden sm:inline"> — clock in or out while you work jobs (WIP, workflow tabs, All Tasks, …)</span>
+                    </div>
+                    <div class="flex flex-col sm:items-end gap-1">
+                        <button type="button" id="tasksLaborClockBtn"
+                            class="w-full sm:w-auto text-sm font-medium px-3 py-2 rounded-lg bg-gray-700 text-gray-400">
+                            <i class="fa-solid fa-clock mr-2"></i>Clock In
+                        </button>
+                        <p id="tasksLaborClockHint" class="text-xs text-gray-500 sm:text-right"></p>
+                    </div>
+                </div>
                 <div id="dashboardContent" class="grid grid-cols-3 gap-6">
                     <!-- Content loaded dynamically by JavaScript modules -->
                     <div class="col-span-3 flex items-center justify-center py-20">

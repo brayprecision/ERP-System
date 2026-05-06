@@ -1,0 +1,40 @@
+---
+description: BPERP product context, core principles, technology boundaries, coding style
+alwaysApply: true
+---
+
+# BPERP — Project overview
+
+Internal manufacturing ERP for Bray Precision LLC. Windows and Linux deployment; Express.js + SQLite + Electron.
+
+**Internal tool only.** Two deployment modes: **Standalone** (local backend + SQLite on this machine) for development and single-user use, and **Network** (central backend on shop NAS; workstations connect over HTTP) for multiple devices. No licensing, multi-tenant, or commercial features.
+
+## Core principles
+
+### Code quality philosophy
+
+- Write clean, maintainable, scalable code; the system will grow with the business.
+- Prefer readability over clever one-liners; code is read more than written.
+- Follow DRY but avoid premature abstraction.
+- Think manufacturing workflow: accuracy and reliability matter; wrong quantity or price costs real money.
+- Performance matters: efficient queries, minimal re-renders, fast responses.
+
+### Technology boundaries
+
+- Frontend stays **vanilla JavaScript** (no React/Vue/Angular).
+- Backend uses JavaScript routes; TypeScript migration is not a priority.
+- No frontend build step; works directly in the browser.
+- **SQLite**: local file in Standalone mode; on NAS local disk in Network mode.
+- **Two deployment modes**: Standalone (local backend + DB) and Network (central NAS backend, HTTP clients).
+- **Windows and Linux only**; no macOS.
+- Internal use only; no licensing, multi-tenant, or commercial distribution.
+- **Auto-refresh**: workcenter displays should stay current without manual refresh.
+- **User profiles from DB**: appearance, permissions, and settings load from the database on login.
+
+### Coding style
+
+- Use functional patterns where appropriate.
+- Descriptive names: `isInventoryLoading` not `loading`.
+- Constants: `UPPER_SNAKE_CASE`.
+- Database columns: `snake_case` (e.g. `customer_id`).
+- API responses: `camelCase` (e.g. `customerId`); transform in route handlers.

@@ -1,6 +1,16 @@
 # BPERP Backend
 
-Express.js API server for the BPERP ERP system. All workstations share a single SQLite database file on the NAS.
+Express.js API server for the BPERP ERP system. It can run **on the NAS** (or any central machine) for Network mode, or **locally** when started by Electron (Standalone) or via `npm run dev` / `npm start` for browser development. SQLite uses a single file at `DB_PATH`.
+
+**NAS deployment:** see `docs/NAS-SETUP.md`.
+
+**Electron:** Native modules (`better-sqlite3`, `bcrypt`) must match **Electron’s embedded Node ABI**, not your system `node`. If `npm install` ran inside `backend/`, npm built or unpacked binaries for **system Node**; Electron’s forked backend uses **Electron’s Node**, so `NODE_MODULE_VERSION` mismatches (e.g. `ERR_DLOPEN_FAILED` / `better_sqlite3.node` “compiled against a different Node.js version”) are **normal** until you rebuild for Electron.
+
+**Always** from the **repository root**, after `npm install` (or `npm ci`) in `backend/`: run **`npm run rebuild:backend`** (see `scripts/rebuild-backend-native.js`). Then **`npm start`** at the root. Root `postinstall` (`electron-builder install-app-deps`) does **not** substitute for this for `backend/node_modules`.
+
+If **`cd backend && npm run dev`** breaks after `rebuild:backend`, run **`npm rebuild better-sqlite3 bcrypt`** in `backend/` to restore system-Node binaries.
+
+**Packaging (repo root):** `npm run build:win`, `build:linux`, `pack:win`, and **`pack:linux`** use **`npm run backend:install:prod`** (`npm install --omit=dev` + `npm prune --omit=dev` here) so the copied `resources/backend` tree omits Jest, nodemon, TypeScript, etc. Root **`package.json`** sets **`publish`** to **`null`** and those scripts pass **`--publish never`** (no **`GH_TOKEN`** required for local builds). After running those, run **`npm run backend:install`** from the repo root if you need dev dependencies in `backend/` again for tests or `npm run dev`.
 
 ## Setup
 
@@ -19,9 +29,9 @@ npm install
 Create a `.env` file:
 
 ```env
-# Database — path to the shared SQLite file on the NAS
-# All workstations point to the same file
-DB_PATH=//NAS/share/bperp.db
+# Database — path to the SQLite file (local to this machine)
+# On NAS: use a path like /home/user/bperp/bperp.db
+DB_PATH=./bperp.db
 
 # Server
 PORT=3000
@@ -31,21 +41,18 @@ NODE_ENV=development
 SESSION_TIMEOUT_HOURS=24
 ```
 
-If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend directory (useful for local development).
+If `DB_PATH` is not set, the backend defaults to `./bperp.db` in the backend directory. When the API is **forked from a packaged Electron app**, the main process sets `DB_PATH` to a file under Electron **user data** (see `getResolvedDatabasePath()` in `electron/main.js`) so SQLite stays writable; unpackaged dev runs still omit `DB_PATH` and use `backend/bperp.db`.
 
-### Database Setup
+### Migrations
+
+Migrations run automatically when the server starts (`server.js` spawns the migration CLI before `initDb`). When the backend process is running **inside Electron** (forked child), that subprocess uses `process.execPath` with `ELECTRON_RUN_AS_NODE=1` so migrations use the **same Node binary** as the API server. Using plain `node` here would mix system Node with Electron’s Node and break `better-sqlite3` (NODE_MODULE_VERSION mismatch).
+
+To run migrations manually:
 
 ```bash
-# Run all pending migrations
 npm run migrate
-
-# Check migration status
 npm run migrate:status
-
-# Rollback last migration
 npm run migrate:down
-
-# Create new migration
 npm run migrate:create -- my_migration_name
 ```
 
@@ -59,7 +66,7 @@ npm start
 npm run dev
 ```
 
-Server runs on `http://localhost:3000` by default.
+Server runs on `http://localhost:3000` by default and binds to `0.0.0.0` so it accepts connections from other machines on the network.
 
 ## Scripts
 
@@ -94,8 +101,10 @@ backend/
 │   └── scripts/         # Migration files
 ├── routes/              # API route handlers (JavaScript)
 │   ├── customers.js
+│   ├── leads.js         # Sales prospects (leads)
 │   ├── import.js        # Data import API
 │   ├── inventory.js
+│   ├── labor.js         # Shop shifts + WO + misc-task process time segments
 │   ├── machines.js
 │   ├── maintenance.js
 │   ├── orders.js
@@ -105,6 +114,7 @@ backend/
 │   ├── workcenters.js
 │   └── workorders.js
 ├── db.js                # SQLite wrapper (PostgreSQL-compatible query interface)
+├── scripts/             # NAS deployment (start-server.sh, bperp.service)
 ├── tests/
 │   ├── setup.js         # Jest setup
 │   ├── helpers/         # Test utilities
@@ -117,6 +127,13 @@ backend/
 ```
 
 ## API Overview
+
+### Setup (first-run)
+
+```
+GET  /api/setup/status             # Check if admin exists (no auth)
+POST /api/setup/init               # Create initial admin (no auth, first-run only)
+```
 
 ### Authentication & Users
 
@@ -146,12 +163,26 @@ All other endpoints require `Authorization: Bearer <token>` header.
 ### Customers
 
 ```
-GET    /api/customers           # List customers
-GET    /api/customers/:id       # Get customer
-POST   /api/customers           # Create customer
-PUT    /api/customers/:id       # Update customer
-DELETE /api/customers/:id       # Soft delete customer
-GET    /api/customers/:id/contacts  # Get customer contacts
+GET    /api/customers                # List customers (active only)
+GET    /api/customers/archived       # List soft-deleted customers (archive)
+GET    /api/customers/:id            # Get customer
+POST   /api/customers                # Create customer
+PUT    /api/customers/:id            # Update customer
+DELETE /api/customers/:id            # Soft delete (archive) customer
+DELETE /api/customers/:id/permanent # Permanently delete archived customer (Administrator only)
+GET    /api/customers/:id/contacts    # Get customer contacts
+```
+
+### Sales leads
+
+```
+GET    /api/leads                     # List active leads (optional `search`, `page`, `limit`)
+GET    /api/leads/archived            # List archived (soft-deleted) leads
+GET    /api/leads/:id                 # Get one lead
+POST   /api/leads                     # Create lead
+PUT    /api/leads/:id                 # Update lead
+DELETE /api/leads/:id                 # Soft delete (archive) lead
+DELETE /api/leads/:id/permanent      # Permanently delete archived lead (Administrator only)
 ```
 
 ### Inventory
@@ -190,6 +221,24 @@ PUT    /api/tasks/:id/status   # Update task status
 PUT    /api/tasks/:id/assign   # Assign task
 POST   /api/tasks/:id/issue    # Report issue
 DELETE /api/tasks/:id          # Soft delete task
+```
+
+The **Tasks** screen in the browser/Electron UI (All Tasks, workflow tabs, Ordering, Completed Work) is currently driven by **localStorage** and **work-order checklist** data, not these `/api/tasks` routes. **Machines** (`tasks-maintenance`) is implemented in `frontend/js/modules/maintenance.js` (same localStorage / WIP patterns). The API above remains for future or alternate clients. SPA routing and module deactivation are described in the root **README** (Frontend routing).
+
+### Labor / time tracking
+
+```
+GET    /api/labor/status              # Open shift + active WO + misc segments for current user
+POST   /api/labor/clock-in            # Start shop shift
+POST   /api/labor/clock-out           # End shift and close all open segments (WO + misc)
+PATCH  /api/labor/shift/:id           # Body: startedAt, endedAt (optional/null) — manual edit; Operator own shift only
+POST   /api/labor/segment/start       # Body: workOrderId, workflowStepKey, lineItemId? — auto clock-in if no shift; closes other open segments on same shift
+POST   /api/labor/segment/stop        # Body: workOrderId, workflowStepKey, lineItemId? — end one process segment
+POST   /api/labor/misc-segment/start # Body: miscTaskId, miscTaskTitle? — misc task timer; closes WO + other misc on shift
+POST   /api/labor/misc-segment/stop   # Body: miscTaskId — end open misc segment for current shift
+GET    /api/labor/history             # Query: userId, from, to (ISO dates) — shifts, WO segments, misc segments
+GET    /api/labor/presence            # Users on shift + active WO segment or misc segment (Dashboard); Operator sees self only
+GET    /api/labor/team                # Users listed on Time Tracking screen (role-based)
 ```
 
 ### Data Import

@@ -2,6 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { spawnSync } = require('child_process');
 const { pool, initDb } = require('./db');
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +12,34 @@ const { apiLimiter, exportLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Database path - used for migrations and init
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'bperp.db');
+
+// Run migrations before opening DB (for central server / NAS deployment)
+// When the backend is forked from Electron, use the same executable + Node mode as this process.
+// Hard-coded `node` would use system Node (often a different NODE_MODULE_VERSION than better-sqlite3 was built for).
+const migrateScript = path.join(__dirname, 'migrations', 'migrate.js');
+const migrateEnv = { ...process.env, DB_PATH: dbPath };
+if (process.versions.electron) {
+    migrateEnv.ELECTRON_RUN_AS_NODE = '1';
+}
+const migrateResult = spawnSync(process.execPath, [migrateScript, 'up'], {
+    cwd: __dirname,
+    env: migrateEnv,
+    stdio: 'pipe',
+    encoding: 'utf8'
+});
+if (migrateResult.status !== 0) {
+    console.error('Migrations failed:', migrateResult.stderr || migrateResult.stdout);
+    process.exit(1);
+}
+if (migrateResult.stdout) {
+    console.log('Migrations:', migrateResult.stdout.trim());
+}
+
+// Database Connection Configuration
+initDb(dbPath);
 
 // CORS configuration - restrict origins in production
 const corsOptions = {
@@ -28,16 +57,13 @@ app.use(express.json({ limit: '10mb' })); // Limit request body size
 // Apply general rate limiting to all API routes
 app.use('/api/', apiLimiter);
 
-// Database Connection Configuration
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'bperp.db');
-initDb(dbPath);
-
 // Auth middleware for protected routes (must be after initDb)
 const { requireAuth } = require('./middleware/auth')(pool);
 
 // Import routes
 const inventoryRoutes = require('./routes/inventory')(pool);
 const customerRoutes = require('./routes/customers')(pool);
+const leadRoutes = require('./routes/leads')(pool);
 const quoteRoutes = require('./routes/quotes')(pool);
 const workOrderRoutes = require('./routes/workorders')(pool);
 const usersRoutes = require('./routes/users')(pool);
@@ -48,6 +74,7 @@ const workcentersRoutes = require('./routes/workcenters')(pool);
 const machinesRoutes = require('./routes/machines')(pool);
 const maintenanceRoutes = require('./routes/maintenance')(pool);
 const ordersRoutes = require('./routes/orders')(pool);
+const laborRoutes = require('./routes/labor')(pool);
 
 // Data import routes
 const importRoutes = require('./routes/import')(pool);
@@ -57,6 +84,7 @@ const importRoutes = require('./routes/import')(pool);
 // Mount routes
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/leads', leadRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/work-orders', workOrderRoutes);
 app.use('/api/users', usersRoutes);
@@ -67,6 +95,7 @@ app.use('/api/workcenters', workcentersRoutes);
 app.use('/api/machines', machinesRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/orders', ordersRoutes);
+app.use('/api/labor', laborRoutes);
 
 // Data import routes
 app.use('/api/import', importRoutes);
@@ -180,6 +209,18 @@ app.get('/api/inventory/alerts', requireAuth, async (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Setup status - used by setup wizard to check if admin creation is needed (no auth)
+app.get('/api/setup/status', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT COUNT(*) FROM users');
+        const userCount = parseInt(result.rows[0]?.count || 0);
+        res.json({ setupComplete: userCount > 0 });
+    } catch (err) {
+        // If users table doesn't exist yet, setup not complete
+        res.json({ setupComplete: false });
+    }
 });
 
 // ==================== SETUP ROUTES (First-run only) ====================
@@ -543,6 +584,7 @@ app.post('/api/backup/create', requireAuth, exportLimiter, async (req, res) => {
             database: {
                 customers: await safeQuery('SELECT * FROM customers'),
                 contacts: await safeQuery('SELECT * FROM contacts'),
+                sales_leads: await safeQuery('SELECT * FROM sales_leads'),
                 quotes: await safeQuery('SELECT * FROM quotes'),
                 quote_items: await safeQuery('SELECT * FROM quote_items'),
                 quote_documents: await safeQuery('SELECT * FROM quote_documents'),
@@ -681,9 +723,9 @@ app.use((req, res) => {
     });
 });
 
-// Start the Server
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+// Start the Server - bind to 0.0.0.0 so NAS accepts connections from workstations
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT} (accessible from network)`);
     console.log(`Export directories:`);
     console.log(`  CSV exports: ${csvDir}`);
     console.log(`  Backups: ${backupsDir}`);

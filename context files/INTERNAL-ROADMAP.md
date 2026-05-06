@@ -1,12 +1,14 @@
 # BPERP Internal Roadmap
 
-> **Last Updated**: February 27, 2026
-> **Status**: Internal-only | Windows & Linux | SQLite on NAS
+> **Last Updated**: March 26, 2026
+> **Status**: Internal-only | Windows & Linux | SQLite (local or NAS-backed server)
 > **Owner**: Bray Precision LLC
 
 ---
 
 ## Decision Log
+
+**Mar 26, 2026** — **Standalone vs Network deployment.** The setup wizard offers **Standalone (Local)** (Electron forks the backend; SQLite on this machine) for development and single-PC use, and **Network (NAS)** (thin client to a central HTTP server; SQLite on the NAS machine’s **local disk**, not a network-mounted DB file). Added `scripts/rebuild-backend-native.js` so `npm run rebuild:backend` reliably rebuilds `better-sqlite3` / `bcrypt` for Electron. Fixed `server.js` startup migrations to use `process.execPath` + `ELECTRON_RUN_AS_NODE` under Electron so native module ABI stays consistent.
 
 **Feb 27, 2026** — Switched from PostgreSQL to SQLite on NAS. A single SQLite database file
 lives on the shop's NAS (network-attached storage). All workstations read/write the same file
@@ -23,25 +25,22 @@ All licensing, legal, auto-updater, and multi-tenant work permanently dropped.
 
 ## Deployment Model
 
-All workstations (Windows and Linux) run the Electron desktop app. Each app reads and writes
-a single shared SQLite database file stored on the shop's NAS. There is no database server to
-install or maintain. User accounts, permissions, and appearance settings are stored in the
-SQLite database and loaded on login. Setting up a new device means installing the app and
-pointing it at the NAS database path (e.g. `\\NAS\bperp\bperp.db` or `/mnt/nas/bperp/bperp.db`).
+**Network (shop):** Workstations run the Electron app as a thin client to one **Express + SQLite** instance on the NAS. The SQLite file lives on the **NAS’s local disk** (recommended); clients use HTTP, not direct file access to the DB. User accounts, permissions, and appearance settings live in that database.
+
+**Standalone (dev / single PC):** Electron forks the backend; SQLite is on the local machine. No NAS required.
 
 ```
-Workstations (Windows/Linux)
-    ↓ read/write
-SQLite Database File on NAS (shared network storage)
-    ↓ contains
-All data: users, inventory, sales, tasks, workcenters, maintenance
+Network mode (multi-workstation)
+  Workstations (Electron)  →  HTTP  →  NAS: Backend + SQLite (local disk)
+
+Standalone mode
+  One PC: Electron → fork(backend) → SQLite (local disk)
 ```
 
-**Important considerations for SQLite on NAS:**
-- SQLite supports multiple concurrent readers but only one writer at a time
-- WAL (Write-Ahead Logging) mode improves concurrent access but may not work over all network filesystems
-- The app should use appropriate busy timeouts and retry logic for write contention
-- Backups are simple: copy the `.db` file (while no writes are active)
+**Important considerations for SQLite (especially multi-user):**
+- SQLite allows multiple concurrent readers but one writer at a time; use WAL and busy timeouts (see `backend/db.js`)
+- Avoid hosting the primary `.db` file only on a flaky network filesystem; keep it on the machine that runs the backend
+- Backups: copy the `.db` file when writes are quiesced (or use server backup APIs when added)
 
 ---
 
@@ -73,7 +72,7 @@ All data: users, inventory, sales, tasks, workcenters, maintenance
 
 ### Phase 4: Electron Desktop App — COMPLETE
 - [x] Electron wrapper with backend lifecycle management
-- [x] Setup wizard (database config, admin creation)
+- [x] Setup wizard (Standalone vs Network, remote server URL + admin; local standalone + admin)
 - [x] Linux builds tested (AppImage 122MB, .deb 81MB)
 - [x] Windows launcher fixed (Feb 23 — taskkill, node server.js)
 - [x] Splash screen, system tray, window state persistence
@@ -194,8 +193,11 @@ cd backend && npm run migrate:status  # Check status
 # Testing
 cd backend && npm test             # Run Jest tests
 
-# Building installers
-npx electron-builder --win --publish never
-npx electron-builder --linux deb --publish never
-npx electron-builder --linux AppImage --publish never
+# Building installers (from repo root; backend:install:prod + rebuild:backend + electron-builder)
+npm run build:win
+npm run build:linux                  # AppImage + deb
+npm run pack:win                     # Windows unpacked only
+
+# Test unpacked Windows build: dist-installers/win-unpacked/BPERP.exe
+# After packaging, run `npm run backend:install` if backend dev deps are missing.
 ```

@@ -23,8 +23,8 @@ const validateQuoteItem = (data) => {
         errors.push({ field: 'partNumber', message: 'Part number is required' });
     }
     
-    if (!data.quantity || data.quantity < 1) {
-        errors.push({ field: 'quantity', message: 'Quantity must be at least 1' });
+    if (data.quantity == null || Number(data.quantity) <= 0) {
+        errors.push({ field: 'quantity', message: 'Quantity must be positive' });
     }
     
     if (data.unitPrice === undefined || data.unitPrice < 0) {
@@ -169,9 +169,10 @@ module.exports = (pool) => {
             
             if (status) {
                 const statuses = Array.isArray(status) ? status : [status];
-                query += ` AND q.status = ANY($${paramIndex}::text[])`;
-                params.push(statuses);
-                paramIndex++;
+                const ph = statuses.map((_, i) => `$${paramIndex + i}`).join(', ');
+                query += ` AND q.status IN (${ph})`;
+                statuses.forEach((s) => params.push(s));
+                paramIndex += statuses.length;
             }
             
             if (isOpen === 'true') {
@@ -194,8 +195,8 @@ module.exports = (pool) => {
                 paramIndex++;
             }
             
-            // Count
-            const countQuery = query.replace(/SELECT q\.\*.*?FROM quotes q/, 'SELECT COUNT(*) FROM quotes q');
+            // Count (preserve JOINs for filters that reference customers/contacts)
+            const countQuery = `SELECT COUNT(*) as count ${query.substring(query.indexOf('FROM quotes q'))}`;
             const countResult = await pool.query(countQuery, params);
             const total = parseInt(countResult.rows[0].count);
             
@@ -218,10 +219,25 @@ module.exports = (pool) => {
             params.push(parseInt(limit), offset);
             
             const result = await pool.query(query, params);
-            
+            const expandItems = req.query.expand === 'items';
+
+            let list = result.rows.map(transformQuote);
+            if (expandItems) {
+                list = [];
+                for (const row of result.rows) {
+                    const q = transformQuote(row);
+                    const itemsResult = await pool.query(
+                        'SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY line_number ASC',
+                        [q.id]
+                    );
+                    q.items = itemsResult.rows.map(transformQuoteItem);
+                    list.push(q);
+                }
+            }
+
             res.json({
                 success: true,
-                data: result.rows.map(transformQuote),
+                data: list,
                 pagination: {
                     page: parseInt(page),
                     limit: parseInt(limit),

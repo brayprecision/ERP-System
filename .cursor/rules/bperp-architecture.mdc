@@ -1,0 +1,56 @@
+---
+description: BPERP deployment modes, stack diagram, SQLite operational notes
+alwaysApply: true
+---
+
+# BPERP — Architecture
+
+## Deployment modes
+
+The setup wizard offers two modes on first launch:
+
+**Standalone (Local):** Electron forks a local Express backend; SQLite on this machine. Best for development, single-user, or testing. No NAS required.
+
+**Network (NAS):** Backend runs on the shop NAS. Workstations are thin-client Electron apps over HTTP. SQLite lives on the NAS local disk (not a network-mounted DB file). Best for multi-workstation shops.
+
+Both modes share the same backend and frontend code; only the backend host and DB location differ.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Electron Main Process                       │
+│  electron/main.js                                             │
+│  - Window management (splash, setup, main)                    │
+│  - Backend lifecycle (fork/kill) [standalone only]            │
+│  - IPC handlers                                               │
+│  - System tray                                                │
+└─────────────────────┬────────────────────────────────────────┘
+                      │ fork() [standalone] or HTTP [network]
+┌─────────────────────▼────────────────────────────────────────┐
+│                    Backend (Express.js)                        │
+│  backend/server.js                                            │
+│  - REST API on port 3000                                      │
+│  - Serves frontend static files                               │
+│  - SQLite via better-sqlite3                                  │
+└─────────────────────┬────────────────────────────────────────┘
+                      │
+┌─────────────────────▼────────────────────────────────────────┐
+│                    Frontend (Vanilla JS)                       │
+│  frontend/index.html + js/modules/                            │
+│  - ES6 modules, no build step                                 │
+│  - Tailwind CSS via CDN                                       │
+│  - Auto-refresh for real-time data                            │
+└──────────────────────────────────────────────────────────────┘
+                      │
+         ┌────────────▼────────────┐
+         │  SQLite Database File    │
+         │  Local disk (standalone) │
+         │  or NAS disk (network)   │
+         └─────────────────────────┘
+```
+
+## SQLite considerations
+
+- Use **better-sqlite3** (sync); not `sqlite3` (async callbacks).
+- Enable WAL for concurrent reads; set busy timeout (e.g. 5000 ms) for write contention.
+- WAL may not suit all network filesystems; fall back to DELETE journal if needed.
+- Backups: copy the `.db` file (no pg_dump).

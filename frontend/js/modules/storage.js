@@ -10,6 +10,9 @@ export const STORAGE_KEYS = {
     WORK_ORDERS: 'bperp_work_orders',
     ARCHIVED_WORK_ORDERS: 'bperp_archived_work_orders',
     CUSTOMERS: 'bperp_customers',
+    ARCHIVED_CUSTOMERS: 'bperp_archived_customers',
+    LEADS: 'bperp_leads',
+    ARCHIVED_LEADS: 'bperp_archived_leads',
     QUOTES: 'bperp_quotes',
     QUOTE_DOCUMENTS: 'bperp_quote_documents',
     WO_DOCUMENTS: 'bperp_wo_documents',
@@ -28,7 +31,9 @@ export const STORAGE_KEYS = {
     AUTH_TOKEN: 'bperp_auth_token',
     USERS_LIST: 'bperp_users_list',
     // Shop branding
-    SHOP_BRANDING: 'bperp_shop_branding'
+    SHOP_BRANDING: 'bperp_shop_branding',
+    // Local labor (offline / demo session — mirrors API shapes in laborLocal.js)
+    LABOR_LOCAL: 'bperp_labor_local'
 };
 
 // ==================== STORAGE MANAGER CLASS ====================
