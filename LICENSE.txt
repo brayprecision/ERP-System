@@ -1,9 +1,17 @@
 BPERP - Manufacturing ERP Software
 Copyright (c) 2026 Bray Precision LLC. All Rights Reserved.
 
-INTERNAL USE ONLY
+Source Available License
 
-This software is the proprietary property of Bray Precision LLC and is
-intended solely for internal business operations. This software may not
-be copied, distributed, sold, sublicensed, or made available to any
-third party without written permission from Bray Precision LLC.
+This software is the proprietary property of Bray Precision LLC.
+Viewing and non-commercial use of this software is permitted, provided
+that this copyright notice is retained in all copies or substantial
+portions of the software.
+
+This software may NOT be:
+  - Sold or sublicensed
+  - Used in a commercial product or service
+  - Rebranded or redistributed without written permission from
+    Bray Precision LLC
+
+For commercial licensing inquiries, contact: [your email]
