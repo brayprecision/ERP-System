@@ -22,7 +22,8 @@ Open source ERP for machine shops. Manage inventory, quotes, work orders, tasks,
 ### Prerequisites
 
 - **Node.js 18+** — [nodejs.org](https://nodejs.org)
-- **Linux only:** Install a C++ toolchain for native module compilation:
+- **Windows:** Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022) with the **"Desktop development with C++"** workload — required to compile native modules (`bcrypt`, `better-sqlite3`). Alternatively: `npm install --global windows-build-tools` (run PowerShell as Administrator).
+- **Linux:** Install a C++ toolchain for native module compilation:
   ```bash
   sudo apt install build-essential python3-setuptools
   ```
@@ -45,12 +46,12 @@ npm run dev
 
 Open `http://localhost:3000`. A local SQLite database (`backend/bperp.db`) is created automatically on first run.
 
-> **Startup fails with `ERR_DLOPEN_FAILED` or "compiled against a different Node.js version"?**
+> **Startup fails with `ERR_DLOPEN_FAILED`, "No native build was found", or "compiled against a different Node.js version"?**
 > ```bash
 > cd backend
 > npm rebuild better-sqlite3 bcrypt
 > ```
-> Then run `npm run dev` again. This happens when the native modules were previously built for Electron's embedded Node instead of your system Node.
+> Then run `npm run dev` again. This compiles the native modules from source for your current Node.js version. Requires a C++ toolchain (see Prerequisites above).
 
 ### Option 2: Desktop app (Electron)
 
