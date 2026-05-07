@@ -767,7 +767,7 @@ function updateSidebarPermissions() {
     if (user) {
         const userNameEl = document.getElementById('currentUserName');
         const userRoleEl = document.getElementById('currentUserRole');
-        if (userNameEl) userNameEl.textContent = user.username;
+        if (userNameEl) userNameEl.textContent = user.name || user.username;
         if (userRoleEl) userRoleEl.textContent = user.role;
     }
 
