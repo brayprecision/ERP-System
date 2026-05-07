@@ -12,7 +12,7 @@
   "homepage": "https://brayprecision.com/bperp",
   "repository": {
     "type": "git",
-    "url": "https://github.com/brayprecision/bperp.git"
+    "url": "https://github.com/brayprecision/ERP-System.git"
   },
   "scripts": {
     "start": "electron .",

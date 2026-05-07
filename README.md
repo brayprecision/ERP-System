@@ -32,7 +32,7 @@ Open source ERP for machine shops. Manage inventory, quotes, work orders, tasks,
 The quickest way to try BPERP. No desktop install needed.
 
 ```bash
-git clone https://github.com/brayprecision/bperp.git
+git clone https://github.com/brayprecision/ERP-System.git
 cd bperp/backend
 npm install
 npm run dev
@@ -50,7 +50,7 @@ Open `http://localhost:3000`. A local SQLite database (`backend/bperp.db`) is cr
 ### Option 2: Desktop app (Electron)
 
 ```bash
-git clone https://github.com/brayprecision/bperp.git
+git clone https://github.com/brayprecision/ERP-System.git
 cd bperp
 npm run setup              # Install root + backend dependencies
 npm run rebuild:backend    # Build native modules for Electron's Node
