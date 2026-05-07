@@ -20,6 +20,9 @@ backend/.env
 *.swo
 *~
 
+# Security scanning tools
+gitleaks.exe
+
 # OS files
 .DS_Store
 Thumbs.db
