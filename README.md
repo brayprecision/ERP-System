@@ -1,10 +1,12 @@
 # BPERP - Manufacturing ERP System
 
-Internal ERP system for Bray Precision LLC. Manages inventory, sales, tasks, workcenters, and machines (maintenance/upgrades) for the shop floor.
+Open source ERP for machine shops. Manages inventory, sales, tasks, workcenters, and machines (maintenance/upgrades).
+
+**License:** Free to use and modify, including in a commercial shop. You may not sell or rebrand it as a software product. See [LICENSE.txt](LICENSE.txt) for details.
 
 ## Status
 
-**Version:** 1.0.0-beta.1 | **Internal Use Only** | **Windows & Linux**
+**Version:** 1.0.0-beta.1 | **Platform:** Windows & Linux | **Status:** Beta
 
 ### What's Working
 - Inventory Management (**Kanban** view for low-stock and critical items across all categories, with **min reorder qty** and **reorder cost** on that view only; Products, Parts, Materials, Tooling, Misc; optional **reorder link** per item with quick-open from the table; Product BOM on add and edit for assemblies)
@@ -25,15 +27,6 @@ The Inventory sidebar (materials, tooling, misc, products, parts, and **Kanban**
 ### Known Issues
 - **Backup/Restore** only saves browser localStorage, not a real database backup (should be a simple file copy of the SQLite DB)
 - **Search** module exists but cross-module search isn't fully wired
-
-### TODO (pick up here)
-1. Test installers end-to-end: Windows — `dist-installers/BPERP-*-win-x64.exe` (`npm run build:win`); Linux — `dist-installers/BPERP-*-linux-amd64.deb` and/or `dist-installers/BPERP-*-linux-x86_64.AppImage` (`npm run build:linux`; electron-builder names **deb** `amd64` and **AppImage** `x86_64`)
-2. Local dev: use **Standalone** in the setup wizard or `cd backend && npm run dev`; deploy **Network (NAS)** when ready for multiple workstations (see `docs/NAS-SETUP.md`)
-3. Import shop data via CSV import (Settings > Data Import)
-4. Fix Backup/Restore to copy the SQLite DB file via Electron IPC
-5. Wire up cross-module search in `frontend/js/modules/search.js`
-6. Implement auto-refresh so workcenter displays show current data
-7. Ensure user profiles (appearance, permissions) load from database on login — no manual setup on new devices
 
 ## Architecture
 
@@ -144,6 +137,13 @@ npm run dev
 ```
 
 Open `http://localhost:3000` in your browser. The backend serves both the API and frontend. A local SQLite database (`backend/bperp.db`) is created automatically.
+
+> **Troubleshoot — ABI mismatch on startup:** If you see `was compiled against a different Node.js version` or `ERR_DLOPEN_FAILED`, run:
+> ```bash
+> cd backend
+> npm rebuild better-sqlite3 bcrypt
+> ```
+> Then run `npm run dev` again. This happens when `npm run rebuild:backend` was previously run (which targets Electron's embedded Node ABI instead of your system Node). The command above rebuilds the native modules for your current system Node version.
 
 ### Option B: Electron Standalone
 

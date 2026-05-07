@@ -8,8 +8,7 @@
     "name": "Bray Precision LLC",
     "email": "support@brayprecision.com"
   },
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT AND Commons-Clause",
   "homepage": "https://brayprecision.com/bperp",
   "repository": {
     "type": "git",
