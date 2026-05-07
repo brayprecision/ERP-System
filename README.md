@@ -4,6 +4,9 @@ Open source ERP for machine shops. Manage inventory, quotes, work orders, tasks,
 
 **License:** Free to use and modify, including commercially. You may not sell or rebrand it as a software product. See [LICENSE.txt](LICENSE.txt).
 
+![BPERP Screenshot](screenshot.png)
+
+
 ## Features
 
 - **Inventory** — Products, parts, materials, tooling, and misc items. Kanban view for low-stock alerts with reorder quantities and costs. Bill of Materials on product assemblies.
