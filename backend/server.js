@@ -619,17 +619,31 @@ app.post('/api/backup/create', requireAuth, exportLimiter, async (req, res) => {
             }
         };
 
-        const filename = `bperp_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `bperp_backup_${timestamp}.json`;
         const filepath = path.join(backupsDir, filename);
 
         fs.writeFileSync(filepath, JSON.stringify(backupData, null, 2), 'utf8');
+
+        // Copy the live SQLite file as a binary backup alongside the JSON export
+        const dbFilename = `bperp_backup_${timestamp}.db`;
+        const dbFilepath = path.join(backupsDir, dbFilename);
+        let dbDownloadUrl = null;
+        try {
+            fs.copyFileSync(dbPath, dbFilepath);
+            dbDownloadUrl = `/exports/backups/${dbFilename}`;
+        } catch (copyErr) {
+            console.warn('Could not copy SQLite DB file for backup:', copyErr.message);
+        }
 
         res.json({
             success: true,
             message: 'Backup created successfully',
             filename: filename,
             filepath: filepath,
-            downloadUrl: `/exports/backups/${filename}`
+            downloadUrl: `/exports/backups/${filename}`,
+            dbFilename: dbFilename,
+            dbDownloadUrl: dbDownloadUrl
         });
     } catch (err) {
         console.error('Backup creation error:', err);

@@ -553,11 +553,19 @@ export async function createBackup() {
             throw new Error(result.error || 'Server backup failed');
         }
 
-        // Download the backup file from the server
+        // Download the JSON backup
         const a = document.createElement('a');
         a.href = `${window.location.origin}${result.downloadUrl}`;
         a.download = result.filename;
         a.click();
+
+        // Download the SQLite DB copy if the server produced one
+        if (result.dbDownloadUrl) {
+            const b = document.createElement('a');
+            b.href = `${window.location.origin}${result.dbDownloadUrl}`;
+            b.download = result.dbFilename;
+            setTimeout(() => b.click(), 500);
+        }
 
         showToast(result.message, 'success');
     } catch (error) {
