@@ -22,15 +22,32 @@ Open source ERP for machine shops. Manage inventory, quotes, work orders, tasks,
 ### Prerequisites
 
 - **Node.js 18+** — [nodejs.org](https://nodejs.org)
-- **Windows:** Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022) with the **"Desktop development with C++"** workload — required to compile native modules (`bcrypt`, `better-sqlite3`). Alternatively: `npm install --global windows-build-tools` (run PowerShell as Administrator).
-- **Linux:** Install a C++ toolchain for native module compilation:
-  ```bash
-  sudo apt install build-essential python3-setuptools
-  ```
+- **Git** — [git-scm.com](https://git-scm.com)
 
-### Option 1: Run in the browser (fastest)
+> **Windows only — C++ build tools:** Only needed if native modules fail to load in browser mode (see troubleshooting below). Install [Visual Studio Build Tools 2022](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022) with the **"Desktop development with C++"** workload. The Electron desktop app uses pre-built binaries and does not require this.
 
-The quickest way to try BPERP. No desktop install needed.
+> **Linux only:** Install a C++ toolchain for native module compilation:
+> ```bash
+> sudo apt install build-essential python3-setuptools
+> ```
+
+### Option 1: Desktop app (recommended)
+
+```bash
+git clone https://github.com/brayprecision/ERP-System.git
+cd ERP-System
+npm run setup              # Install root + backend dependencies
+npm run rebuild:backend    # Download native modules built for Electron
+npm start                  # Launch the desktop app
+```
+
+The setup wizard runs on first launch — choose **Standalone** to store the database locally and get up and running immediately.
+
+> **`npm start` fails with `ERR_DLOPEN_FAILED`?** Run `npm run rebuild:backend` again from the repo root, then `npm start`.
+
+### Option 2: Run in the browser (no Electron)
+
+Lighter option for development or evaluation — no desktop install required.
 
 ```bash
 git clone https://github.com/brayprecision/ERP-System.git
@@ -46,28 +63,20 @@ npm run dev
 
 Open `http://localhost:3000`. A local SQLite database (`backend/bperp.db`) is created automatically on first run.
 
-> **Startup fails with `ERR_DLOPEN_FAILED`, "No native build was found", or "compiled against a different Node.js version"?**
+> **Startup fails with `ERR_DLOPEN_FAILED`, "No native build was found", or "compiled against a different Node.js version"?** This means `better-sqlite3` or `bcrypt` needs to be compiled for your system Node version — which requires C++ build tools (see Prerequisites above).
 > ```bash
 > cd backend
 > npm rebuild better-sqlite3 bcrypt
 > ```
-> Then run `npm run dev` again. This compiles the native modules from source for your current Node.js version. Requires a C++ toolchain (see Prerequisites above).
+> Then run `npm run dev` again.
 
-### Option 2: Desktop app (Electron)
-
-```bash
-git clone https://github.com/brayprecision/ERP-System.git
-cd ERP-System
-npm run setup              # Install root + backend dependencies
-npm run rebuild:backend    # Build native modules for Electron's Node
-npm start                  # Launch the desktop app
-```
-
-> **`npm start` fails with `ERR_DLOPEN_FAILED`?** Run `npm run rebuild:backend` again from the repo root.
-
-> **Want to switch back to browser mode?** After running Electron, native modules are built for Electron's Node. Rebuild for your system Node before using `npm run dev`:
+> **Switching between Electron and browser mode?** The native modules must match the Node ABI in use. After running Electron, rebuild for your system Node before using `npm run dev`:
 > ```bash
 > cd backend && npm rebuild better-sqlite3 bcrypt
+> ```
+> After running `npm run dev`, rebuild for Electron before using `npm start`:
+> ```bash
+> npm run rebuild:backend
 > ```
 
 ## First-Time Setup
@@ -208,14 +217,14 @@ ERP-System/
 
 ## Native Modules (Electron vs System Node)
 
-`better-sqlite3` and `bcrypt` are native C++ addons compiled for a specific Node.js ABI. The Electron app forks the backend using Electron's embedded Node, which has a different ABI than your system Node.
+`better-sqlite3` and `bcrypt` are native C++ addons tied to a specific Node.js ABI. The Electron app forks the backend using Electron's embedded Node, which has a different ABI than your system Node.
 
 | Context | Node used | Fix if ABI mismatch |
 |---------|-----------|---------------------|
 | `cd backend && npm run dev` | System Node | `cd backend && npm rebuild better-sqlite3 bcrypt` |
 | `npm start` (Electron) | Electron's embedded Node | `npm run rebuild:backend` from repo root |
 
-`npm run rebuild:backend` (via `scripts/rebuild-backend-native.js`) deletes stale build artifacts and compiles from source for Electron's version. Run it after any `npm install` in `backend/` if you plan to use the Electron app.
+`npm run rebuild:backend` (via `scripts/rebuild-backend-native.js`) clears stale build artifacts and downloads pre-built binaries for Electron's version from the package registry — no C++ toolchain required. Run it after any `npm install` in `backend/` if you plan to use the Electron app.
 
 ## API Reference
 

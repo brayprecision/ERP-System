@@ -31,7 +31,9 @@
       "Bash(timeout 10 node server.js)",
       "Bash(grep -l \"\\\\.ts\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\middleware\"* \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\src\\\\routes\"*)",
       "Bash(magick --version)",
-      "Bash(npx electron-rebuild --version 28.3.3 --module-dir .)"
+      "Bash(npx electron-rebuild --version 28.3.3 --module-dir .)",
+      "Bash(fc /b \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\frontend\\\\js\\\\app.js\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\dist-installers\\\\win-unpacked\\\\resources\\\\frontend\\\\js\\\\app.js\")",
+      "Bash(Get-ChildItem \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\dist-installers\\\\win-unpacked\\\\resources\\\\frontend\\\\js\\\\modules\\\\\" | Select-Object Name, LastWriteTime)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Documents-GitHub-ERP-System\\memory"

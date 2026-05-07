@@ -47,7 +47,6 @@ const result = spawnSync(
         'better-sqlite3,bcrypt',
         '-m',
         backendRoot,
-        '--build-from-source',
         '-v',
         electronVersion
     ],

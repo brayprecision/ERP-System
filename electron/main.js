@@ -3,7 +3,7 @@
  * Electron main process handling window management and backend lifecycle
  */
 
-const { app, BrowserWindow, ipcMain, shell, Menu, Tray, dialog, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, Tray, dialog, screen, session } = require('electron');
 const path = require('path');
 const { fork, spawn } = require('child_process');
 const fs = require('fs');
@@ -1092,6 +1092,9 @@ app.whenReady().then(async () => {
     log('info', `Version: ${app.getVersion()}`);
     log('info', `User data path: ${app.getPath('userData')}`);
     log('info', `Development mode: ${isDev}`);
+
+    // Clear HTTP cache so reinstalls always load the latest frontend JS/CSS
+    await session.defaultSession.clearCache();
     
     // Setup IPC handlers first
     setupIpcHandlers();

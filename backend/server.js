@@ -674,7 +674,13 @@ const serveIndexWithNoCache = (req, res) => {
 app.get('/', serveIndexWithNoCache);
 app.get('/index.html', serveIndexWithNoCache);
 
-app.use(express.static(frontendPath));
+app.use(express.static(frontendPath, {
+    setHeaders(res, filePath) {
+        if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+    }
+}));
 
 // Helper function to convert data to CSV
 function convertToCSV(data, headers) {
