@@ -33,10 +33,15 @@ The quickest way to try BPERP. No desktop install needed.
 
 ```bash
 git clone https://github.com/brayprecision/ERP-System.git
-cd bperp/backend
+cd ERP-System/backend
 npm install
 npm run dev
 ```
+
+> **Windows: `npm` blocked by execution policy?** Run this once in PowerShell as Administrator, then retry:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
 
 Open `http://localhost:3000`. A local SQLite database (`backend/bperp.db`) is created automatically on first run.
 
@@ -51,7 +56,7 @@ Open `http://localhost:3000`. A local SQLite database (`backend/bperp.db`) is cr
 
 ```bash
 git clone https://github.com/brayprecision/ERP-System.git
-cd bperp
+cd ERP-System
 npm run setup              # Install root + backend dependencies
 npm run rebuild:backend    # Build native modules for Electron's Node
 npm start                  # Launch the desktop app
@@ -136,7 +141,7 @@ Electron stores config (server URL, settings) under user data, not inside the in
 ## Project Structure
 
 ```
-bperp/
+ERP-System/
 ├── backend/
 │   ├── db.js            # SQLite wrapper
 │   ├── middleware/       # Auth, validation, rate limiting
