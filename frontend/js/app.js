@@ -1075,61 +1075,109 @@ function setupAlertsBell() {
     }
 }
 
-function showAlertsModal() {
-    // Create alerts modal
+function escAlert(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function showAlertsModal() {
+    // Remove any existing modal
+    document.getElementById('alertsModal')?.remove();
+
     const modal = document.createElement('div');
     modal.id = 'alertsModal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center';
     modal.innerHTML = `
         <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" onclick="this.parentElement.remove()"></div>
         <div class="bg-cardBg border border-gray-700 rounded-xl shadow-2xl max-w-md w-96 max-h-96 overflow-y-auto z-50">
-            <!-- Header -->
             <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between sticky top-0 bg-cardBg">
                 <h3 class="text-white font-medium"><i class="fa-solid fa-bell text-yellow-400 mr-2"></i>Notifications</h3>
                 <button onclick="document.getElementById('alertsModal').remove()" class="text-gray-400 hover:text-white">
                     <i class="fa-solid fa-times"></i>
                 </button>
             </div>
-            <!-- Alerts List -->
-            <div class="divide-y divide-gray-700">
-                <div class="px-6 py-4 hover:bg-gray-800 transition-colors">
-                    <div class="flex items-start gap-3">
-                        <i class="fa-solid fa-exclamation-circle text-red-500 mt-1"></i>
-                        <div class="flex-1">
-                            <p class="text-white font-medium text-sm">Work Order WO-2024-001 Overdue</p>
-                            <p class="text-gray-400 text-xs mt-1">Due date was 2 days ago</p>
-                        </div>
-                    </div>
+            <div id="alertsModalBody" class="divide-y divide-gray-700">
+                <div class="px-6 py-8 text-center text-gray-500 text-sm">
+                    <i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading…
                 </div>
-                <div class="px-6 py-4 hover:bg-gray-800 transition-colors">
-                    <div class="flex items-start gap-3">
-                        <i class="fa-solid fa-clock text-yellow-500 mt-1"></i>
-                        <div class="flex-1">
-                            <p class="text-white font-medium text-sm">Quote QT-2024-045 Due Today</p>
-                            <p class="text-gray-400 text-xs mt-1">Customer waiting for response</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="px-6 py-4 hover:bg-gray-800 transition-colors">
-                    <div class="flex items-start gap-3">
-                        <i class="fa-solid fa-check-circle text-green-500 mt-1"></i>
-                        <div class="flex-1">
-                            <p class="text-white font-medium text-sm">Material for WO-2024-038 Arrived</p>
-                            <p class="text-gray-400 text-xs mt-1">Lot #ML-2024-156 in receiving</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- Footer -->
-            <div class="px-6 py-4 border-t border-gray-700 text-center">
-                <button onclick="document.getElementById('alertsModal').remove()" class="text-accentGreen text-sm hover:text-green-400">
-                    View All Notifications
-                </button>
             </div>
         </div>
     `;
-    
     document.body.appendChild(modal);
+
+    const token = localStorage.getItem('bperp_auth_token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const body = document.getElementById('alertsModalBody');
+
+    try {
+        const [invRes, woRes] = await Promise.all([
+            fetch('/api/inventory/alerts', { headers }),
+            fetch('/api/work-orders?status=active&limit=50', { headers })
+        ]);
+
+        const items = [];
+
+        if (invRes.ok) {
+            const inv = await invRes.json();
+            (inv.data || []).forEach(a => {
+                items.push({
+                    icon: 'fa-box text-orange-400',
+                    title: `Low stock: ${a.name}`,
+                    detail: `${a.stock_level} on hand (min ${a.minimum_qty})`
+                });
+            });
+        }
+
+        if (woRes.ok) {
+            const wos = await woRes.json();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            (wos.data || wos.rows || []).forEach(wo => {
+                if (!wo.due_date && !wo.dueDate) return;
+                const due = new Date(wo.due_date || wo.dueDate);
+                const daysLeft = Math.ceil((due - today) / 86400000);
+                if (daysLeft < 0) {
+                    items.push({
+                        icon: 'fa-exclamation-circle text-red-500',
+                        title: `Overdue: ${wo.wo_number || wo.woNumber}`,
+                        detail: `${wo.customer_name || wo.customerName || ''} — due ${due.toLocaleDateString()}`
+                    });
+                } else if (daysLeft === 0) {
+                    items.push({
+                        icon: 'fa-clock text-yellow-400',
+                        title: `Due today: ${wo.wo_number || wo.woNumber}`,
+                        detail: `${wo.customer_name || wo.customerName || ''}`
+                    });
+                }
+            });
+        }
+
+        if (items.length === 0) {
+            body.innerHTML = `
+                <div class="px-6 py-8 text-center text-gray-500 text-sm">
+                    <i class="fa-solid fa-check-circle text-green-500 text-2xl mb-2 block"></i>
+                    No alerts — everything looks good.
+                </div>`;
+            return;
+        }
+
+        body.innerHTML = items.map(item => `
+            <div class="px-6 py-4 hover:bg-gray-800 transition-colors">
+                <div class="flex items-start gap-3">
+                    <i class="fa-solid ${escAlert(item.icon)} mt-1 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-white font-medium text-sm truncate">${escAlert(item.title)}</p>
+                        <p class="text-gray-400 text-xs mt-0.5">${escAlert(item.detail)}</p>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (err) {
+        body.innerHTML = `
+            <div class="px-6 py-8 text-center text-gray-500 text-sm">
+                <i class="fa-solid fa-triangle-exclamation text-yellow-500 mr-2"></i>
+                Could not load alerts.
+            </div>`;
+    }
 }
 
 // ==================== SIDEBAR DROPDOWNS ====================

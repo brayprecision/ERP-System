@@ -51,10 +51,6 @@ module.exports = function(pool) {
                 .digest('hex');
             return hash === legacyHash;
         }
-        // Handle placeholder passwords (for initial migration)
-        if (hash && hash.includes('placeholder')) {
-            return true; // Allow any password for placeholder accounts
-        }
         // Normal bcrypt comparison
         return bcrypt.compare(password, hash);
     }

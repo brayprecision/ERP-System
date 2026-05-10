@@ -26,7 +26,17 @@ function initDb(dbPath) {
     db = new Database(dbPath);
 
     // Configure SQLite for concurrent access over NAS
-    db.pragma('journal_mode = WAL');
+    // WAL mode requires shared-memory support — not available on all NFS/SMB mounts.
+    // Fall back to DELETE journal mode if WAL fails rather than crashing.
+    try {
+        const result = db.pragma('journal_mode = WAL', { simple: true });
+        if (result !== 'wal') {
+            console.warn(`SQLite: WAL mode not available (got '${result}'), using DELETE journal mode. Performance may be reduced on multi-writer setups.`);
+        }
+    } catch (walErr) {
+        console.warn('SQLite: Could not enable WAL mode, falling back to DELETE journal:', walErr.message);
+        db.pragma('journal_mode = DELETE');
+    }
     db.pragma('busy_timeout = 5000');
     db.pragma('foreign_keys = ON');
 

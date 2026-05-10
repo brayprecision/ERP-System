@@ -33,7 +33,13 @@
       "Bash(magick --version)",
       "Bash(npx electron-rebuild --version 28.3.3 --module-dir .)",
       "Bash(fc /b \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\frontend\\\\js\\\\app.js\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\dist-installers\\\\win-unpacked\\\\resources\\\\frontend\\\\js\\\\app.js\")",
-      "Bash(Get-ChildItem \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\dist-installers\\\\win-unpacked\\\\resources\\\\frontend\\\\js\\\\modules\\\\\" | Select-Object Name, LastWriteTime)"
+      "Bash(Get-ChildItem \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\dist-installers\\\\win-unpacked\\\\resources\\\\frontend\\\\js\\\\modules\\\\\" | Select-Object Name, LastWriteTime)",
+      "Bash(Get-ChildItem -Path 'c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System' -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(grep \"innerHTML\\\\|\\\\`\")",
+      "Bash(grep -n \"UPDATE.*SET.*WHERE id = \\\\$\\\\|UPDATE.*SET.*WHERE.*= \\\\$[^1]\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\db.js\")",
+      "Bash(grep -rn \"\\\\${\\\\|string concat\\\\|+ '%'\" \"c:\\\\Users\\\\Admin\\\\Documents\\\\GitHub\\\\ERP-System\\\\backend\\\\routes\")",
+      "Bash(grep \"\\\\${\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Admin\\.claude\\projects\\c--Users-Admin-Documents-GitHub-ERP-System\\memory"

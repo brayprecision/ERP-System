@@ -41,13 +41,16 @@ if (migrateResult.stdout) {
 // Database Connection Configuration
 initDb(dbPath);
 
-// CORS configuration - restrict origins in production
+// CORS configuration — set CORS_ORIGIN in .env for Network mode deployments.
+// Supports a single origin or comma-separated list: "http://a:3000,http://b:3000"
+const rawCorsOrigin = process.env.CORS_ORIGIN || '*';
+const allowedOrigins = rawCorsOrigin === '*' ? '*' : rawCorsOrigin.split(',').map(o => o.trim());
 const corsOptions = {
-    origin: process.env.CORS_ORIGIN || '*', // Set CORS_ORIGIN env var in production
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
-    maxAge: 86400 // 24 hours
+    maxAge: 86400
 };
 
 // Middleware
@@ -652,16 +655,80 @@ app.post('/api/backup/create', requireAuth, exportLimiter, async (req, res) => {
 });
 
 // Restore from backup
-app.post('/api/backup/restore', requireAuth, async (req, res) => {
+// Accepts { backup: <parsed backup JSON> } — frontend reads and parses the file,
+// then POSTs the object. A 50 MB body limit covers backups with large document blobs.
+app.post('/api/backup/restore', requireAuth, express.json({ limit: '50mb' }), (req, res) => {
     try {
-        // This would require file upload handling - for now return not implemented
-        res.status(501).json({
-            success: false,
-            error: 'Restore functionality requires file upload implementation'
+        const backup = req.body?.backup;
+
+        if (!backup || !backup.version || !backup.database) {
+            return res.status(400).json({ success: false, error: 'Invalid backup format — missing version or database key' });
+        }
+        if (!String(backup.version).startsWith('BPERP')) {
+            return res.status(400).json({ success: false, error: 'Unrecognized backup version: ' + backup.version });
+        }
+
+        const { getDb } = require('./db');
+        const sqliteDb = getDb();
+
+        // Tables in dependency order (parents before children)
+        const allowedTables = [
+            'role_defaults', 'users', 'customers', 'contacts',
+            'sales_leads', 'quotes', 'quote_items', 'quote_documents',
+            'work_orders', 'wo_checklist', 'work_order_archive',
+            'materials', 'tooling', 'misc_items', 'tasks'
+        ];
+
+        const tablesRestored = [];
+
+        const restoreAll = sqliteDb.transaction(() => {
+            sqliteDb.pragma('foreign_keys = OFF');
+            try {
+                for (const tableName of allowedTables) {
+                    const rows = backup.database[tableName];
+                    if (!Array.isArray(rows) || rows.length === 0) continue;
+
+                    try {
+                        sqliteDb.prepare(`DELETE FROM ${tableName}`).run();
+
+                        // Build column list from first row — validate names to prevent injection
+                        const cols = Object.keys(rows[0]).filter(c => /^\w+$/.test(c));
+                        if (cols.length === 0) continue;
+
+                        const insert = sqliteDb.prepare(
+                            `INSERT OR REPLACE INTO ${tableName} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`
+                        );
+
+                        for (const row of rows) {
+                            const vals = cols.map(c => {
+                                const v = row[c];
+                                if (v === null || v === undefined) return null;
+                                if (typeof v === 'object') return JSON.stringify(v);
+                                return v;
+                            });
+                            insert.run(vals);
+                        }
+
+                        tablesRestored.push(tableName);
+                    } catch (tableErr) {
+                        console.warn(`Restore: skipping table ${tableName}:`, tableErr.message);
+                    }
+                }
+            } finally {
+                sqliteDb.pragma('foreign_keys = ON');
+            }
+        });
+
+        restoreAll();
+
+        res.json({
+            success: true,
+            message: `Backup restored successfully. ${tablesRestored.length} tables reloaded.`,
+            tablesRestored
         });
     } catch (err) {
         console.error('Backup restore error:', err);
-        res.status(500).json({ success: false, error: 'Restore failed' });
+        res.status(500).json({ success: false, error: 'Restore failed: ' + err.message });
     }
 });
 

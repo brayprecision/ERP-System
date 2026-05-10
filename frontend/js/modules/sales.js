@@ -3,10 +3,10 @@
  * Customers, Quotes, and Work In Progress Management
  */
 
-import { 
+import {
     debounce, showToast, showDeleteConfirm, showConfirmModal, showLoadingSpinner,
     formatDate, formatCurrency, DOMCache, createModal, closeModal,
-    getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer, exportToCSV
+    getStatusBadgeClass, getUrgencyColor, safeExecute, masterTimer, exportToCSV, esc
 } from './common.js';
 import { storage, STORAGE_KEYS, searchCache, state } from './storage.js';
 import * as salesApi from './salesApi.js';
@@ -812,23 +812,23 @@ function renderCustomersView(customers) {
             <tr class="border-b border-gray-700 hover:bg-gray-800 cursor-pointer" data-action="toggle-customer" data-id="${customer.id}" data-item-id="${customer.id}">
                 <td class="px-4 py-3">
                     <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} mr-2 text-gray-500"></i>
-                    <span class="font-medium text-white">${customer.name}</span>
+                    <span class="font-medium text-white">${esc(customer.name)}</span>
                 </td>
-                <td class="px-4 py-3 text-gray-300">${primaryContact?.name || '-'}</td>
+                <td class="px-4 py-3 text-gray-300">${esc(primaryContact?.name || '-')}</td>
                 <td class="px-4 py-3">
                     <span class="px-2 py-1 text-xs rounded-full ${customer.openWOCount > 0 ? 'bg-blue-600 text-blue-100' : 'bg-gray-600 text-gray-200'}">
                         ${customer.openWOCount || 0} Open WOs
                     </span>
                 </td>
-                <td class="px-4 py-3 text-gray-300">${customer.terms || 'NET 30'}</td>
+                <td class="px-4 py-3 text-gray-300">${esc(customer.terms || 'NET 30')}</td>
                 <td class="px-4 py-3">
-                    <button data-action="manage-contacts" data-id="${customer.id}" data-name="${customer.name}" class="text-purple-400 hover:text-purple-300 mr-2" title="Manage Contacts">
+                    <button data-action="manage-contacts" data-id="${customer.id}" data-name="${esc(customer.name)}" class="text-purple-400 hover:text-purple-300 mr-2" title="Manage Contacts">
                         <i class="fa-solid fa-users"></i>
                     </button>
                     <button data-action="edit-customer" data-id="${customer.id}" class="text-blue-400 hover:text-blue-300 mr-2" title="Edit Customer">
                         <i class="fa-solid fa-edit"></i>
                     </button>
-                    <button data-action="delete-customer" data-id="${customer.id}" data-name="${customer.name}" class="text-red-400 hover:text-red-300" title="Delete Customer">
+                    <button data-action="delete-customer" data-id="${customer.id}" data-name="${esc(customer.name)}" class="text-red-400 hover:text-red-300" title="Delete Customer">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
@@ -893,7 +893,7 @@ function renderCustomerDetails(customer) {
                         <h4 class="text-sm font-medium text-gray-400 mb-2"><i class="fa-solid fa-file-lines mr-2"></i>Open Work Orders</h4>
                         ${workOrders.length > 0 ? workOrders.map(wo => `
                             <div class="bg-gray-800 p-2 rounded mb-1 text-xs flex justify-between">
-                                <span>${wo.woNumber} - ${wo.partNumber}</span>
+                                <span>${esc(wo.woNumber)} - ${esc(wo.partNumber)}</span>
                                 <span class="text-${wo.urgencyColor}-400">${formatDate(wo.dueDate)}</span>
                             </div>
                         `).join('') : '<div class="text-xs text-gray-500">No open work orders</div>'}
@@ -902,9 +902,9 @@ function renderCustomerDetails(customer) {
                         <h4 class="text-sm font-medium text-gray-400 mb-2"><i class="fa-solid fa-users mr-2"></i>Contacts</h4>
                         ${customer.contacts?.length > 0 ? customer.contacts.map(c => `
                             <div class="bg-gray-800 p-2 rounded mb-1 text-xs">
-                                <div class="font-medium">${c.name} ${c.isPrimary ? '<span class="text-accentGreen">(Primary)</span>' : ''}</div>
-                                <div class="text-gray-500">${c.role || ''}</div>
-                                <div><a href="mailto:${c.email}" class="text-blue-400">${c.email}</a> | ${c.phone || ''}</div>
+                                <div class="font-medium">${esc(c.name)} ${c.isPrimary ? '<span class="text-accentGreen">(Primary)</span>' : ''}</div>
+                                <div class="text-gray-500">${esc(c.role || '')}</div>
+                                <div><a href="mailto:${esc(c.email)}" class="text-blue-400">${esc(c.email)}</a> | ${esc(c.phone || '')}</div>
                             </div>
                         `).join('') : '<div class="text-xs text-gray-500">No contacts</div>'}
                     </div>
@@ -1412,18 +1412,18 @@ function renderQuotesView(quotes) {
         const docCount = getQuoteDocuments(quote.id).length;
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${quote.id}">
-                <td class="px-4 py-3 font-medium text-white">${quote.quoteNumber}</td>
-                <td class="px-4 py-3 text-gray-300">${quote.customerName}</td>
-                <td class="px-4 py-3 text-gray-300">${quote.partNumber}</td>
+                <td class="px-4 py-3 font-medium text-white">${esc(quote.quoteNumber)}</td>
+                <td class="px-4 py-3 text-gray-300">${esc(quote.customerName)}</td>
+                <td class="px-4 py-3 text-gray-300">${esc(quote.partNumber)}</td>
                 <td class="px-4 py-3 text-gray-300">${quote.quantity}</td>
                 <td class="px-4 py-3 text-gray-400">${formatDate(quote.requestedDate)}</td>
                 <td class="px-4 py-3 text-${getUrgencyColor(quote.dueDate)}-400">${formatDate(quote.dueDate)}</td>
                 <td class="px-4 py-3">
-                    <span class="px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(quote.status)}">${quote.status}</span>
+                    <span class="px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(quote.status)}">${esc(quote.status)}</span>
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex items-center gap-1">
-                        <button data-action="view-quote-docs" data-id="${quote.id}" data-number="${quote.quoteNumber}" 
+                        <button data-action="view-quote-docs" data-id="${quote.id}" data-number="${esc(quote.quoteNumber)}" 
                             class="${docCount > 0 ? 'text-blue-400' : 'text-gray-500'} hover:text-blue-300" 
                             title="Documents (${docCount})">
                             <i class="fa-solid fa-folder${docCount > 0 ? '' : '-open'}"></i>
@@ -1446,9 +1446,9 @@ function renderQuotesView(quotes) {
         const docCount = getQuoteDocuments(quote.id).length;
         return `
             <tr class="border-b border-gray-700 hover:bg-gray-800" data-item-id="${quote.id}">
-                <td class="px-4 py-3 font-medium text-white">${quote.quoteNumber}</td>
-                <td class="px-4 py-3 text-gray-300">${quote.customerName}</td>
-                <td class="px-4 py-3 text-gray-300">${quote.partNumber}</td>
+                <td class="px-4 py-3 font-medium text-white">${esc(quote.quoteNumber)}</td>
+                <td class="px-4 py-3 text-gray-300">${esc(quote.customerName)}</td>
+                <td class="px-4 py-3 text-gray-300">${esc(quote.partNumber)}</td>
                 <td class="px-4 py-3 text-gray-300">${quote.quantity}</td>
                 <td class="px-4 py-3 text-gray-400">${quote.sentAt ? formatDate(quote.sentAt) : '-'}</td>
                 <td class="px-4 py-3 text-${getUrgencyColor(quote.dueDate)}-400">${formatDate(quote.dueDate)}</td>
@@ -1599,8 +1599,8 @@ function renderWIPView(workOrders) {
                                     <i class="fa-solid fa-chevron-${isExpanded ? 'down' : 'right'} transition-transform"></i>
                                 </button>
                                 <div>
-                                    <span class="font-bold text-lg" style="color: var(--color-accent-primary);">${wo.woNumber}</span>
-                                    <span class="text-gray-400 ml-3">${wo.customerName}</span>
+                                    <span class="font-bold text-lg" style="color: var(--color-accent-primary);">${esc(wo.woNumber)}</span>
+                                    <span class="text-gray-400 ml-3">${esc(wo.customerName)}</span>
                                     <span class="text-xs ml-3 px-2 py-1 rounded-full bg-gray-700 text-gray-300">
                                         ${partCount} part${partCount > 1 ? 's' : ''}
                                     </span>
@@ -1688,8 +1688,8 @@ function renderWOLineItems(wo) {
                                     <i class="fa-solid fa-chevron-${isPartExpanded ? 'down' : 'right'} text-sm"></i>
                                 </button>
                                 <div>
-                                    <span class="font-semibold text-white">${item.partNumber}</span>
-                                    <span class="text-gray-400 ml-2">${item.description || ''}</span>
+                                    <span class="font-semibold text-white">${esc(item.partNumber)}</span>
+                                    <span class="text-gray-400 ml-2">${esc(item.description || '')}</span>
                                 </div>
                             </div>
                             <div class="flex items-center gap-6">
@@ -1699,7 +1699,7 @@ function renderWOLineItems(wo) {
                                 </div>
                                 <div class="text-center">
                                     <div class="text-xs text-gray-500">Material</div>
-                                    <div class="text-gray-300 text-sm">${item.material || '-'}</div>
+                                    <div class="text-gray-300 text-sm">${esc(item.material || '-')}</div>
                                 </div>
                                 <div class="w-32">
                                     <div class="flex justify-between text-xs mb-1">
@@ -1745,7 +1745,7 @@ function renderLineItemChecklist(woId, lineItem) {
     return `
         <div class="p-4 pl-20" style="background: rgba(0,0,0,0.2);">
             <h5 class="text-xs font-medium mb-3" style="color: var(--color-text-muted);">
-                <i class="fa-solid fa-list-check mr-2"></i>Workflow Steps for ${lineItem.partNumber}
+                <i class="fa-solid fa-list-check mr-2"></i>Workflow Steps for ${esc(lineItem.partNumber)}
             </h5>
             <div class="grid grid-cols-2 lg:grid-cols-3 gap-2">
                 ${checklist.map(step => {
@@ -3107,23 +3107,23 @@ function showContactsModal(customerId, customerName) {
             <div class="bg-gray-800 rounded-lg p-4 mb-3 border border-gray-700" data-contact-index="${index}">
                 <div class="flex justify-between items-start mb-2">
                     <div class="flex items-center gap-2">
-                        <span class="font-medium text-white">${contact.name}</span>
+                        <span class="font-medium text-white">${esc(contact.name)}</span>
                         ${contact.isPrimary ? '<span class="px-2 py-0.5 text-xs rounded bg-green-600 text-green-100">Primary</span>' : ''}
                     </div>
                     <div class="flex gap-2">
                         <button data-action="edit-contact" data-index="${index}" class="text-blue-400 hover:text-blue-300" title="Edit">
                             <i class="fa-solid fa-edit"></i>
                         </button>
-                        <button data-action="delete-contact" data-index="${index}" data-name="${contact.name}" class="text-red-400 hover:text-red-300" title="Delete">
+                        <button data-action="delete-contact" data-index="${index}" data-name="${esc(contact.name)}" class="text-red-400 hover:text-red-300" title="Delete">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </div>
                 </div>
-                ${contact.role ? `<div class="text-sm text-gray-400 mb-1"><i class="fa-solid fa-briefcase mr-1"></i>${contact.role}</div>` : ''}
-                ${contact.email ? `<div class="text-sm"><i class="fa-solid fa-envelope mr-1 text-gray-500"></i><a href="mailto:${contact.email}" class="text-blue-400 hover:text-blue-300">${contact.email}</a></div>` : ''}
-                ${contact.phone ? `<div class="text-sm text-gray-300"><i class="fa-solid fa-phone mr-1 text-gray-500"></i>${contact.phone}</div>` : ''}
-                ${contact.mobile ? `<div class="text-sm text-gray-300"><i class="fa-solid fa-mobile mr-1 text-gray-500"></i>${contact.mobile}</div>` : ''}
-                ${contact.notes ? `<div class="text-sm text-gray-400 mt-2 italic"><i class="fa-solid fa-note-sticky mr-1"></i>${contact.notes}</div>` : ''}
+                ${contact.role ? `<div class="text-sm text-gray-400 mb-1"><i class="fa-solid fa-briefcase mr-1"></i>${esc(contact.role)}</div>` : ''}
+                ${contact.email ? `<div class="text-sm"><i class="fa-solid fa-envelope mr-1 text-gray-500"></i><a href="mailto:${esc(contact.email)}" class="text-blue-400 hover:text-blue-300">${esc(contact.email)}</a></div>` : ''}
+                ${contact.phone ? `<div class="text-sm text-gray-300"><i class="fa-solid fa-phone mr-1 text-gray-500"></i>${esc(contact.phone)}</div>` : ''}
+                ${contact.mobile ? `<div class="text-sm text-gray-300"><i class="fa-solid fa-mobile mr-1 text-gray-500"></i>${esc(contact.mobile)}</div>` : ''}
+                ${contact.notes ? `<div class="text-sm text-gray-400 mt-2 italic"><i class="fa-solid fa-note-sticky mr-1"></i>${esc(contact.notes)}</div>` : ''}
             </div>
         `).join('');
     };
@@ -3133,7 +3133,7 @@ function showContactsModal(customerId, customerName) {
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-medium text-white">
                     <i class="fa-solid fa-users mr-2" style="color: var(--color-accent-primary);"></i>
-                    Contacts for ${customerName}
+                    Contacts for ${esc(customerName)}
                 </h3>
                 <button onclick="BPERP.common.closeModal('contactsModal')" class="text-gray-400 hover:text-white">
                     <i class="fa-solid fa-times"></i>

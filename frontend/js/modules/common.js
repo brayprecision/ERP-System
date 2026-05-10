@@ -3,6 +3,17 @@
  * Shared functions used across all modules
  */
 
+// ==================== HTML ESCAPING ====================
+// Use esc() whenever interpolating user-supplied data into innerHTML.
+export function esc(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ==================== DEBOUNCE & THROTTLE ====================
 export function debounce(fn, delay = 300) {
     let timeoutId;
@@ -207,12 +218,14 @@ export function closeModal(id) {
     if (modal) modal.remove();
 }
 
+// message accepts safe HTML markup (caller is responsible for escaping user data within it).
+// title and options.confirmText are escaped here.
 export function showConfirmModal(title, message, onConfirm, options = {}) {
     const content = `
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-medium text-white">
-                    <i class="fa-solid ${options.icon || 'fa-exclamation-triangle'} mr-2 ${options.iconColor || 'text-yellow-400'}"></i>${title}
+                    <i class="fa-solid ${options.icon || 'fa-exclamation-triangle'} mr-2 ${options.iconColor || 'text-yellow-400'}"></i>${esc(title)}
                 </h3>
                 <button onclick="BPERP.common.closeModal('confirmModal')" class="text-gray-400 hover:text-white">
                     <i class="fa-solid fa-times"></i>
@@ -224,9 +237,9 @@ export function showConfirmModal(title, message, onConfirm, options = {}) {
                     class="flex-1 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500">
                     Cancel
                 </button>
-                <button id="confirmModalBtn" 
+                <button id="confirmModalBtn"
                     class="flex-1 ${options.confirmClass || 'bg-red-600 hover:bg-red-700'} text-white px-4 py-2 rounded">
-                    ${options.confirmText || 'Confirm'}
+                    ${esc(options.confirmText || 'Confirm')}
                 </button>
             </div>
         </div>
@@ -244,7 +257,7 @@ export function showConfirmModal(title, message, onConfirm, options = {}) {
 export function showDeleteConfirm(itemName, itemType, itemId, onDelete) {
     showConfirmModal(
         'Confirm Delete',
-        `Are you sure you want to delete <strong class="text-white">${itemName}</strong>? This action cannot be undone.`,
+        `Are you sure you want to delete <strong class="text-white">${esc(itemName)}</strong>? This action cannot be undone.`,
         onDelete,
         { icon: 'fa-trash', iconColor: 'text-red-400', confirmText: 'Delete', confirmClass: 'bg-red-600 hover:bg-red-700' }
     );
@@ -689,13 +702,38 @@ export async function restoreFromBackup(fileInput) {
             }
         }
         
-        showToast('Backup restored successfully! Reloading...', 'success');
-        
+        // Also restore to the backend SQLite database if logged in
+        const token = localStorage.getItem('bperp_auth_token');
+        if (token && backupData.database) {
+            try {
+                const apiRes = await fetch('/api/backup/restore', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ backup: backupData })
+                });
+                const apiResult = await apiRes.json();
+                if (!apiResult.success) {
+                    console.warn('Backend restore warning:', apiResult.error);
+                    showToast('Local data restored. Backend restore had issues — check console.', 'info');
+                } else {
+                    showToast(`Backup restored successfully (${apiResult.tablesRestored?.length || 0} tables). Reloading...`, 'success');
+                }
+            } catch (apiErr) {
+                console.warn('Could not reach backend for restore:', apiErr.message);
+                showToast('Local data restored. Could not reach backend.', 'info');
+            }
+        } else {
+            showToast('Backup restored successfully! Reloading...', 'success');
+        }
+
         // Reload the page after a short delay to apply restored data
         setTimeout(() => {
             window.location.reload();
         }, 1500);
-        
+
         return { success: true };
 
     } catch (error) {
