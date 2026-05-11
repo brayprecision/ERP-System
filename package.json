@@ -22,6 +22,8 @@
     "rebuild:backend": "node scripts/rebuild-backend-native.js",
     "build:win": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --win --publish never",
     "build:linux": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --linux --publish never",
+    "release:win": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --win --publish always",
+    "release:linux": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --linux --publish always",
     "pack": "electron-builder --dir",
     "pack:win": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --win --dir --publish never",
     "pack:linux": "npm run backend:install:prod && npm run rebuild:backend && electron-builder --linux --dir --publish never",
@@ -34,7 +36,8 @@
     "setup": "npm install && npm run backend:install"
   },
   "dependencies": {
-    "electron-store": "^8.2.0"
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.1",
@@ -43,7 +46,13 @@
     "electron-builder": "^24.9.1"
   },
   "build": {
-    "publish": null,
+    "publish": {
+      "provider": "github",
+      "owner": "brayprecision",
+      "repo": "ERP-System",
+      "private": true,
+      "token": "${BPERP_READ_TOKEN}"
+    },
     "appId": "com.brayprecision.bperp",
     "productName": "BPERP",
     "copyright": "Copyright © 2026 Bray Precision LLC",

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Auto-update via GitHub Releases (UPD-01, INC-06)** — Settings → About this app now includes an **App Updates** card showing the current version, a **Check for Updates** button, download progress bar, and **Restart to Install** button. Powered by `electron-updater` pointed at the private `brayprecision/ERP-System` GitHub repo. Updates download in the background once found; the app only restarts when the user clicks the button. Two new npm scripts: `release:win` and `release:linux` (build + publish to GitHub Releases). `build.publish` in `package.json` configured with GitHub provider. No auto-check on startup — manual only. DB migrations run automatically on restart so data is never lost across versions.
+
+### Security
+
+- **SEC-01 — Placeholder password bypass removed** — `backend/routes/users.js`: Any account whose `password_hash` contained the string "placeholder" previously accepted any password. Bypass block removed. Check the live DB for such accounts and reset their passwords: `SELECT username FROM users WHERE password_hash LIKE '%placeholder%'`.
+- **SEC-04 — XSS escaping across HTML templates** — Added exported `esc()` helper to `frontend/js/modules/common.js`. Applied to all user-data injection points in `sales.js` (customer names, contact names/emails/phones/notes, part numbers, WO numbers, quote numbers, descriptions, material fields) and fixed `showConfirmModal` / `showDeleteConfirm` in `common.js`. All `innerHTML` interpolations of user-supplied fields now escaped.
+- **SEC-02 — CORS multi-origin support and .env.example fix** — `backend/server.js` CORS now accepts a comma-separated list of origins in `CORS_ORIGIN` (e.g. `http://a:3000,http://b:3000`). `backend/.env.example` corrected (was `CORS_ORIGINS`), updated with NAS path examples and Standalone vs Network guidance.
+
+### Fixed
+
+- **STA-01 — WAL mode graceful fallback** — `backend/db.js` now catches WAL pragma failures (common on NFS/SMB shares) and falls back to `DELETE` journal mode with a console warning instead of silently misbehaving or crashing.
+- **INC-01 — Backup restore implemented** — `POST /api/backup/restore` no longer returns 501. Accepts the parsed backup JSON (`{ backup: <object> }`, 50 MB limit), validates the version prefix, disables FK checks, and restores all tables in a transaction. `frontend/js/modules/common.js` `restoreFromBackup()` now calls the API after restoring localStorage and reports how many tables were reloaded.
+- **INC-02 — Hardcoded demo notifications replaced** — The header bell now fetches live data from `/api/inventory/alerts` (low-stock items) and `/api/work-orders` (overdue and due-today WOs). Shows a loading spinner while fetching, a "no alerts" state when clean, and a graceful fallback if the API is unreachable.
+
 ### Fixed
 
 - **Electron — maximize (Linux / small displays)** — Main window used **`minWidth` 1024 / `minHeight` 768** unconditionally. On common **1366×768** (and similar) panels, the **work area height** can be **below 768**, so the window’s minimum size exceeded the monitor and many window managers **disabled or ignored maximize**. Minimum size is now **capped to the primary display work area**; `maximizable` / `resizable` are set explicitly and re-applied after **`show()`** on Linux (and IPC toggle).

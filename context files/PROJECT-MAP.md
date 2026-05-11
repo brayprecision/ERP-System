@@ -1,7 +1,50 @@
 # BPERP Project Map & Audit Report
 
-**Generated:** 2026-05-10 | **Version:** 1.0.0-beta.1 | **Auditor:** Claude Code  
+**Generated:** 2026-05-10 (updated 2026-05-10) | **Version:** 1.0.0-beta.1 | **Auditor:** Claude Code  
 **Codebase:** ~24,000 LOC custom code (backend + frontend + Electron)
+
+---
+
+## 0. Agent Operating Instructions
+
+Read this section before starting any task. These rules apply to every change you make in this codebase.
+
+### 0.1 Ask Before You Act
+
+- **State your understanding** of the task in one or two sentences before writing any code or making any edits.
+- **Ask clarifying questions immediately** if the scope is ambiguous, the task touches multiple systems, or you are unsure which file is the right place for a change. Do not make assumptions and write code — ask first.
+- **Do not fix unrelated issues** you notice while working. Note them (e.g., "I also noticed X — should I address that separately?") but stay on the assigned task.
+
+### 0.2 Write Clean, Focused Code
+
+- **Reuse before creating.** Search for existing utilities before writing new ones. Key helpers: `esc()` (XSS escaping, `common.js`), `createModal()` / `showToast()` (`common.js`), `validateBody()` + Zod schemas (`middleware/validation.js`), `pool.query()` (`db.js`).
+- **Match existing patterns.** All POST routes use `validateBody()` + a Zod schema. All HTML output uses `esc()`. SQLite queries go through `pool.query()` — never use `db` directly in route files.
+- **No over-engineering.** Solve the specific problem. Do not add abstractions, helper layers, or config flags for hypothetical future requirements. Three similar lines is better than a premature abstraction.
+- **No unnecessary comments.** Only add a comment when the WHY is non-obvious (a hidden constraint, a workaround for a specific bug). Never comment what the code does — well-named identifiers do that.
+- **No half-finished implementations.** If the full fix requires changes you cannot make in this session, say so explicitly rather than leaving stubs or `console.log` placeholders.
+
+### 0.3 Update Documentation After Every Edit
+
+After completing any code change, update the following where applicable:
+
+| What changed | What to update |
+|---|---|
+| Added or changed a route | `backend/README.md` route reference |
+| Changed the DB schema | Section 6 of this file (Database Schema) |
+| Fixed an audit finding | Mark it `✅ FIXED` in the Executive Summary table and in the Audit Report section of this file; add a "Fixed:" line describing what was done |
+| Added a new audit finding | Add a row to the Executive Summary table and a full entry in the Audit Report |
+| Completed a roadmap milestone | `context files/INTERNAL-ROADMAP.md` |
+| Changed user-facing behavior | `README.md` |
+| Any notable change | Add an entry to `CHANGELOG.md` under the current version |
+
+Do not skip doc updates. An undocumented change is an incomplete change.
+
+### 0.4 Be Token Efficient
+
+- **Read only what you need.** Use targeted searches (grep for a specific function or symbol) rather than reading entire large files. `sales.js` is 4,372 lines — search it, don't read it all.
+- **Trust your context.** Do not re-read a file you just read. Do not re-search for something you already found.
+- **Report concisely.** Use bullet points and tables, not prose paragraphs, when summarizing findings.
+- **One change at a time.** Make the minimal set of edits needed to complete the task. Do not refactor, rename, or clean up code outside the direct scope of what was asked.
 
 ---
 
@@ -11,13 +54,15 @@
 
 | ID | Sev | One-liner |
 |----|-----|-----------|
-| SEC-01 | 🔴 CRITICAL | Any account with "placeholder" in its password hash accepts **any password** |
-| INC-01 | 🔴 CRITICAL | Backup restore endpoint returns `501` — data cannot be restored |
-| SEC-04 | 🟠 HIGH | `createModal()` and most inline `innerHTML` templates inject user data without escaping |
-| STA-01 | 🟠 HIGH | SQLite WAL mode set unconditionally — will fail on many NFS/SMB network filesystems |
-| SEC-02 | 🟠 HIGH | CORS default is `*`; no `.env.example` exists to guide production config |
-| INT-01 | 🟠 HIGH | No `.env` or `.env.example` in `backend/` — new workstation setup has no env reference |
-| INC-02 | 🟠 HIGH | Notifications bell shows **hardcoded demo alerts** — not real system alerts |
+| SEC-01 | ✅ FIXED | Any account with "placeholder" in its password hash accepts **any password** |
+| INC-01 | ✅ FIXED | Backup restore endpoint returns `501` — data cannot be restored |
+| SEC-04 | ✅ FIXED | `createModal()` and most inline `innerHTML` templates inject user data without escaping |
+| STA-01 | ✅ FIXED | SQLite WAL mode set unconditionally — will fail on many NFS/SMB network filesystems |
+| SEC-02 | ✅ FIXED | CORS default is `*`; no `.env.example` exists to guide production config |
+| INT-01 | ✅ FIXED | No `.env` or `.env.example` in `backend/` — new workstation setup has no env reference |
+| INC-02 | ✅ FIXED | Notifications bell shows **hardcoded demo alerts** — not real system alerts |
+| INC-06 | ✅ FIXED | `onUpdateAvailable` IPC listener in preload.js is dead code |
+| UPD-01 | ✅ FIXED | No auto-update implementation |
 | SEC-05 | 🟡 MEDIUM | All `PUT` (update) routes bypass Zod validation — raw `req.body` goes to SQL |
 | STA-02 | 🟡 MEDIUM | db.js UPDATE+RETURNING heuristic breaks when the last param is not the row ID |
 | STA-03 | 🟡 MEDIUM | Live `.db` files committed to git — data leak and merge conflict risk |
@@ -423,29 +468,18 @@ cd backend && node migrations/migrate.js down
 
 ### A1. Security
 
-#### SEC-01 — 🔴 CRITICAL: Placeholder password bypass
+#### SEC-01 — ✅ FIXED: Placeholder password bypass
 
-**File:** [backend/routes/users.js](../backend/routes/users.js) lines 55–57  
-**Code:**
-```js
-if (hash && hash.includes('placeholder')) {
-    return true; // Allow any password for placeholder accounts
-}
-```
-**Impact:** Any user account whose `password_hash` column contains the string "placeholder" accepts **any password**. This is migration scaffolding that was never removed. Check the live `bperp.db` for accounts with this condition immediately.  
-**Fix:** Query `SELECT username, password_hash FROM users WHERE password_hash LIKE '%placeholder%'`. Reset or delete those accounts, then remove this bypass block.
+**File:** [backend/routes/users.js](../backend/routes/users.js)  
+**Fixed:** Bypass block removed. Accounts with a placeholder hash now fail authentication normally.  
+**Action required:** Query `SELECT username FROM users WHERE password_hash LIKE '%placeholder%'` on the live DB and reset any matching accounts.
 
 ---
 
-#### SEC-02 — 🟠 HIGH: CORS defaults to wildcard `*`
+#### SEC-02 — ✅ FIXED: CORS defaults to wildcard `*`
 
-**File:** [backend/server.js](../backend/server.js) line 46  
-**Code:**
-```js
-origin: process.env.CORS_ORIGIN || '*',  // Set CORS_ORIGIN env var in production
-```
-**Impact:** Every deployment gets open CORS because no `.env.example` guides operators to set `CORS_ORIGIN`. Any page on the LAN can make credentialed requests to the API.  
-**Fix:** Create `backend/.env.example` with `CORS_ORIGIN=http://localhost:3000` and document the production value. For Standalone mode the default is fine; for Network mode it should be locked to the NAS IP.
+**File:** [backend/server.js](../backend/server.js), [backend/.env.example](../backend/.env.example)  
+**Fixed:** `CORS_ORIGIN` now supports a comma-separated list of allowed origins. `.env.example` rewritten with correct variable name, NAS examples, and Standalone vs Network guidance.
 
 ---
 
@@ -457,21 +491,10 @@ origin: process.env.CORS_ORIGIN || '*',  // Set CORS_ORIGIN env var in productio
 
 ---
 
-#### SEC-04 — 🟠 HIGH: Unescaped user data in `innerHTML` throughout the app
+#### SEC-04 — ✅ FIXED: Unescaped user data in `innerHTML` throughout the app
 
-**Primary file:** [frontend/js/modules/common.js](../frontend/js/modules/common.js) line 187  
-**Code:**
-```js
-modal.innerHTML = `
-    <div class="...">
-        ${content}   // ← content is injected verbatim
-    </div>
-`;
-```
-**Also:** `sales.js` inline templates for customers, quotes, WIP views all interpolate `wo.partNumber`, `customer.name`, `quote.description`, etc. directly into `innerHTML`. Only the Leads section applies `escapeLeadHtml()`.  
-The app has a working escape helper (`esc()`) defined in `app.js:376` for the About page. It is not shared.  
-**Impact:** A customer name or part number containing `<script>` or `<img onerror=...>` executes in the app. In an Electron/LAN context this is an insider threat and import-poisoning risk.  
-**Fix:** Extract `esc()` from `app.js:376` into `common.js` and export it. Apply it to all user-controlled values before string interpolation into `innerHTML`.
+**Files:** [frontend/js/modules/common.js](../frontend/js/modules/common.js), [frontend/js/modules/sales.js](../frontend/js/modules/sales.js)  
+**Fixed:** `esc()` exported from `common.js`. Applied to all 20 identified injection points in `sales.js` (customer names, contact info, part numbers, WO numbers, quote numbers, descriptions, material fields, modal headers). `showConfirmModal`, `showDeleteConfirm` in `common.js` also escape user-supplied strings.
 
 ---
 
@@ -514,15 +537,10 @@ if (hash && hash.length === 64 && !hash.startsWith('$2')) {
 
 ### A2. Stability
 
-#### STA-01 — 🟠 HIGH: SQLite WAL mode set unconditionally
+#### STA-01 — ✅ FIXED: SQLite WAL mode set unconditionally
 
-**File:** [backend/db.js](../backend/db.js) line 29  
-**Code:**
-```js
-db.pragma('journal_mode = WAL');
-```
-**Impact:** WAL mode requires a working shared-memory file (`.db-shm`). Many NFS and SMB configurations do not support the file locking primitives WAL needs — the database silently falls back to DELETE journal mode, or worse, returns a READONLY error. There is no runtime detection or fallback.  
-**Fix:** Attempt WAL; catch the error; fall back to `journal_mode = DELETE` and log a warning. Alternatively, test WAL support on startup and warn the administrator.
+**File:** [backend/db.js](../backend/db.js)  
+**Fixed:** WAL pragma is now in a `try/catch`. If it fails or returns anything other than `'wal'`, the backend logs a warning and falls back to `journal_mode = DELETE` rather than crashing or silently misbehaving.
 
 ---
 
@@ -588,21 +606,17 @@ await pool.query('DELETE FROM user_sessions WHERE user_id = $1 AND expires_at < 
 
 ### A3. Incomplete Features
 
-#### INC-01 — 🔴 CRITICAL: Backup restore returns 501
+#### INC-01 — ✅ FIXED: Backup restore returns 501
 
-**File:** `backend/server.js` line ~658  
-**Code:** `POST /api/backup/restore` → `res.status(501).json({ error: 'Not implemented' })`  
-**Impact:** The frontend has a complete restore UI (file picker, confirmation, progress). It calls this endpoint. Clicking "Restore Data" silently fails with a 501. If a corrupted database needs recovery, there is no in-app path.  
-**Fix:** Implement the restore endpoint: accept a JSON backup file, validate its schema, wipe the relevant tables in a transaction, and re-insert the data. Or, for a simpler approach in SQLite: accept the raw `.db` file upload and copy it over the live file (with backend temporarily paused).
+**File:** [backend/server.js](../backend/server.js), [frontend/js/modules/common.js](../frontend/js/modules/common.js)  
+**Fixed:** `POST /api/backup/restore` implemented. Accepts `{ backup: <parsed JSON> }` (50 MB body limit), validates the version prefix, disables FK checks, wipes and re-inserts all tables in a SQLite transaction, then re-enables FK checks. `restoreFromBackup()` in `common.js` now calls the API after localStorage restore and shows how many tables were reloaded.
 
 ---
 
-#### INC-02 — 🟠 HIGH: Alerts bell shows hardcoded demo notifications
+#### INC-02 — ✅ FIXED: Alerts bell shows hardcoded demo notifications
 
-**File:** [frontend/js/app.js](../frontend/js/app.js) lines 1093–1122  
-**Content:** Three hardcoded alerts: "Work Order WO-2024-001 Overdue", "Quote QT-2024-045 Due Today", "Material WO-2024-038 Arrived".  
-**Impact:** The bell icon suggests a real alert system. Users will click it expecting relevant notifications and see stale demo data.  
-**Fix:** Either implement a real alert query (overdue WOs, low inventory, upcoming maintenance) or hide the bell until alerts are implemented.
+**File:** [frontend/js/app.js](../frontend/js/app.js)  
+**Fixed:** Bell now fetches live data from `/api/inventory/alerts` (low-stock items) and `/api/work-orders` (overdue/due-today). Shows a loading spinner, a "no alerts" empty state, and a graceful fallback if the API is unreachable.
 
 ---
 
@@ -636,27 +650,19 @@ if (current.is_completed && isCompleted === false) {
 
 ---
 
-#### INC-06 — 🟢 LOW: `onUpdateAvailable` IPC listener in preload.js is dead code
+#### INC-06 — ✅ FIXED: `onUpdateAvailable` IPC listener in preload.js was dead code
 
 **File:** `electron/preload.js` line ~197  
-**Impact:** The listener is exposed via `contextBridge` but `main.js` never emits this event (no `electron-updater` dependency). Misleads developers into thinking auto-update is implemented.  
-**Fix:** Remove the listener stub, or implement auto-update using `electron-updater` + GitHub Releases.
+**Fixed:** Dead stub replaced with a full auto-update IPC bridge: `checkForUpdates`, `installUpdate`, `onUpdateAvailable`, `onUpdateNotAvailable`, `onUpdateDownloadProgress`, `onUpdateDownloaded`, `onUpdateError`. Wired to `autoUpdater` events in `main.js`.
 
 ---
 
 ### A4. Integration Experience
 
-#### INT-01 — 🟠 HIGH: No `.env.example` in backend
+#### INT-01 — ✅ FIXED: No `.env.example` in backend
 
-**Impact:** A new workstation operator (or developer) has no reference for required environment variables. The defaults are: `DB_PATH` = local `bperp.db`, `PORT` = 3000, `CORS_ORIGIN` = `*`. These defaults are wrong for Network/NAS deployment.  
-**Fix:** Create `backend/.env.example`:
-```
-# BPERP Backend Configuration
-DB_PATH=/path/to/nas/bperp.db
-PORT=3000
-CORS_ORIGIN=http://192.168.1.100:3000
-```
-Document it in the README's installation section.
+**File:** [backend/.env.example](../backend/.env.example)  
+**Fixed:** `.env.example` rewritten with correct variable names, Windows/Linux NAS path examples, and inline guidance for Standalone vs Network mode. See SEC-02 for related CORS fix.
 
 ---
 
@@ -696,17 +702,9 @@ Document it in the README's installation section.
 
 ### A5. Auto-Update
 
-#### UPD-01 — 🟢 LOW: No auto-update implementation
+#### UPD-01 — ✅ FIXED: Auto-update implemented via electron-updater + GitHub Releases
 
-**Current state:** `electron/preload.js` exposes an `onUpdateAvailable` listener stub. No `electron-updater` package is in `package.json`. `electron/main.js` has no `autoUpdater` calls.  
-**Recommended approach:** When ready:
-1. Add `electron-updater` to root `package.json`
-2. Create a GitHub Release for each version with the `.exe` installer
-3. Set `publish.provider = github` in `package.json` electron-builder config
-4. Add `autoUpdater.checkForUpdatesAndNotify()` in `main.js` after app ready
-5. The existing `onUpdateAvailable` stub in `preload.js` can be wired to the real event
-
-This is LOW priority until the initial deployment is stable.
+**Fixed:** `electron-updater` added to root `package.json`. `build.publish` configured with GitHub provider (owner: brayprecision, repo: ERP-System, private). `autoUpdater` wired in `main.js` (manual-check mode: no auto-check on startup, `autoDownload=true`, `autoInstallOnAppQuit=false`). Full IPC bridge in `preload.js`. App Updates card added to Settings → About this app (version display, Check for Updates button, download progress bar, Restart to Install). `release:win` and `release:linux` npm scripts added for publishing to GitHub Releases.
 
 ---
 
@@ -756,4 +754,6 @@ This is LOW priority until the initial deployment is stable.
 
 *End of audit. Total findings: 7 security, 6 stability, 6 incomplete features, 5 integration, 1 auto-update, 5 dead code = **30 findings**.*
 
-*Next step: Prioritize SEC-01 and INC-01 as immediate fixes, then address HIGH-severity items in a single follow-up session.*
+*Session 2 (2026-05-10): SEC-01, STA-01, SEC-02, INT-01, SEC-04, INC-01, INC-02 — all 7 CRITICAL/HIGH items resolved. 23 open findings remain (all MEDIUM or LOW).*
+
+*Session 3 (2026-05-10): UPD-01, INC-06 resolved — auto-update via electron-updater + GitHub Releases implemented. 21 open findings remain.*

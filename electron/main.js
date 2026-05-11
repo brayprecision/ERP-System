@@ -9,6 +9,7 @@ const { fork, spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const Store = require('electron-store');
+const { autoUpdater } = require('electron-updater');
 
 // ==================== EARLY ERROR HANDLERS ====================
 // Must be registered BEFORE any initialization that could throw,
@@ -993,7 +994,36 @@ function setupIpcHandlers() {
     ipcMain.handle('is-first-run', () => {
         return store.get('firstRun');
     });
-    
+
+    // Auto-updater — manual check only (no auto-check on startup)
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = false;
+
+    autoUpdater.on('update-available', (info) => {
+        if (mainWindow) mainWindow.webContents.send('update-available', info);
+    });
+    autoUpdater.on('update-not-available', (info) => {
+        if (mainWindow) mainWindow.webContents.send('update-not-available', info);
+    });
+    autoUpdater.on('download-progress', (progress) => {
+        if (mainWindow) mainWindow.webContents.send('update-download-progress', progress);
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+        if (mainWindow) mainWindow.webContents.send('update-downloaded', info);
+    });
+    autoUpdater.on('error', (err) => {
+        if (mainWindow) mainWindow.webContents.send('update-error', err.message);
+    });
+
+    ipcMain.on('check-for-updates', () => {
+        autoUpdater.checkForUpdates().catch((err) => {
+            if (mainWindow) mainWindow.webContents.send('update-error', err.message);
+        });
+    });
+    ipcMain.on('install-update', () => {
+        autoUpdater.quitAndInstall(false, true);
+    });
+
     log('info', 'IPC handlers registered');
 }
 

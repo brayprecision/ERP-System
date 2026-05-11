@@ -424,8 +424,79 @@ async function loadAboutAppView() {
                 </dl>
                 <p class="text-xs text-gray-500 mt-6">Uninstalling the app usually does not delete the user data folder above. The <strong class="text-gray-400">Server URL</strong> is stored there and survives reinstall.</p>
             </div>
+
+            <div class="card p-6">
+                <div class="flex items-center mb-4">
+                    <i class="fa-solid fa-arrow-up-to-line text-3xl mr-4 text-emerald-400"></i>
+                    <div>
+                        <h2 class="text-xl font-semibold text-white">App Updates</h2>
+                        <p class="text-gray-400 text-sm">Current version: <span class="font-mono text-white">${esc(info.version)}</span></p>
+                    </div>
+                </div>
+                <div id="updateStatus" class="text-sm text-gray-300 mb-3"></div>
+                <div id="updateProgress" class="w-full bg-gray-700 rounded-full h-2 mb-3" style="display:none">
+                    <div id="updateProgressBar" class="bg-emerald-500 h-2 rounded-full transition-all" style="width:0%"></div>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btnCheckUpdate" class="btn btn-secondary">Check for Updates</button>
+                    <button id="btnInstallUpdate" class="btn btn-primary" style="display:none">Restart to Install</button>
+                </div>
+            </div>
         </div>
     `;
+
+    // Wire up update checker now that the DOM nodes exist
+    if (window.electronAPI?.checkForUpdates) {
+        const statusEl = document.getElementById('updateStatus');
+        const progressEl = document.getElementById('updateProgress');
+        const progressBarEl = document.getElementById('updateProgressBar');
+        const btnCheck = document.getElementById('btnCheckUpdate');
+        const btnInstall = document.getElementById('btnInstallUpdate');
+
+        // Clear any stale IPC listeners from a previous visit to this page
+        window.electronAPI.removeAllListeners('update-available');
+        window.electronAPI.removeAllListeners('update-not-available');
+        window.electronAPI.removeAllListeners('update-download-progress');
+        window.electronAPI.removeAllListeners('update-downloaded');
+        window.electronAPI.removeAllListeners('update-error');
+
+        btnCheck.addEventListener('click', () => {
+            btnCheck.disabled = true;
+            statusEl.textContent = 'Checking for updates…';
+            window.electronAPI.checkForUpdates();
+        });
+
+        btnInstall.addEventListener('click', () => {
+            window.electronAPI.installUpdate();
+        });
+
+        window.electronAPI.onUpdateAvailable((updateInfo) => {
+            statusEl.textContent = `v${updateInfo.version} available — downloading…`;
+            progressEl.style.display = '';
+        });
+
+        window.electronAPI.onUpdateNotAvailable(() => {
+            statusEl.textContent = 'You’re on the latest version.';
+            btnCheck.disabled = false;
+        });
+
+        window.electronAPI.onUpdateDownloadProgress((progress) => {
+            progressBarEl.style.width = `${Math.round(progress.percent)}%`;
+            statusEl.textContent = `Downloading… ${Math.round(progress.percent)}%`;
+        });
+
+        window.electronAPI.onUpdateDownloaded((updateInfo) => {
+            progressEl.style.display = 'none';
+            statusEl.textContent = `v${updateInfo.version} ready to install.`;
+            btnInstall.style.display = '';
+            btnCheck.style.display = 'none';
+        });
+
+        window.electronAPI.onUpdateError((message) => {
+            statusEl.textContent = `Update error: ${message}`;
+            btnCheck.disabled = false;
+        });
+    }
 }
 
 function loadBackupRestoreView() {

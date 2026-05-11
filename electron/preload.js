@@ -190,14 +190,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('backend-status', (event, status) => callback(status));
     },
     
-    /**
-     * Listen for update available notifications
-     * @param {Function} callback - Callback function
-     */
+    // ==================== AUTO-UPDATE BRIDGE ====================
+    checkForUpdates: () => ipcRenderer.send('check-for-updates'),
+    installUpdate: () => ipcRenderer.send('install-update'),
     onUpdateAvailable: (callback) => {
         ipcRenderer.on('update-available', (event, info) => callback(info));
     },
-    
+    onUpdateNotAvailable: (callback) => {
+        ipcRenderer.on('update-not-available', (event, info) => callback(info));
+    },
+    onUpdateDownloadProgress: (callback) => {
+        ipcRenderer.on('update-download-progress', (event, progress) => callback(progress));
+    },
+    onUpdateDownloaded: (callback) => {
+        ipcRenderer.on('update-downloaded', (event, info) => callback(info));
+    },
+    onUpdateError: (callback) => {
+        ipcRenderer.on('update-error', (event, message) => callback(message));
+    },
+
     /**
      * Remove all listeners for a channel
      * @param {string} channel - Channel name
