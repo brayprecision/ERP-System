@@ -1,6 +1,6 @@
 # BPERP Project Map & Audit Report
 
-**Generated:** 2026-05-10 (updated 2026-05-10) | **Version:** 1.0.0-beta.1 | **Auditor:** Claude Code  
+**Generated:** 2026-05-10 (updated 2026-05-11) | **Version:** 1.0.0-beta.2 | **Auditor:** Claude Code  
 **Codebase:** ~24,000 LOC custom code (backend + frontend + Electron)
 
 ---

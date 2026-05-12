@@ -1,6 +1,6 @@
 # BPERP Internal Roadmap
 
-> **Last Updated**: March 26, 2026
+> **Last Updated**: May 11, 2026
 > **Status**: Internal-only | Windows & Linux | SQLite (local or NAS-backed server)
 > **Owner**: Bray Precision LLC
 
@@ -99,6 +99,8 @@ Standalone mode
 | Task | Status | Notes |
 |------|--------|-------|
 | Build Windows installer | DONE | `npm run build:win` runs `@electron/rebuild -f -w better-sqlite3,bcrypt -m backend -v 28.3.3` before packaging |
+| Auto-update via GitHub Releases | DONE | `electron-updater` wired; `npm run release:win` publishes to GitHub Releases; Settings → About → Check for Updates |
+| Ship first release to GitHub | DONE | v1.0.0-beta.2 published to `brayprecision/ERP-System` releases |
 | Test Windows installer end-to-end | NOT DONE | Setup wizard, backend start, all modules |
 | Import existing shop data | NOT DONE | Use CSV import (Settings > Data Import) |
 | Test multi-device workflow | NOT DONE | Two machines, same NAS DB file, verify data syncs |
@@ -194,9 +196,14 @@ cd backend && npm run migrate:status  # Check status
 cd backend && npm test             # Run Jest tests
 
 # Building installers (from repo root; backend:install:prod + rebuild:backend + electron-builder)
-npm run build:win
-npm run build:linux                  # AppImage + deb
-npm run pack:win                     # Windows unpacked only
+npm run build:win                    # Windows NSIS installer (no publish)
+npm run build:linux                  # AppImage + deb (no publish)
+npm run pack:win                     # Windows unpacked only (fastest for testing)
+
+# Publishing a release to GitHub Releases (requires GH_TOKEN env var)
+# $env:GH_TOKEN = 'your-token'; npm run release:win
+npm run release:win                  # Build + upload to GitHub Releases
+npm run release:linux
 
 # Test unpacked Windows build: dist-installers/win-unpacked/BPERP.exe
 # After packaging, run `npm run backend:install` if backend dev deps are missing.

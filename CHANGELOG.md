@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] - 2026-05-11
+
 ### Added
 
 - **Auto-update via GitHub Releases (UPD-01, INC-06)** — Settings → About this app now includes an **App Updates** card showing the current version, a **Check for Updates** button, download progress bar, and **Restart to Install** button. Powered by `electron-updater` pointed at the private `brayprecision/ERP-System` GitHub repo. Updates download in the background once found; the app only restarts when the user clicks the button. Two new npm scripts: `release:win` and `release:linux` (build + publish to GitHub Releases). `build.publish` in `package.json` configured with GitHub provider. No auto-check on startup — manual only. DB migrations run automatically on restart so data is never lost across versions.

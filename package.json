@@ -50,8 +50,7 @@
       "provider": "github",
       "owner": "brayprecision",
       "repo": "ERP-System",
-      "private": true,
-      "token": "${BPERP_READ_TOKEN}"
+      "private": true
     },
     "appId": "com.brayprecision.bperp",
     "productName": "BPERP",
